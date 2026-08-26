@@ -1,0 +1,8 @@
+# Banderas de los 5 mecanismos defensivos de IronVeil.
+# Todas en false = configuracion C0 (baseline, passthrough puro).
+# Ver CLAUDE.md, seccion "Contratos estables", para el significado de cada clave.
+filtrado: false
+delimitacion: false
+clasificacion: false
+minimo_privilegio: false
+aprobacion_humana: false
