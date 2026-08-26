@@ -44,15 +44,17 @@ def cargar_config(ruta: Path | str = CONFIG_PATH) -> dict[str, bool]:
     """
     ruta = Path(ruta)
     if not ruta.is_file():
-        raise FileNotFoundError(
-            f"No se encontro el archivo de configuracion: {ruta}"
-        )
+        raise FileNotFoundError(f"No se encontro el archivo de configuracion: {ruta}")
 
     with ruta.open("r", encoding="utf-8") as f:
         datos: Any = yaml.safe_load(f)
 
     if not isinstance(datos, dict):
-        raise ValueError(f"{ruta} no contiene un mapeo YAML valido en la raiz.")
+        # ValueError, no TypeError: el problema es el contenido de un archivo
+        # externo mal formado, no un argumento invalido de esta funcion.
+        raise ValueError(  # noqa: TRY004
+            f"{ruta} no contiene un mapeo YAML valido en la raiz."
+        )
 
     faltantes = [clave for clave in FLAGS_REQUERIDAS if clave not in datos]
     if faltantes:
@@ -64,7 +66,9 @@ def cargar_config(ruta: Path | str = CONFIG_PATH) -> dict[str, bool]:
     for clave in FLAGS_REQUERIDAS:
         valor = datos[clave]
         if not isinstance(valor, bool):
-            raise ValueError(
+            # ValueError, no TypeError: mismo caso, es un valor de config.yaml
+            # invalido, no un argumento invalido de esta funcion.
+            raise ValueError(  # noqa: TRY004
                 f"La clave '{clave}' en {ruta} debe ser booleana "
                 f"(true/false), se encontro {valor!r}."
             )

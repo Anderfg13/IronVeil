@@ -1,0 +1,20 @@
+# Conjunto de reglas fijado explicitamente para que "ruff check ." se
+# comporte igual para las 4 personas del equipo, sin importar que version
+# de ruff tenga cada quien instalada localmente (los defaults de ruff
+# cambian entre versiones).
+target-version = "py311"
+line-length = 88
+
+[lint]
+# E, F: errores de pycodestyle/pyflakes (baseline).
+# B: flake8-bugbear (bugs reales, p. ej. defaults mutables).
+# I: isort (orden de imports), util con cuatro personas tocando el mismo modulo.
+# UP: pyupgrade, sintaxis moderna acorde a "Python 3.11+" (seccion 7 de CLAUDE.md).
+# TRY004: unica regla de tryceratops que se habilita, y solo para poder
+#   documentar con `# noqa: TRY004` las excepciones puntuales donde
+#   ValueError es la eleccion correcta (validacion de datos externos,
+#   no de argumentos de la API). El resto de TRY (p. ej. TRY003) se deja
+#   fuera a proposito: exigiria clases de excepcion custom para cada
+#   `raise`, en contra de la convencion de CLAUDE.md de fallar ruidosamente
+#   con mensajes descriptivos directos.
+select = ["E", "F", "B", "I", "UP", "TRY004"]
