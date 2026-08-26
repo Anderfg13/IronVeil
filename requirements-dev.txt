@@ -1,0 +1,3 @@
+# Dependencias para correr `pytest` desde la raiz sin levantar Docker.
+-r proxy/requirements.txt
+pytest==8.3.3
