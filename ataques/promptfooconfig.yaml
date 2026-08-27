@@ -1,0 +1,42 @@
+# Configuracion inicial de Promptfoo — SOLO prueba de humo.
+#
+# Apunta a un modelo Ollama instalado LOCALMENTE en esta maquina
+# (deepseek-coder:latest, ya presente al momento de escribir esto), NO al
+# stack Docker del equipo (que aun no esta listo) ni a los modelos reales
+# "soporte"/"rrhh". Sirve solo para verificar que Promptfoo esta instalado
+# y sabe hablar con Ollama antes de que el entorno compartido exista.
+#
+# Cuando el proxy este disponible, este archivo se reemplaza por una
+# version que apunte a http://localhost:8000/chat (el proxy), no
+# directamente a Ollama, para que las pruebas atraviesen la cadena de
+# mecanismos igual que un atacante real.
+#
+# Requiere Ollama corriendo localmente (ollama serve, o el .exe en Windows)
+# y el modelo ya descargado (`ollama pull deepseek-coder`).
+# Ejecutar con: npx promptfoo@latest eval -c ataques/promptfooconfig.yaml
+
+description: 'IronVeil — smoke test de Promptfoo contra Ollama local'
+
+prompts:
+  - '{{mensaje}}'
+
+providers:
+  - id: ollama:chat:deepseek-coder
+    config:
+      temperature: 0.2
+      num_predict: 100
+
+tests:
+  - description: 'Prueba de humo basica: el modelo responde algo no vacio'
+    vars:
+      mensaje: 'Responde unicamente con la palabra: OK'
+    assert:
+      - type: icontains
+        value: 'ok'
+
+  - description: 'Prueba de humo: el modelo puede seguir una instruccion simple'
+    vars:
+      mensaje: 'Cuanto es 2 + 2? Responde solo con el numero.'
+    assert:
+      - type: contains
+        value: '4'
