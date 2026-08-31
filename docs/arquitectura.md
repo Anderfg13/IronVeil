@@ -196,20 +196,30 @@ con `json.dumps(evento, ensure_ascii=False)` + salto de línea.
 
 ## 6. Estado actual de la implementación (a la fecha de este documento)
 
-- `proxy/main.py`: **passthrough puro**. Reenvía `POST /chat` a
-  `POST /api/chat` de Ollama sin pasar todavía por ningún mecanismo ni
-  escribir el log de la sección 5. Equivale a `C0` de facto.
-- `proxy/mecanismos.py`: las 5 funciones existen con la firma final y
-  comportamiento neutro (no bloquean, no modifican nada) — son stubs listos
-  para que cada mecanismo se implemente sin romper la integración. También
-  vive aquí `cargar_config()`, que sí es funcional.
-- `config.yaml`: las 5 banderas existen, todas en `false` (estado `C0`).
+- `proxy/main.py`: **filtrado ya cableado y funcional.** El endpoint `/chat`
+  aplica `filtrar()` en entrada y salida solo si `config["filtrado"]` es
+  `true`, y escribe el log JSONL de la sección 5 en
+  `resultados/<fecha>/eventos.jsonl` en cada petición. **`C1` (solo
+  filtrado) ya se ejecuta de punta a punta.** Los otros 4 mecanismos aún no
+  están cableados en la cadena: con sus banderas en `true` no tienen ningún
+  efecto todavía, porque `mecanismos.py` los implementa como stubs neutros.
+- `proxy/mecanismos.py`: `filtrar()` tiene lógica real (bloqueo en entrada
+  por patrones de prompt injection, redacción de credenciales canario en
+  salida). Las otras 4 funciones siguen con la firma final y comportamiento
+  neutro (no bloquean, no modifican nada) — stubs listos para que cada
+  mecanismo se implemente sin romper la integración. También vive aquí
+  `cargar_config()`, que es funcional.
+- `config.yaml`: las 5 banderas existen; el estado por defecto del repo es
+  todas en `false` (`C0`).
+- `proxy/Dockerfile` y `docker-compose.yml`: el build context es la raíz
+  del repo (antes solo copiaba `main.py`, sin `mecanismos.py`, y no podía
+  arrancar con lógica real). `config.yaml` se monta como volumen de solo
+  lectura para poder cambiar de configuración sin rebuild.
 - `ataques/vector5_carga.py` ya emite eventos JSONL con el esquema de 8
-  campos + `nivel_carga`, útil como referencia de implementación del logger
-  para cuando se cablee en `proxy/main.py`.
-- Pendiente: cablear la cadena de mecanismos y el logging real en el
-  endpoint `/chat` (fuera del alcance de este documento; ver reparto de
-  tareas en `CLAUDE.md`, sección 8).
+  campos + `nivel_carga`, útil como referencia de implementación del logger.
+- Pendiente: cablear `delimitación`, `clasificación`, `mínimo privilegio` y
+  `aprobación humana` en la cadena de `_revisar_entrada`/`_revisar_salida`
+  de `proxy/main.py` (ver reparto de tareas en `CLAUDE.md`, sección 8).
 
 ## 7. Documentos relacionados
 
