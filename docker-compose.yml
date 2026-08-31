@@ -36,12 +36,20 @@ services:
 
   proxy:
     build:
-      context: ./proxy
+      context: .
+      dockerfile: proxy/Dockerfile
     container_name: ironveil-proxy
     ports:
       - "${PROXY_PORT:-8000}:8000"
     environment:
       OLLAMA_BASE_URL: http://ollama:11434
+    volumes:
+      # Monta config.yaml (no se copia en la imagen) para poder cambiar de
+      # configuracion (C0..C6) con solo editar el archivo y reiniciar el
+      # contenedor, sin rebuild. resultados/ persiste los logs JSONL crudos
+      # en el host: son evidencia, no deben perderse si el contenedor cae.
+      - ./config.yaml:/app/config.yaml:ro
+      - ./resultados:/app/resultados
     depends_on:
       ollama-init:
         condition: service_completed_successfully

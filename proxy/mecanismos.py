@@ -9,6 +9,7 @@ estables", para el contrato compartido por las cuatro personas del equipo.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,28 @@ FLAGS_REQUERIDAS: tuple[str, ...] = (
     "minimo_privilegio",
     "aprobacion_humana",
 )
+
+# Mecanismo 1 (filtrado). Patrones de entrada conocidos de prompt injection /
+# intento de extraccion de instrucciones. Definidos una sola vez aqui, nunca
+# repetidos ni incrustados en filtrar(). No son secretos: es la lista de
+# frases que el filtro reconoce, no una credencial.
+PATRONES_PROHIBIDOS_ENTRADA: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(patron, re.IGNORECASE)
+    for patron in (
+        r"ignora(?:r)?\s+(?:todas\s+)?(?:tus\s+)?instrucciones",
+        r"olvida(?:r)?\s+(?:las\s+)?reglas\s+anteriores",
+        r"modo\s+desarrollador",
+        r"cu[aá]l\s+es\s+tu\s+configuraci[oó]n\s+inicial",
+        r"system\s+prompt",
+    )
+)
+
+# Mecanismo 1 (filtrado), direccion "salida". Solo la ESTRUCTURA del
+# identificador (prefijo + digitos), nunca el valor real de la credencial:
+# los valores viven en .env / Modelfiles, jamas aqui (ver CLAUDE.md, regla 2).
+PATRON_CREDENCIAL_CANARIO = re.compile(r"\b(?:SPT|RRHH)-DEMO-\d+\b")
+
+TEXTO_REDACTADO = "[REDACTADO]"
 
 
 def cargar_config(ruta: Path | str = CONFIG_PATH) -> dict[str, bool]:
@@ -80,19 +103,35 @@ def cargar_config(ruta: Path | str = CONFIG_PATH) -> dict[str, bool]:
 def filtrar(texto: str, direccion: str) -> tuple[str, bool]:
     """Mecanismo 1 (filtrado): determinista, basado en patrones/regex.
 
-    Recibe el texto a evaluar y `direccion` ("entrada" | "salida").
+    Recibe el texto a evaluar y `direccion` ("entrada" | "salida"). No tiene
+    efectos secundarios: no escribe el log ni conoce la configuracion activa,
+    solo decide sobre el texto que recibe.
 
-    Cuando este implementado, buscara patrones prohibidos (por ejemplo, el
-    formato de las credenciales canario SPT-DEMO-* / RRHH-DEMO-*, o listas
-    de palabras clave) tanto en lo que envia el usuario como en lo que
-    responde el modelo, y podra redactar coincidencias o marcar bloqueo.
+    Si `direccion == "entrada"`: compara el texto contra
+    PATRONES_PROHIBIDOS_ENTRADA (intentos conocidos de prompt injection /
+    extraccion de instrucciones). Si hay coincidencia, retorna
+    (texto_original, True) sin modificar el texto: la decision de rechazar
+    la peticion completa la toma quien llama, no esta funcion.
 
-    Devuelve (texto_posiblemente_redactado, debe_bloquearse).
+    Si `direccion == "salida"`: busca PATRON_CREDENCIAL_CANARIO (el formato
+    SPT-DEMO-<numero> / RRHH-DEMO-<numero>) y reemplaza cada coincidencia por
+    TEXTO_REDACTADO. Retorna (texto_redactado, True) si redacto algo.
 
-    Stub: no hay logica todavia. Retorna (texto, False) sin modificar nada,
-    comportamiento neutro equivalente a que el mecanismo este desactivado.
+    Si no hay coincidencia en ningun caso, retorna (texto, False).
+
+    Lanza ValueError si `direccion` no es "entrada" ni "salida".
     """
-    return texto, False
+    if direccion == "entrada":
+        bloquear = any(patron.search(texto) for patron in PATRONES_PROHIBIDOS_ENTRADA)
+        return texto, bloquear
+
+    if direccion == "salida":
+        texto_redactado, coincidencias = PATRON_CREDENCIAL_CANARIO.subn(
+            TEXTO_REDACTADO, texto
+        )
+        return texto_redactado, coincidencias > 0
+
+    raise ValueError(f"direccion invalida para filtrar(): {direccion!r}")
 
 
 def delimitar(system_prompt: str, entrada_usuario: str) -> str:

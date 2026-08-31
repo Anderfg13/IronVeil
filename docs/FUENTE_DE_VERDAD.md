@@ -159,4 +159,4 @@ Deben aparecer en el informe. Si una afirmación del video o del texto las contr
 
 | Fecha | Qué cambió | Quién | Entregables que hubo que actualizar |
 |---|---|---|---|
-| | | | |
+| 2026-08-30 | `filtrar()` implementada con lógica real (bloqueo en entrada por patrones de prompt injection, redacción de credenciales canario en salida) y cableada al endpoint `/chat`. **C1 (solo filtrado) ya se puede ejecutar de punta a punta.** Se corrigió además `proxy/Dockerfile` y `docker-compose.yml`: la imagen no copiaba `mecanismos.py` y por lo tanto no podía arrancar con esta lógica; ahora el build context es la raíz del repo y `config.yaml` se monta como volumen (para poder cambiar de configuración sin rebuild). | García (también tocó el cableado al pipeline, terreno habitual de Piedrahita — avisar) | `proxy/mecanismos.py`, `proxy/main.py`, `proxy/Dockerfile`, `docker-compose.yml`, `tests/test_mecanismos.py`, `tests/test_main.py` |
