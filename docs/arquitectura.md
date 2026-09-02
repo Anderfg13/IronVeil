@@ -196,19 +196,26 @@ con `json.dumps(evento, ensure_ascii=False)` + salto de línea.
 
 ## 6. Estado actual de la implementación (a la fecha de este documento)
 
-- `proxy/main.py`: **filtrado ya cableado y funcional.** El endpoint `/chat`
-  aplica `filtrar()` en entrada y salida solo si `config["filtrado"]` es
-  `true`, y escribe el log JSONL de la sección 5 en
-  `resultados/<fecha>/eventos.jsonl` en cada petición. **`C1` (solo
-  filtrado) ya se ejecuta de punta a punta.** Los otros 4 mecanismos aún no
-  están cableados en la cadena: con sus banderas en `true` no tienen ningún
-  efecto todavía, porque `mecanismos.py` los implementa como stubs neutros.
-- `proxy/mecanismos.py`: `filtrar()` tiene lógica real (bloqueo en entrada
-  por patrones de prompt injection, redacción de credenciales canario en
-  salida). Las otras 4 funciones siguen con la firma final y comportamiento
-  neutro (no bloquean, no modifican nada) — stubs listos para que cada
-  mecanismo se implemente sin romper la integración. También vive aquí
-  `cargar_config()`, que es funcional.
+- `proxy/main.py`: **filtrado y delimitación ya cableados y funcionales.** El
+  endpoint `/chat` aplica `filtrar()` en entrada y salida solo si
+  `config["filtrado"]` es `true`; tras el filtrado de entrada,
+  `_preparar_prompt()` envuelve el mensaje con el andamiaje de spotlighting
+  solo si `config["delimitacion"]` es `true` (con la bandera en `false` el
+  prompt viaja tal cual, passthrough idéntico a `C0`). El endpoint escribe
+  el log JSONL de la sección 5 en `resultados/<fecha>/eventos.jsonl` en cada
+  petición. **`C1` (solo filtrado) y `C2` (solo delimitación) ya se ejecutan
+  de punta a punta.** Los otros 3 mecanismos aún no están cableados en la
+  cadena: con sus banderas en `true` no tienen ningún efecto todavía, porque
+  `mecanismos.py` los implementa como stubs neutros.
+- `proxy/mecanismos.py`: `filtrar()` y `delimitar()` tienen lógica real.
+  `filtrar()` bloquea en entrada por patrones de prompt injection y redacta
+  credenciales canario en salida. `delimitar()` es una función pura que
+  envuelve la entrada del usuario entre delimitadores textuales explícitos
+  (spotlighting, arXiv:2403.14720); nunca bloquea, solo reestructura. Las
+  otras 3 funciones siguen con la firma final y comportamiento neutro (no
+  bloquean, no modifican nada) — stubs listos para que cada mecanismo se
+  implemente sin romper la integración. También vive aquí `cargar_config()`,
+  que es funcional.
 - `config.yaml`: las 5 banderas existen; el estado por defecto del repo es
   todas en `false` (`C0`).
 - `proxy/Dockerfile` y `docker-compose.yml`: el build context es la raíz
@@ -217,9 +224,9 @@ con `json.dumps(evento, ensure_ascii=False)` + salto de línea.
   lectura para poder cambiar de configuración sin rebuild.
 - `ataques/vector5_carga.py` ya emite eventos JSONL con el esquema de 8
   campos + `nivel_carga`, útil como referencia de implementación del logger.
-- Pendiente: cablear `delimitación`, `clasificación`, `mínimo privilegio` y
-  `aprobación humana` en la cadena de `_revisar_entrada`/`_revisar_salida`
-  de `proxy/main.py` (ver reparto de tareas en `CLAUDE.md`, sección 8).
+- Pendiente: cablear `clasificación`, `mínimo privilegio` y `aprobación
+  humana` en la cadena de `proxy/main.py` (ver reparto de tareas en
+  `CLAUDE.md`, sección 8).
 
 ## 7. Documentos relacionados
 
