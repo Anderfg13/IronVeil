@@ -1,8 +1,11 @@
 """Los 5 mecanismos defensivos de IronVeil y carga de configuracion.
 
-Implementados: filtrado (mecanismo 1), delimitacion (mecanismo 2).
-Aun stubs con comportamiento neutro (passthrough): clasificacion,
-minimo_privilegio, aprobacion_humana.
+Implementados: filtrado (mecanismo 1), delimitacion (mecanismo 2),
+clasificacion (mecanismo 3). clasificacion() todavia no esta cableada al
+endpoint /chat (eso lo hace Piedrahita esta misma semana, en paralelo);
+aqui solo vive la funcion, probada de forma aislada.
+Aun stubs con comportamiento neutro (passthrough): minimo_privilegio,
+aprobacion_humana.
 
 Cada funcion respeta la firma del contrato compartido; ver CLAUDE.md,
 seccion "Contratos estables", antes de tocar cualquier firma.
@@ -10,11 +13,16 @@ seccion "Contratos estables", antes de tocar cualquier firma.
 
 from __future__ import annotations
 
+import logging
+import os
 import re
 from pathlib import Path
 from typing import Any
 
+import httpx
 import yaml
+
+logger = logging.getLogger(__name__)
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
 
@@ -212,22 +220,117 @@ def delimitar(system_prompt: str, entrada_usuario: str) -> str:
     )
 
 
+# Mecanismo 3 (clasificacion). Mismo backend Ollama que usa el proxy para
+# soporte/rrhh, pero con un modelo distinto dedicado a juzgar seguridad de
+# contenido. Se repiten aqui (en vez de importarlas de proxy.main) para que
+# mecanismos.py siga siendo importable y testeable de forma aislada, sin
+# depender del modulo del endpoint ni de la app de FastAPI.
+OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
+MODELO_CLASIFICADOR: str = os.getenv("MODELO_CLASIFICADOR", "llama-guard3:1b")
+# Justificacion del valor en docs/FUENTE_DE_VERDAD.md, seccion 4: 10s es
+# generoso para un modelo de 1B en CPU y deja margen frente al
+# REQUEST_TIMEOUT (120s) del proxy para el resto de la peticion.
+TIMEOUT_CLASIFICADOR_S: float = float(os.getenv("TIMEOUT_CLASIFICADOR_S", "10"))
+
+# Llama Guard 3 distingue si esta evaluando lo que dijo el usuario o lo que
+# respondio el modelo (plantilla oficial, ver docstring de clasificar()).
+# Mapeo de nuestra `direccion` al rol de chat que hace que Ollama aplique
+# la plantilla correcta -- verificado manualmente contra
+# POST /api/chat con llama-guard3:1b, incluso para un turno "assistant"
+# solitario sin turno "user" previo (ver docs/FUENTE_DE_VERDAD.md, seccion 3).
+_ROL_LLAMA_GUARD: dict[str, str] = {"entrada": "user", "salida": "assistant"}
+
+
 def clasificar(texto: str, direccion: str) -> bool:
-    """Mecanismo 3 (clasificacion): probabilistico, basado en un modelo.
+    """Mecanismo 3 (clasificacion): probabilistico, via Llama Guard en Ollama.
 
-    Recibe el texto a evaluar y `direccion` ("entrada" | "salida").
-    True significa "unsafe".
+    Recibe el texto a evaluar y `direccion` ("entrada" | "salida"). True
+    significa "unsafe" (debe bloquearse); False significa "safe".
 
-    Cuando este implementado, llamara a un modelo clasificador (Llama
-    Guard) con timeout explicito. Ante timeout o respuesta malformada debe
-    hacer fail closed (devolver True), nunca dejar pasar por defecto.
+    Naturaleza: **probabilistico** (defensa "blanda"), a diferencia de
+    filtrar()/delimitar() (deterministas). Es la unica de las 3 funciones
+    implementadas hasta ahora que hace una llamada de red real.
 
-    Stub: no hay logica ni llamada a red todavia. Retorna siempre False.
-    Este False es el comportamiento neutro de "mecanismo desactivado", NO
-    el fail-open que tendria un timeout real una vez implementado; no
-    confundir uno con otro al leer los logs de esta semana.
+    Envia `texto` a MODELO_CLASIFICADOR via `POST {OLLAMA_BASE_URL}/api/chat`
+    como turno "user" si `direccion == "entrada"`, o "assistant" si
+    `direccion == "salida"` (formato oficial de Llama Guard 3:
+    https://developer.meta.com/ai/docs/model-cards-and-prompt-formats/llama-guard-3/
+    -- Ollama aplica la plantilla completa de categorias S1-S13
+    automaticamente segun el rol, no hay que reconstruirla a mano aqui).
+    Interpreta solo la primera linea de la respuesta ("safe" -> False,
+    "unsafe" -> True); ignora la segunda linea con las categorias violadas
+    (p. ej. "S1,S2"), porque esta funcion solo promete un bool.
+
+    **Fail closed, siempre, nunca dejar pasar por defecto:**
+    - Timeout (TIMEOUT_CLASIFICADOR_S) o error de conexion -> True.
+    - Respuesta que no empieza por "safe" ni "unsafe" -> True, con un
+      logger.error() describiendo la respuesta cruda recibida (para poder
+      diagnosticar sin adivinar que paso).
+
+    Sin efectos secundarios de logging del experimento: no escribe el JSONL
+    del esquema de log, igual que filtrar()/delimitar() -- eso es trabajo
+    del endpoint. A diferencia de esas dos, SI importa medir su latencia
+    (campo extendido `latencia_clasificador_ms`, ver docs/arquitectura.md
+    seccion 5): quien cablee esta funcion al endpoint debe medir el tiempo
+    de ESTA llamada con `time.perf_counter()` antes/despues de invocarla,
+    igual que main.py ya mide `latencia_ms` alrededor de todo /chat. No se
+    puede devolver la latencia como parte del resultado sin romper la firma
+    congelada `-> bool` del contrato compartido.
     """
-    return False
+    if direccion not in _ROL_LLAMA_GUARD:
+        raise ValueError(f"direccion invalida para clasificar(): {direccion!r}")
+
+    payload = {
+        "model": MODELO_CLASIFICADOR,
+        "messages": [{"role": _ROL_LLAMA_GUARD[direccion], "content": texto}],
+        "stream": False,
+    }
+    try:
+        with httpx.Client(timeout=TIMEOUT_CLASIFICADOR_S) as client:
+            respuesta = client.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload)
+            respuesta.raise_for_status()
+    except httpx.TimeoutException:
+        logger.error(
+            "clasificar(): timeout de %.1fs esperando a %s; fail closed (unsafe).",
+            TIMEOUT_CLASIFICADOR_S,
+            MODELO_CLASIFICADOR,
+        )
+        return True
+    except httpx.HTTPError as exc:
+        logger.error(
+            "clasificar(): error llamando a %s: %s; fail closed (unsafe).",
+            MODELO_CLASIFICADOR,
+            exc,
+        )
+        return True
+
+    contenido = respuesta.json().get("message", {}).get("content", "")
+    return _interpretar_respuesta_llama_guard(contenido)
+
+
+def _interpretar_respuesta_llama_guard(contenido: str) -> bool:
+    """Interpreta la respuesta cruda de Llama Guard 3 como unsafe (True) / safe (False).
+
+    La primera linea no vacia debe ser exactamente "safe" o "unsafe" (formato
+    oficial, sin importar mayusculas/espacios extra). Cualquier otra cosa es
+    una respuesta malformada: se trata como "unsafe" (fail closed) en vez de
+    asumir un booleano por defecto silencioso, y se registra un error.
+    """
+    lineas = contenido.strip().splitlines()
+    primera_linea = lineas[0].strip().lower() if lineas else ""
+
+    if primera_linea == "safe":
+        return False
+    if primera_linea == "unsafe":
+        return True
+
+    logger.error(
+        "clasificar(): respuesta inesperada de %s (no empieza por 'safe' ni "
+        "'unsafe'): %r; fail closed (unsafe).",
+        MODELO_CLASIFICADOR,
+        contenido,
+    )
+    return True
 
 
 def validar_privilegio(modelo_destino: str, texto_entrada: str) -> bool:

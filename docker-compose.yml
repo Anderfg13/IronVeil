@@ -29,6 +29,7 @@ services:
       BASE_MODEL: ${BASE_MODEL:-llama3.2}
       SPT_SECRET: ${SPT_SECRET}
       RRHH_SECRET: ${RRHH_SECRET}
+      MODELO_CLASIFICADOR: ${MODELO_CLASIFICADOR:-llama-guard3:1b}
     networks:
       - ironveil-net
     entrypoint: ["/bin/sh", "/init.sh"]
@@ -43,6 +44,7 @@ services:
       - "${PROXY_PORT:-8000}:8000"
     environment:
       OLLAMA_BASE_URL: http://ollama:11434
+      MODELO_CLASIFICADOR: ${MODELO_CLASIFICADOR:-llama-guard3:1b}
     volumes:
       # Monta config.yaml (no se copia en la imagen) para poder cambiar de
       # configuracion (C0..C6) con solo editar el archivo y reiniciar el
