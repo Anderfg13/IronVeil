@@ -8,10 +8,9 @@ aprobacion_humana. Cada paso se ejecuta solo si su bandera esta activa;
 el primer bloqueo corta la cadena. Ver CLAUDE.md, seccion 3.
 
 Los mecanismos que pueden BLOQUEAR se recorren como una lista ordenada
-(_CADENA_MECANISMOS), no como if anidados: agregar minimo_privilegio y
-aprobacion_humana es anadir una tupla, sin tocar el endpoint. La
-delimitacion no bloquea (reescribe el prompt) y se aplica aparte, en
-_preparar_prompt().
+(_CADENA_MECANISMOS), no como if anidados: agregar aprobacion_humana la
+proxima semana es anadir una tupla, sin tocar el endpoint. La delimitacion
+no bloquea (reescribe el prompt) y se aplica aparte, en _preparar_prompt().
 """
 
 from __future__ import annotations
@@ -131,20 +130,23 @@ class _MetricasCadena:
     latencia_clasificador_ms: int = 0
 
 
-# Un paso de la cadena: recibe (texto, direccion, metricas) y devuelve
-# (texto_posiblemente_modificado, bloqueado). direccion es "entrada" | "salida".
-PasoCadena = Callable[[str, str, _MetricasCadena], Awaitable[tuple[str, bool]]]
+# Un paso de la cadena: recibe (texto, direccion, modelo, metricas) y
+# devuelve (texto_posiblemente_modificado, bloqueado). direccion es
+# "entrada" | "salida". `modelo` se agrego para minimo_privilegio (mecanismo
+# 4), que necesita saber a que modelo va dirigida la peticion; los pasos
+# que no lo usan (filtrado, clasificacion) simplemente lo ignoran.
+PasoCadena = Callable[[str, str, str, _MetricasCadena], Awaitable[tuple[str, bool]]]
 
 
 async def _paso_filtrado(
-    texto: str, direccion: str, metricas: _MetricasCadena
+    texto: str, direccion: str, modelo: str, metricas: _MetricasCadena
 ) -> tuple[str, bool]:
     """Mecanismo 1. En entrada bloquea por patron; en salida redacta la credencial."""
     return mecanismos.filtrar(texto, direccion)
 
 
 async def _paso_clasificacion(
-    texto: str, direccion: str, metricas: _MetricasCadena
+    texto: str, direccion: str, modelo: str, metricas: _MetricasCadena
 ) -> tuple[str, bool]:
     """Mecanismo 3. Llama a Llama Guard y mide su latencia.
 
@@ -163,18 +165,39 @@ async def _paso_clasificacion(
     return texto, inseguro
 
 
+async def _paso_minimo_privilegio(
+    texto: str, direccion: str, modelo: str, metricas: _MetricasCadena
+) -> tuple[str, bool]:
+    """Mecanismo 4. Detecta una credencial de otro dominio dirigida a `modelo`.
+
+    Solo actua en "entrada": no existe un analogo de "salida" para este
+    mecanismo (mecanismos.validar_privilegio() no toma `direccion`, ver su
+    docstring). En "salida" nunca bloquea, para que la cadena de salida
+    (filtrado/clasificacion) siga funcionando igual que hoy.
+    """
+    if direccion != "entrada":
+        return texto, False
+    return texto, mecanismos.validar_privilegio(modelo, texto)
+
+
 # Cadena de mecanismos que pueden BLOQUEAR, en el orden fijo del proyecto
 # (CLAUDE.md seccion 3). Se recorre como lista, no como if anidados: agregar
-# minimo_privilegio y aprobacion_humana las proximas semanas es anadir una
-# tupla (clave_de_config, funcion_paso) aqui, sin tocar el endpoint. La
-# clave de config es tambien el nombre que va a `mecanismo_que_bloqueo`.
+# aprobacion_humana la proxima semana es anadir una tupla
+# (clave_de_config, funcion_paso) aqui, sin tocar el endpoint. La clave de
+# config es tambien el nombre que va a `mecanismo_que_bloqueo`.
 #
 # Orden y justificacion:
-#   1. filtrado      - regex local en memoria, coste ~0. Primero, para
-#                      descartar lo obvio sin gastar nada.
-#   2. clasificacion - llamada de red a Llama Guard (modelo de 1B, cientos de
-#                      ms). Despues: como "el primer bloqueo gana", si
-#                      filtrado ya corto la cadena nos ahorramos este coste.
+#   1. filtrado           - regex local en memoria, coste ~0. Primero, para
+#                           descartar lo obvio sin gastar nada.
+#   2. clasificacion      - llamada de red a Llama Guard (modelo de 1B,
+#                           cientos de ms). Despues: como "el primer bloqueo
+#                           gana", si filtrado ya corto la cadena nos
+#                           ahorramos este coste.
+#   3. minimo_privilegio  - regex local en memoria, coste ~0 igual que
+#                           filtrado. Va despues de clasificacion (no antes)
+#                           porque el orden global de mecanismos es fijo
+#                           (CLAUDE.md seccion 1), no se reordena por costo
+#                           dentro de los deterministas.
 #
 # delimitacion (mecanismo 2 en el orden global) NO esta aqui: no bloquea,
 # solo reescribe el prompt hacia Ollama, y ademas la clasificacion debe
@@ -184,12 +207,14 @@ async def _paso_clasificacion(
 _CADENA_MECANISMOS: tuple[tuple[str, PasoCadena], ...] = (
     ("filtrado", _paso_filtrado),
     ("clasificacion", _paso_clasificacion),
+    ("minimo_privilegio", _paso_minimo_privilegio),
 )
 
 
 async def _ejecutar_cadena(
     texto: str,
     direccion: str,
+    modelo: str,
     config: dict[str, bool],
     metricas: _MetricasCadena,
 ) -> tuple[str, str | None]:
@@ -202,7 +227,7 @@ async def _ejecutar_cadena(
     for clave, paso in _CADENA_MECANISMOS:
         if not config[clave]:
             continue
-        texto, bloqueado = await paso(texto, direccion, metricas)
+        texto, bloqueado = await paso(texto, direccion, modelo, metricas)
         if bloqueado:
             return texto, clave
     return texto, None
@@ -322,7 +347,7 @@ async def chat(request: ChatRequest) -> dict[str, Any]:
     metricas = _MetricasCadena()
 
     mensaje, mecanismo_bloqueo = await _ejecutar_cadena(
-        request.mensaje, "entrada", config, metricas
+        request.mensaje, "entrada", request.modelo, config, metricas
     )
     respuesta: dict[str, Any] | None = None
 
@@ -331,7 +356,7 @@ async def chat(request: ChatRequest) -> dict[str, Any]:
         respuesta = await _llamar_ollama(request.modelo, prompt_ollama)
         contenido = respuesta.get("message", {}).get("content", "")
         contenido, mecanismo_bloqueo = await _ejecutar_cadena(
-            contenido, "salida", config, metricas
+            contenido, "salida", request.modelo, config, metricas
         )
         if mecanismo_bloqueo is not None:
             respuesta["message"]["content"] = contenido

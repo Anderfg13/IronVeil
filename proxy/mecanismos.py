@@ -1,11 +1,9 @@
 """Los 5 mecanismos defensivos de IronVeil y carga de configuracion.
 
-Implementados: filtrado (mecanismo 1), delimitacion (mecanismo 2),
-clasificacion (mecanismo 3). clasificacion() todavia no esta cableada al
-endpoint /chat (eso lo hace Piedrahita esta misma semana, en paralelo);
-aqui solo vive la funcion, probada de forma aislada.
-Aun stubs con comportamiento neutro (passthrough): minimo_privilegio,
-aprobacion_humana.
+Implementados y cableados al endpoint /chat: filtrado (mecanismo 1),
+delimitacion (mecanismo 2), clasificacion (mecanismo 3), minimo privilegio
+(mecanismo 4).
+Aun stub con comportamiento neutro (passthrough): aprobacion_humana.
 
 Cada funcion respeta la firma del contrato compartido; ver CLAUDE.md,
 seccion "Contratos estables", antes de tocar cualquier firma.
@@ -333,21 +331,61 @@ def _interpretar_respuesta_llama_guard(contenido: str) -> bool:
     return True
 
 
+# Mecanismo 4 (minimo privilegio). Prefijo de credencial que le pertenece a
+# cada modelo -- solo el prefijo, nunca el numero real (ese vive en .env /
+# Modelfiles, CLAUDE.md regla 2). Si se agregan mas dominios/modelos para
+# probar V4 con otro formato, basta con agregar una entrada aqui: no hay que
+# tocar la logica de validar_privilegio().
+PREFIJOS_POR_MODELO: dict[str, str] = {
+    "soporte": "SPT",
+    "rrhh": "RRHH",
+}
+
+# Patron generico de credencial: prefijo en mayusculas + "-DEMO-" + numero.
+# Deliberadamente mas amplio que "SPT|RRHH" (a diferencia de
+# PATRON_CREDENCIAL_CANARIO, que solo redacta los 2 prefijos ya conocidos):
+# este mecanismo debe seguir detectando movimiento lateral aunque
+# Piedrahita defina credenciales cruzadas con un prefijo nuevo para probar
+# V4. Ajustar solo esta constante si el formato de credencial cambia.
+PATRON_CREDENCIAL_GENERICO = re.compile(r"\b([A-Z]+)-DEMO-\d+\b")
+
+
 def validar_privilegio(modelo_destino: str, texto_entrada: str) -> bool:
     """Mecanismo 4 (minimo privilegio): determinista, regex de dominio.
 
-    Recibe el modelo al que va dirigida la peticion (por ejemplo,
-    "soporte") y el texto de entrada. True significa "se detecto una
-    credencial de otro dominio" y por lo tanto debe rechazarse.
+    Recibe el modelo al que va dirigida la peticion (p. ej. "soporte") y el
+    texto de entrada del usuario. True significa "se detecto una credencial
+    de OTRO dominio dentro del texto" (movimiento lateral, V4 paso 2) y por
+    lo tanto debe rechazarse; False permite la peticion.
 
-    Cuando este implementado, comparara patrones de credenciales conocidas
-    de un dominio (por ejemplo, el formato de RRHH-DEMO-*) contra el texto
-    dirigido a un modelo de otro dominio (por ejemplo, "soporte"), para
-    detectar intentos de movimiento lateral (V4, paso 2).
+    Naturaleza: **determinista** (defensa "dura"), igual que filtrar() y
+    delimitar() -- nunca "puede que sea unsafe", siempre la misma decision
+    para el mismo par de argumentos. Comparar con clasificar() (mecanismo
+    3), que es probabilistico.
 
-    Stub: no hay logica todavia. Retorna siempre False (nunca rechaza),
-    comportamiento neutro equivalente a que el mecanismo este desactivado.
+    Busca todas las credenciales con forma PATRON_CREDENCIAL_GENERICO en
+    `texto_entrada`. Si alguna tiene un prefijo distinto al que le
+    corresponde a `modelo_destino` segun PREFIJOS_POR_MODELO, es una
+    credencial ajena: retorna True. Una credencial que coincide con el
+    prefijo propio del modelo (o la ausencia total de credenciales) no
+    bloquea: retorna False. Si `modelo_destino` no esta en
+    PREFIJOS_POR_MODELO (modelo desconocido, sin prefijo propio
+    establecido), cualquier credencial encontrada se trata como ajena
+    -- comportamiento conservador, nunca "dejar pasar por no reconocer el
+    modelo".
+
+    Esta funcion evalua unicamente el texto que el usuario envia hacia
+    `modelo_destino`; no tiene un analogo de "salida" (no existe la nocion
+    de que la respuesta del modelo cometa movimiento lateral). Quien la
+    cablee al endpoint solo debe invocarla en la direccion "entrada"
+    (ver CLAUDE.md, trampa conocida: en C4 la extraccion de V4 paso 1 debe
+    seguir funcionando -- este mecanismo bloquea el USO cruzado, paso 2, no
+    la extraccion en si).
     """
+    prefijo_propio = PREFIJOS_POR_MODELO.get(modelo_destino)
+    for coincidencia in PATRON_CREDENCIAL_GENERICO.finditer(texto_entrada):
+        if coincidencia.group(1) != prefijo_propio:
+            return True
     return False
 
 

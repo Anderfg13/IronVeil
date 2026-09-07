@@ -30,29 +30,38 @@ a la vez, `C6` los cinco activos) cambiando únicamente `config.yaml`.
         │   cargar_config()  ──►  banderas de config.yaml         │
         │                                                         │
         │   ┌─────────────────────────────────────────────────┐  │
-        │   │  Cadena de mecanismos (orden fijo, en bucle)     │  │
+        │   │  Cadena de mecanismos que PUEDEN BLOQUEAR        │  │
+        │   │  (orden fijo, en bucle; se recorre en ENTRADA    │  │
+        │   │  y otra vez en SALIDA)                           │  │
         │   │                                                   │  │
-        │   │   1. filtrado        (entrada)                   │  │
-        │   │   2. delimitación    (reestructura el prompt)    │  │
-        │   │   3. clasificación   (entrada, Llama Guard)       │  │
-        │   │   4. mínimo privilegio                           │  │
-        │   │   5. aprobación humana + rate limit              │  │
+        │   │   1. filtrado           (patrones/regex)         │  │
+        │   │   2. clasificación      (Llama Guard)             │  │
+        │   │   3. mínimo privilegio  (credencial de otro       │  │
+        │   │                          dominio; solo entrada)   │  │
+        │   │   4. aprobación humana  (aún no cableada, stub)   │  │
         │   │                                                   │  │
         │   │   primer mecanismo que bloquea → corta la cadena │  │
         │   └─────────────────────────────────────────────────┘  │
         │                                │                        │
-        │                    ¿algún mecanismo bloqueó?            │
+        │                    ¿algún mecanismo bloqueó (entrada)?  │
         │                        │              │                 │
         │                       sí              no                │
-        │                        │              │                 │
-        │                        ▼              ▼                 │
-        │              responde "bloqueado"   llamada a Ollama    │
+        │                        │              ▼                 │
+        │                        │      delimitación (reestructura│
+        │                        │       el prompt; no bloquea)   │
         │                        │              │                 │
         │                        │              ▼                 │
-        │                        │      filtrado (salida)         │
-        │                        │      clasificación (salida)    │
+        │                        │        llamada a Ollama        │
         │                        │              │                 │
-        │                        ▼              ▼                 │
+        │                        │              ▼                 │
+        │                        │      cadena de nuevo (salida): │
+        │                        │      filtrado, clasificación   │
+        │                        ▼              │                 │
+        │              responde "bloqueado"     ▼                 │
+        │                        │      contenido final           │
+        │                        │      (redactado/retenido si    │
+        │                        │       algo bloqueó en salida)  │
+        │                        ▼              │                 │
         │              ┌─────────────────────────────────┐        │
         │              │  logging JSONL de cada evento    │        │
         │              └─────────────────────────────────┘        │
@@ -82,16 +91,28 @@ solo si el experimento lo exige de forma explícita (regla 3 de `CLAUDE.md`).
    `cargar_config()`, que usa `yaml.safe_load()` y falla ruidosamente si
    falta alguna de las 5 banderas o el archivo no existe — nunca un default
    silencioso.
-3. **Cadena de mecanismos.** El endpoint recorre una lista de pasos (no un
-   árbol de `if` anidados), en el orden fijo: filtrado → delimitación →
-   clasificación → mínimo privilegio → aprobación humana. Solo se ejecutan
-   los mecanismos cuya bandera esté en `true`; los demás son no-ops.
+3. **Cadena de mecanismos que pueden bloquear.** El endpoint recorre una
+   lista de pasos (no un árbol de `if` anidados) con los mecanismos que
+   pueden cortar la petición: filtrado → clasificación → mínimo privilegio.
+   Solo se ejecutan los que tengan su bandera en `true`; los demás son
+   no-ops. **`filtrado → delimitación → clasificación → mínimo privilegio →
+   aprobación humana` es el orden fijo conceptual de los 5 mecanismos**
+   (CLAUDE.md, sección 1; es lo que determina, por ejemplo, qué `Cn` le
+   corresponde a cada uno) — no una secuencia de ejecución literal:
+   `delimitación` no bloquea, así que no vive en esta lista y corre en un
+   momento distinto (paso 5). Aprobación humana (mecanismo 5) tampoco está
+   todavía en esta lista: sigue como stub, ver sección 6.
 4. **Primer bloqueo gana.** En cuanto un mecanismo decide bloquear, la cadena
    se corta: no se evalúan los mecanismos restantes ni se llama a Ollama. Esa
    decisión queda en el campo `mecanismo_que_bloqueo` del log.
-5. **Llamada a Ollama (si nada bloqueó).** El proxy reenvía la petición
-   (posiblemente reescrita por la delimitación) a `POST /api/chat` del
-   backend interno, dirigida al modelo (`soporte` o `rrhh`) indicado.
+5. **Delimitación y llamada a Ollama (si nada bloqueó).** Sobre el texto que
+   sobrevivió al paso 3, el proxy aplica `delimitar()` (si `delimitacion` es
+   `true`) justo antes de enviarlo — así el mecanismo 2 nunca ve un texto
+   que ya fue descartado, y la clasificación del paso 3 siempre evalúa el
+   mensaje original del usuario, nunca el ya envuelto en delimitadores
+   (ver `CONFLICTOS_RESUELTOS.md`). Con el prompt resultante, reenvía la
+   petición a `POST /api/chat` del backend interno, dirigida al modelo
+   (`soporte` o `rrhh`) indicado.
 6. **Filtros de salida.** La respuesta del modelo pasa de nuevo por filtrado
    y clasificación, esta vez en dirección `"salida"`, antes de devolverse al
    cliente.
@@ -196,22 +217,25 @@ con `json.dumps(evento, ensure_ascii=False)` + salto de línea.
 
 ## 6. Estado actual de la implementación (a la fecha de este documento)
 
-- `proxy/main.py`: **filtrado, delimitación y clasificación ya cableados y
-  funcionales.** Los mecanismos que pueden bloquear se recorren como una
-  lista ordenada (`_CADENA_MECANISMOS`), no como `if` anidados: hoy contiene
-  `("filtrado", …)` y `("clasificacion", …)`, y agregar `minimo_privilegio` /
-  `aprobacion_humana` será añadir una tupla. `_ejecutar_cadena()` la recorre
-  en entrada y en salida, salta los pasos con bandera en `false` y corta al
-  primer bloqueo. La delimitación **no** está en esa lista (no bloquea): se
-  aplica aparte en `_preparar_prompt()`, sobre el texto que salió de la
-  cadena de entrada, justo antes de llamar a Ollama — así la clasificación
-  nunca ve el texto ya envuelto en delimitadores (ver
-  `CONFLICTOS_RESUELTOS.md`). El endpoint escribe el log JSONL de la sección
-  5 en cada petición; añade `latencia_clasificador_ms` siempre que
-  `config["clasificacion"]` sea `true`. **`C1`, `C2` y `C3` ya se ejecutan de
-  punta a punta.** `minimo_privilegio` y `aprobacion_humana` aún no están
-  cableados: con sus banderas en `true` no tienen ningún efecto todavía,
-  porque `mecanismos.py` los implementa como stubs neutros.
+- `proxy/main.py`: **filtrado, delimitación, clasificación y mínimo
+  privilegio ya cableados y funcionales.** Los mecanismos que pueden
+  bloquear se recorren como una lista ordenada (`_CADENA_MECANISMOS`), no
+  como `if` anidados: hoy contiene `("filtrado", …)`, `("clasificacion",
+  …)` y `("minimo_privilegio", …)`; agregar `aprobacion_humana` será añadir
+  una tupla más. `_ejecutar_cadena()` la recorre en entrada y en salida,
+  salta los pasos con bandera en `false` y corta al primer bloqueo. La
+  delimitación **no** está en esa lista (no bloquea): se aplica aparte en
+  `_preparar_prompt()`, sobre el texto que salió de la cadena de entrada,
+  justo antes de llamar a Ollama — así la clasificación nunca ve el texto
+  ya envuelto en delimitadores (ver `CONFLICTOS_RESUELTOS.md`). Mínimo
+  privilegio solo actúa en `direccion="entrada"` (no tiene análogo de
+  salida, ver docstring de `validar_privilegio()`): en `"salida"` su paso
+  siempre retorna sin bloquear. El endpoint escribe el log JSONL de la
+  sección 5 en cada petición; añade `latencia_clasificador_ms` siempre que
+  `config["clasificacion"]` sea `true`. **`C1`, `C2`, `C3` y `C4` ya se
+  ejecutan de punta a punta.** Solo `aprobacion_humana` aún no está
+  cableada: con su bandera en `true` no tiene ningún efecto todavía, porque
+  `mecanismos.py` la implementa como stub neutro.
   - Un bloqueo en **entrada** responde `400` con un detalle genérico y no
     llega a consultar el modelo principal (ahorro de cómputo). Un bloqueo en
     **salida** responde `200` pero con el contenido del modelo sustituido:
@@ -219,20 +243,24 @@ con `json.dumps(evento, ensure_ascii=False)` + salto de línea.
     devuelve un `bool`, reemplaza toda la respuesta por un aviso genérico
     (`_CONTENIDO_RETENIDO`). Mismo patrón en ambos: la salida cruda del
     modelo nunca sale al cliente.
-- `proxy/mecanismos.py`: `filtrar()`, `delimitar()` y `clasificar()` tienen
-  lógica real. `filtrar()` bloquea en entrada por patrones de prompt
-  injection y redacta credenciales canario en salida. `delimitar()` es una
-  función pura que envuelve la entrada del usuario entre delimitadores
-  textuales explícitos (spotlighting, arXiv:2403.14720); nunca bloquea,
-  solo reestructura. `clasificar()` llama a `llama-guard3:1b` en Ollama
-  (`POST /api/chat`, rol `user` para `direccion="entrada"` o `assistant`
-  para `"salida"`) e interpreta `safe`/`unsafe`; falla cerrado (`True`) ante
-  timeout, error de red o respuesta malformada — a diferencia de las otras
-  2, es la única probabilística y con red real. Las otras 2 funciones
-  (`validar_privilegio`, `enviar_a_revision`) siguen con la firma final y
-  comportamiento neutro — stubs listos para que cada mecanismo se
-  implemente sin romper la integración. También vive aquí `cargar_config()`,
-  que es funcional.
+- `proxy/mecanismos.py`: `filtrar()`, `delimitar()`, `clasificar()` y
+  `validar_privilegio()` tienen lógica real. `filtrar()` bloquea en entrada
+  por patrones de prompt injection y redacta credenciales canario en
+  salida. `delimitar()` es una función pura que envuelve la entrada del
+  usuario entre delimitadores textuales explícitos (spotlighting,
+  arXiv:2403.14720); nunca bloquea, solo reestructura. `clasificar()` llama
+  a `llama-guard3:1b` en Ollama (`POST /api/chat`, rol `user` para
+  `direccion="entrada"` o `assistant` para `"salida"`) e interpreta
+  `safe`/`unsafe`; falla cerrado (`True`) ante timeout, error de red o
+  respuesta malformada — a diferencia de las otras 3, es la única
+  probabilística y con red real. `validar_privilegio()` es determinista
+  (regex de dominio, `PATRON_CREDENCIAL_GENERICO`): detecta si el texto
+  dirigido a `modelo_destino` trae una credencial cuyo prefijo pertenece a
+  otro modelo (`PREFIJOS_POR_MODELO`), señal de movimiento lateral (V4 paso
+  2). Un modelo destino desconocido se trata de forma conservadora: toda
+  credencial encontrada se considera ajena. La única función que sigue como
+  stub con comportamiento neutro es `enviar_a_revision()`. También vive
+  aquí `cargar_config()`, que es funcional.
 - `config.yaml`: las 5 banderas existen; el estado por defecto del repo es
   todas en `false` (`C0`).
 - `proxy/Dockerfile` y `docker-compose.yml`: el build context es la raíz
@@ -243,9 +271,8 @@ con `json.dumps(evento, ensure_ascii=False)` + salto de línea.
   campos + `nivel_carga`, útil como referencia de implementación del logger.
 - `ollama/init.sh` ahora también descarga `MODELO_CLASIFICADOR`
   (`llama-guard3:1b` por defecto, `.env.example`) junto con `BASE_MODEL`.
-- Pendiente: cablear `mínimo privilegio` y `aprobación humana` en
-  `_CADENA_MECANISMOS` de `proxy/main.py` (ver reparto de tareas en
-  `CLAUDE.md`, sección 8).
+- Pendiente: cablear `aprobación humana` en `_CADENA_MECANISMOS` de
+  `proxy/main.py` (ver reparto de tareas en `CLAUDE.md`, sección 8).
 
 ## 7. Documentos relacionados
 
