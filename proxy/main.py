@@ -6,6 +6,12 @@ identico al de la semana anterior. Cadena de mecanismos, orden fijo:
 filtrado -> delimitacion -> clasificacion -> minimo_privilegio ->
 aprobacion_humana. Cada paso se ejecuta solo si su bandera esta activa;
 el primer bloqueo corta la cadena. Ver CLAUDE.md, seccion 3.
+
+Los mecanismos que pueden BLOQUEAR se recorren como una lista ordenada
+(_CADENA_MECANISMOS), no como if anidados: agregar minimo_privilegio y
+aprobacion_humana es anadir una tupla, sin tocar el endpoint. La
+delimitacion no bloquea (reescribe el prompt) y se aplica aparte, en
+_preparar_prompt().
 """
 
 from __future__ import annotations
@@ -14,12 +20,15 @@ import json
 import logging
 import os
 import time
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import httpx
 from fastapi import FastAPI, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 import proxy.mecanismos as mecanismos
@@ -29,6 +38,18 @@ logger = logging.getLogger(__name__)
 OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
 REQUEST_TIMEOUT: float = float(os.getenv("PROXY_REQUEST_TIMEOUT", "120"))
 RESULTADOS_DIR: Path = Path(__file__).resolve().parent.parent / "resultados"
+
+# Mensajes genericos hacia el cliente cuando la cadena bloquea. Genericos a
+# proposito: no revelan que mecanismo actuo ni por que (esa informacion queda
+# solo en el log del experimento). Un bloqueo en ENTRADA responde 400 con
+# _DETALLE_BLOQUEO; un bloqueo en SALIDA responde 200 pero con el contenido
+# del modelo sustituido por _CONTENIDO_RETENIDO (mismo patron que el filtrado
+# de salida, que ya devuelve 200 con la credencial redactada).
+_DETALLE_BLOQUEO: str = "Solicitud bloqueada por los mecanismos de defensa activos."
+_CONTENIDO_RETENIDO: str = (
+    "La respuesta del asistente fue retenida por los mecanismos de seguridad "
+    "activos."
+)
 
 # Mecanismo 2 (delimitacion). Texto que el proxy coloca en el bloque
 # [INSTRUCCIONES DEL SISTEMA] del andamiaje de spotlighting.
@@ -97,25 +118,93 @@ def _mecanismos_activos(config: dict[str, bool]) -> list[str]:
     return [nombre for nombre in mecanismos.FLAGS_REQUERIDAS if config[nombre]]
 
 
-def _revisar_entrada(texto: str, config: dict[str, bool]) -> tuple[str, str | None]:
-    """Aplica los mecanismos de entrada activos, en el orden fijo del proyecto.
+@dataclass
+class _MetricasCadena:
+    """Metricas que la cadena acumula y el evento de log necesita al final.
 
-    Devuelve (texto, mecanismo_que_bloqueo); mecanismo_que_bloqueo es None si
-    ningun mecanismo bloqueo la peticion.
+    `latencia_clasificador_ms`: suma del tiempo pasado dentro de
+    `mecanismos.clasificar()` en esta peticion (entrada + salida). Es el
+    unico dato que un paso no puede devolver por su firma congelada
+    (`clasificar() -> bool`), asi que se acumula aqui por referencia.
     """
-    if config["filtrado"]:
-        texto, bloqueado = mecanismos.filtrar(texto, "entrada")
+
+    latencia_clasificador_ms: int = 0
+
+
+# Un paso de la cadena: recibe (texto, direccion, metricas) y devuelve
+# (texto_posiblemente_modificado, bloqueado). direccion es "entrada" | "salida".
+PasoCadena = Callable[[str, str, _MetricasCadena], Awaitable[tuple[str, bool]]]
+
+
+async def _paso_filtrado(
+    texto: str, direccion: str, metricas: _MetricasCadena
+) -> tuple[str, bool]:
+    """Mecanismo 1. En entrada bloquea por patron; en salida redacta la credencial."""
+    return mecanismos.filtrar(texto, direccion)
+
+
+async def _paso_clasificacion(
+    texto: str, direccion: str, metricas: _MetricasCadena
+) -> tuple[str, bool]:
+    """Mecanismo 3. Llama a Llama Guard y mide su latencia.
+
+    `clasificar()` es sincrona y hace una llamada de red (modelo de 1B): se
+    ejecuta en un hilo aparte con run_in_threadpool para no bloquear el event
+    loop mientras el V5 dispara rafagas concurrentes. En salida, si el
+    veredicto es unsafe, sustituye el texto del modelo por _CONTENIDO_RETENIDO
+    para que el cliente nunca lo vea (en entrada no hay texto que devolver:
+    quien llama responde 400).
+    """
+    inicio = time.perf_counter()
+    inseguro = await run_in_threadpool(mecanismos.clasificar, texto, direccion)
+    metricas.latencia_clasificador_ms += int((time.perf_counter() - inicio) * 1000)
+    if inseguro and direccion == "salida":
+        return _CONTENIDO_RETENIDO, True
+    return texto, inseguro
+
+
+# Cadena de mecanismos que pueden BLOQUEAR, en el orden fijo del proyecto
+# (CLAUDE.md seccion 3). Se recorre como lista, no como if anidados: agregar
+# minimo_privilegio y aprobacion_humana las proximas semanas es anadir una
+# tupla (clave_de_config, funcion_paso) aqui, sin tocar el endpoint. La
+# clave de config es tambien el nombre que va a `mecanismo_que_bloqueo`.
+#
+# Orden y justificacion:
+#   1. filtrado      - regex local en memoria, coste ~0. Primero, para
+#                      descartar lo obvio sin gastar nada.
+#   2. clasificacion - llamada de red a Llama Guard (modelo de 1B, cientos de
+#                      ms). Despues: como "el primer bloqueo gana", si
+#                      filtrado ya corto la cadena nos ahorramos este coste.
+#
+# delimitacion (mecanismo 2 en el orden global) NO esta aqui: no bloquea,
+# solo reescribe el prompt hacia Ollama, y ademas la clasificacion debe
+# evaluar el texto ORIGINAL del usuario, no el ya envuelto en delimitadores
+# (CLAUDE.md seccion 3, y CONFLICTOS_RESUELTOS.md). Se aplica aparte, en
+# _preparar_prompt(), solo si la cadena de entrada no bloqueo.
+_CADENA_MECANISMOS: tuple[tuple[str, PasoCadena], ...] = (
+    ("filtrado", _paso_filtrado),
+    ("clasificacion", _paso_clasificacion),
+)
+
+
+async def _ejecutar_cadena(
+    texto: str,
+    direccion: str,
+    config: dict[str, bool],
+    metricas: _MetricasCadena,
+) -> tuple[str, str | None]:
+    """Recorre _CADENA_MECANISMOS en orden, saltando los pasos con bandera en false.
+
+    El primer paso que bloquea corta la cadena: no se evaluan los siguientes
+    y su nombre se devuelve como segundo elemento. Si ninguno bloquea,
+    devuelve (texto_resultante, None).
+    """
+    for clave, paso in _CADENA_MECANISMOS:
+        if not config[clave]:
+            continue
+        texto, bloqueado = await paso(texto, direccion, metricas)
         if bloqueado:
-            return texto, "filtrado"
-    return texto, None
-
-
-def _revisar_salida(texto: str, config: dict[str, bool]) -> tuple[str, str | None]:
-    """Aplica los mecanismos de salida activos. Misma forma que _revisar_entrada."""
-    if config["filtrado"]:
-        texto, redactado = mecanismos.filtrar(texto, "salida")
-        if redactado:
-            return texto, "filtrado"
+            return texto, clave
     return texto, None
 
 
@@ -131,10 +220,12 @@ def _preparar_prompt(mensaje: str, modelo: str, config: dict[str, bool]) -> str:
     usando como instruccion confiable el texto de INSTRUCCIONES_CONFIABLES
     para el modelo destino (nunca el system prompt real con el canario).
 
-    Nota de integracion con filtrado (Garcia): filtrado corre antes y decide
-    sobre el texto ORIGINAL del usuario; delimitacion solo envuelve lo que
-    sobrevive. Cuando se implemente clasificacion, esta tambien evaluara el
-    texto original, no la salida de esta funcion (CLAUDE.md, seccion 3).
+    Nota de integracion: se llama DESPUES de _ejecutar_cadena("entrada", ...)
+    y sobre el texto que salio de ella. Filtrado y clasificacion ya decidieron
+    sobre el texto ORIGINAL del usuario; la delimitacion solo envuelve lo que
+    sobrevivio, justo antes de mandarlo a Ollama. Asi la clasificacion nunca
+    ve el texto ya envuelto en delimitadores (CLAUDE.md seccion 3;
+    CONFLICTOS_RESUELTOS.md).
     """
     if not config["delimitacion"]:
         return mensaje
@@ -199,9 +290,16 @@ def _construir_evento(
     activos: list[str],
     mecanismo_bloqueo: str | None,
     latencia_ms: int,
+    metricas: _MetricasCadena,
+    config: dict[str, bool],
 ) -> dict[str, Any]:
-    """Arma el evento de log con los 8 campos base del esquema (skill esquema-log)."""
-    return {
+    """Arma el evento de log con los 8 campos base del esquema (skill esquema-log).
+
+    Agrega el campo extendido `latencia_clasificador_ms` siempre que el
+    mecanismo 3 este activo (aunque haya bloqueado antes de llamarlo: en ese
+    caso vale 0). Los 8 campos base nunca se renombran ni se omiten.
+    """
+    evento: dict[str, Any] = {
         "timestamp": datetime.now().astimezone().isoformat(),
         "configuracion": determinar_configuracion(activos),
         "mecanismos_activos": activos,
@@ -211,6 +309,9 @@ def _construir_evento(
         "mecanismo_que_bloqueo": mecanismo_bloqueo,
         "latencia_ms": latencia_ms,
     }
+    if config["clasificacion"]:
+        evento["latencia_clasificador_ms"] = metricas.latencia_clasificador_ms
+    return evento
 
 
 @app.post("/chat")
@@ -218,22 +319,28 @@ async def chat(request: ChatRequest) -> dict[str, Any]:
     inicio = time.perf_counter()
     config = mecanismos.cargar_config(mecanismos.CONFIG_PATH)
     activos = _mecanismos_activos(config)
+    metricas = _MetricasCadena()
 
-    mensaje, mecanismo_bloqueo = _revisar_entrada(request.mensaje, config)
+    mensaje, mecanismo_bloqueo = await _ejecutar_cadena(
+        request.mensaje, "entrada", config, metricas
+    )
     respuesta: dict[str, Any] | None = None
 
     if mecanismo_bloqueo is None:
         prompt_ollama = _preparar_prompt(mensaje, request.modelo, config)
         respuesta = await _llamar_ollama(request.modelo, prompt_ollama)
         contenido = respuesta.get("message", {}).get("content", "")
-        contenido, mecanismo_salida = _revisar_salida(contenido, config)
-        if mecanismo_salida:
+        contenido, mecanismo_bloqueo = await _ejecutar_cadena(
+            contenido, "salida", config, metricas
+        )
+        if mecanismo_bloqueo is not None:
             respuesta["message"]["content"] = contenido
-            mecanismo_bloqueo = mecanismo_salida
 
     latencia_ms = int((time.perf_counter() - inicio) * 1000)
     _registrar_evento(
-        _construir_evento(request, activos, mecanismo_bloqueo, latencia_ms)
+        _construir_evento(
+            request, activos, mecanismo_bloqueo, latencia_ms, metricas, config
+        )
     )
 
     if respuesta is None:
@@ -242,9 +349,6 @@ async def chat(request: ChatRequest) -> dict[str, Any]:
             mecanismo_bloqueo,
             request.modelo,
         )
-        raise HTTPException(
-            status_code=400,
-            detail="Solicitud bloqueada por los mecanismos de defensa activos.",
-        )
+        raise HTTPException(status_code=400, detail=_DETALLE_BLOQUEO)
 
     return respuesta

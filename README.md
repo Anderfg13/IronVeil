@@ -11,11 +11,11 @@ contra sistemas de terceros.
 
 ## Estado actual
 
-Mecanismos con logica real y cableados en el proxy: **filtrado** (C1) y
-**delimitacion / spotlighting** (C2). Con sus banderas de `config.yaml` en
-`false` el proxy es un passthrough puro hacia Ollama (C0). Clasificacion,
-minimo privilegio y aprobacion humana siguen como stubs neutros: se
-conectan en las siguientes semanas.
+Mecanismos con logica real y cableados en el proxy: **filtrado** (C1),
+**delimitacion / spotlighting** (C2) y **clasificacion / Llama Guard** (C3).
+Con sus banderas de `config.yaml` en `false` el proxy es un passthrough puro
+hacia Ollama (C0). Minimo privilegio y aprobacion humana siguen como stubs
+neutros: se conectan en las siguientes semanas.
 
 ## Estructura del proyecto
 
