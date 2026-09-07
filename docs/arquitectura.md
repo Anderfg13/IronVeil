@@ -196,21 +196,29 @@ con `json.dumps(evento, ensure_ascii=False)` + salto de línea.
 
 ## 6. Estado actual de la implementación (a la fecha de este documento)
 
-- `proxy/main.py`: **filtrado y delimitación ya cableados y funcionales.** El
-  endpoint `/chat` aplica `filtrar()` en entrada y salida solo si
-  `config["filtrado"]` es `true`; tras el filtrado de entrada,
-  `_preparar_prompt()` envuelve el mensaje con el andamiaje de spotlighting
-  solo si `config["delimitacion"]` es `true` (con la bandera en `false` el
-  prompt viaja tal cual, passthrough idéntico a `C0`). El endpoint escribe
-  el log JSONL de la sección 5 en `resultados/<fecha>/eventos.jsonl` en cada
-  petición. **`C1` (solo filtrado) y `C2` (solo delimitación) ya se ejecutan
-  de punta a punta.** `clasificacion` tiene lógica real en `mecanismos.py`
-  (ver abajo) pero **todavía no está cableada en esta cadena** — `C3` no
-  funciona de punta a punta hasta que se agregue la llamada a
-  `mecanismos.clasificar()` en `_revisar_entrada`/`_revisar_salida` (en
-  curso esta misma semana). `minimo_privilegio` y `aprobacion_humana`
-  tampoco están cableados: con sus banderas en `true` no tienen ningún
-  efecto todavía, porque `mecanismos.py` los implementa como stubs neutros.
+- `proxy/main.py`: **filtrado, delimitación y clasificación ya cableados y
+  funcionales.** Los mecanismos que pueden bloquear se recorren como una
+  lista ordenada (`_CADENA_MECANISMOS`), no como `if` anidados: hoy contiene
+  `("filtrado", …)` y `("clasificacion", …)`, y agregar `minimo_privilegio` /
+  `aprobacion_humana` será añadir una tupla. `_ejecutar_cadena()` la recorre
+  en entrada y en salida, salta los pasos con bandera en `false` y corta al
+  primer bloqueo. La delimitación **no** está en esa lista (no bloquea): se
+  aplica aparte en `_preparar_prompt()`, sobre el texto que salió de la
+  cadena de entrada, justo antes de llamar a Ollama — así la clasificación
+  nunca ve el texto ya envuelto en delimitadores (ver
+  `CONFLICTOS_RESUELTOS.md`). El endpoint escribe el log JSONL de la sección
+  5 en cada petición; añade `latencia_clasificador_ms` siempre que
+  `config["clasificacion"]` sea `true`. **`C1`, `C2` y `C3` ya se ejecutan de
+  punta a punta.** `minimo_privilegio` y `aprobacion_humana` aún no están
+  cableados: con sus banderas en `true` no tienen ningún efecto todavía,
+  porque `mecanismos.py` los implementa como stubs neutros.
+  - Un bloqueo en **entrada** responde `400` con un detalle genérico y no
+    llega a consultar el modelo principal (ahorro de cómputo). Un bloqueo en
+    **salida** responde `200` pero con el contenido del modelo sustituido:
+    `filtrar()` redacta la credencial en su sitio; la clasificación, que solo
+    devuelve un `bool`, reemplaza toda la respuesta por un aviso genérico
+    (`_CONTENIDO_RETENIDO`). Mismo patrón en ambos: la salida cruda del
+    modelo nunca sale al cliente.
 - `proxy/mecanismos.py`: `filtrar()`, `delimitar()` y `clasificar()` tienen
   lógica real. `filtrar()` bloquea en entrada por patrones de prompt
   injection y redacta credenciales canario en salida. `delimitar()` es una
@@ -235,8 +243,8 @@ con `json.dumps(evento, ensure_ascii=False)` + salto de línea.
   campos + `nivel_carga`, útil como referencia de implementación del logger.
 - `ollama/init.sh` ahora también descarga `MODELO_CLASIFICADOR`
   (`llama-guard3:1b` por defecto, `.env.example`) junto con `BASE_MODEL`.
-- Pendiente: cablear `clasificación`, `mínimo privilegio` y `aprobación
-  humana` en la cadena de `proxy/main.py` (ver reparto de tareas en
+- Pendiente: cablear `mínimo privilegio` y `aprobación humana` en
+  `_CADENA_MECANISMOS` de `proxy/main.py` (ver reparto de tareas en
   `CLAUDE.md`, sección 8).
 
 ## 7. Documentos relacionados
