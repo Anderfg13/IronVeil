@@ -56,14 +56,18 @@ Cliente
 │                                             │
 │  cargar_config() ──► banderas               │
 │                                             │
-│  Cadena de mecanismos (orden fijo):         │
-│   1. filtrado        (entrada)              │
-│   2. delimitación    (construye prompt)     │
-│   3. clasificación   (entrada)              │
-│   4. mínimo privilegio                      │
-│   5. aprobación humana / rate limit         │
+│  Cadena de mecanismos que PUEDEN BLOQUEAR   │
+│  (orden fijo, en bucle; se recorre en       │
+│  ENTRADA y otra vez en SALIDA):             │
+│   1. filtrado                               │
+│   2. clasificación                          │
+│   3. mínimo privilegio  (solo entrada)      │
+│   4. aprobación humana / rate limit         │
 │                                             │
-│         ▼ si nada bloqueó                   │
+│         ▼ si nada bloqueó (entrada)         │
+│   delimitación (construye prompt final,     │
+│   no bloquea)                               │
+│         ▼                                   │
 │      llamada a Ollama                       │
 │         ▼                                   │
 │   filtrado (salida) → clasificación (salida)│
@@ -77,7 +81,7 @@ Ollama (:11434) — modelos "soporte", "rrhh", llama-guard3
 
 ### Reglas de la cadena
 
-- **Orden:** filtrado → delimitación → clasificación → mínimo privilegio → aprobación humana. Justificación: lo barato computacionalmente primero, lo caro (modelo clasificador) después.
+- **Orden fijo conceptual de los 5 mecanismos** (de ahí salen los nombres `C1`..`C5` de la sección 1): filtrado → delimitación → clasificación → mínimo privilegio → aprobación humana. **No es una secuencia de ejecución literal de una sola lista.** Delimitación no bloquea, así que no vive en la cadena de bloqueo — esa la recorren solo filtrado, clasificación, mínimo privilegio y aprobación humana — y se aplica aparte, justo antes de llamar a Ollama, sobre el texto que sobrevivió a esa cadena. Mínimo privilegio, además, solo actúa en dirección "entrada" (no tiene análogo de salida). Justificación del orden entre los que sí bloquean: lo barato computacionalmente primero, lo caro (modelo clasificador) después.
 - **Primer bloqueo gana.** Cuando un mecanismo bloquea, la cadena se corta y no se evalúa el resto. Esto se refleja en el campo `mecanismo_que_bloqueo` del log.
 - **La cadena se implementa como una lista de pasos recorrida en bucle**, no como `if` anidados. El endpoint `/chat` no debe superar ~40 líneas; el resto va en funciones auxiliares.
 - **La clasificación evalúa el texto original del usuario**, no el texto ya envuelto por la delimitación. (Decisión de integración; ver `CONFLICTOS_RESUELTOS.md`.)
