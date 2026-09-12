@@ -9,11 +9,13 @@ proxy Python que se sienta entre el cliente y un backend Ollama.
 Este repositorio corre **100% en un laboratorio Docker aislado**, nunca
 contra sistemas de terceros.
 
-## Estado actual (semana 1 - infraestructura base)
+## Estado actual
 
-Todavia sin logica de mecanismos: el proxy es un passthrough puro hacia
-Ollama. Sirve como base sobre la que se conectaran los mecanismos
-defensivos en las siguientes semanas.
+Mecanismos con logica real y cableados en el proxy: **filtrado** (C1),
+**delimitacion / spotlighting** (C2) y **clasificacion / Llama Guard** (C3).
+Con sus banderas de `config.yaml` en `false` el proxy es un passthrough puro
+hacia Ollama (C0). Minimo privilegio y aprobacion humana siguen como stubs
+neutros: se conectan en las siguientes semanas.
 
 ## Estructura del proyecto
 

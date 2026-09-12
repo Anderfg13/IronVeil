@@ -1,0 +1,288 @@
+{
+  "evalId": "eval-Kyv-2026-08-27T19:14:51",
+  "results": {
+    "version": 3,
+    "timestamp": "2026-08-27T19:14:51.111Z",
+    "prompts": [
+      {
+        "id": "b771fc2ed45e220e72ebe30ce0a6a710d6ac19723db67299e28a99a97fca4074",
+        "raw": "{{mensaje}}",
+        "label": "{{mensaje}}",
+        "provider": "ollama:chat:deepseek-coder",
+        "metrics": {
+          "score": 2,
+          "testPassCount": 2,
+          "testFailCount": 0,
+          "testErrorCount": 0,
+          "assertPassCount": 2,
+          "assertFailCount": 0,
+          "totalLatencyMs": 2184,
+          "tokenUsage": {
+            "prompt": 169,
+            "completion": 14,
+            "cached": 0,
+            "total": 183,
+            "numRequests": 2,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0
+            },
+            "assertions": {
+              "total": 0,
+              "prompt": 0,
+              "completion": 0,
+              "cached": 0,
+              "numRequests": 0,
+              "completionDetails": {
+                "reasoning": 0,
+                "acceptedPrediction": 0,
+                "rejectedPrediction": 0
+              }
+            }
+          },
+          "namedScores": {},
+          "namedScoresCount": {},
+          "cost": 0
+        }
+      }
+    ],
+    "results": [
+      {
+        "cost": 0,
+        "gradingResult": {
+          "pass": true,
+          "score": 1,
+          "reason": "All assertions passed",
+          "namedScores": {},
+          "tokensUsed": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0
+          },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "icontains",
+                "value": "ok"
+              }
+            }
+          ]
+        },
+        "id": "965a1177-f023-400e-a6d8-75d45d1e28c6",
+        "latencyMs": 434,
+        "namedScores": {},
+        "prompt": {
+          "raw": "Responde unicamente con la palabra: OK",
+          "label": "{{mensaje}}",
+          "config": {}
+        },
+        "promptId": "b771fc2ed45e220e72ebe30ce0a6a710d6ac19723db67299e28a99a97fca4074",
+        "promptIdx": 0,
+        "provider": {
+          "id": "ollama:chat:deepseek-coder",
+          "label": ""
+        },
+        "response": {
+          "output": "OK\n",
+          "tokenUsage": {
+            "prompt": 81,
+            "completion": 3,
+            "total": 84
+          }
+        },
+        "score": 1,
+        "success": true,
+        "testCase": {
+          "description": "Prueba de humo basica: el modelo responde algo no vacio",
+          "vars": {
+            "mensaje": "Responde unicamente con la palabra: OK"
+          },
+          "assert": [
+            {
+              "type": "icontains",
+              "value": "ok"
+            }
+          ],
+          "options": {},
+          "metadata": {}
+        },
+        "testIdx": 0,
+        "vars": {
+          "mensaje": "Responde unicamente con la palabra: OK"
+        },
+        "metadata": {
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 0
+      },
+      {
+        "cost": 0,
+        "gradingResult": {
+          "pass": true,
+          "score": 1,
+          "reason": "All assertions passed",
+          "namedScores": {},
+          "tokensUsed": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0
+          },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "contains",
+                "value": "4"
+              }
+            }
+          ]
+        },
+        "id": "12833e3f-d6a8-4537-8291-f377ca61fb7c",
+        "latencyMs": 1750,
+        "namedScores": {},
+        "prompt": {
+          "raw": "Cuanto es 2 + 2? Responde solo con el numero.",
+          "label": "{{mensaje}}",
+          "config": {}
+        },
+        "promptId": "b771fc2ed45e220e72ebe30ce0a6a710d6ac19723db67299e28a99a97fca4074",
+        "promptIdx": 0,
+        "provider": {
+          "id": "ollama:chat:deepseek-coder",
+          "label": ""
+        },
+        "response": {
+          "output": "La respuesta de la pregunta es 4.\n",
+          "tokenUsage": {
+            "prompt": 88,
+            "completion": 11,
+            "total": 99
+          }
+        },
+        "score": 1,
+        "success": true,
+        "testCase": {
+          "description": "Prueba de humo: el modelo puede seguir una instruccion simple",
+          "vars": {
+            "mensaje": "Cuanto es 2 + 2? Responde solo con el numero."
+          },
+          "assert": [
+            {
+              "type": "contains",
+              "value": "4"
+            }
+          ],
+          "options": {},
+          "metadata": {}
+        },
+        "testIdx": 1,
+        "vars": {
+          "mensaje": "Cuanto es 2 + 2? Responde solo con el numero."
+        },
+        "metadata": {
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 0
+      }
+    ],
+    "stats": {
+      "successes": 2,
+      "failures": 0,
+      "errors": 0,
+      "tokenUsage": {
+        "prompt": 169,
+        "completion": 14,
+        "cached": 0,
+        "total": 183,
+        "numRequests": 2,
+        "completionDetails": {
+          "reasoning": 0,
+          "acceptedPrediction": 0,
+          "rejectedPrediction": 0
+        },
+        "assertions": {
+          "total": 0,
+          "prompt": 0,
+          "completion": 0,
+          "cached": 0,
+          "numRequests": 0,
+          "completionDetails": {
+            "reasoning": 0,
+            "acceptedPrediction": 0,
+            "rejectedPrediction": 0
+          }
+        }
+      },
+      "durationMs": 1864
+    }
+  },
+  "config": {
+    "tags": {},
+    "description": "IronVeil — smoke test de Promptfoo contra Ollama local",
+    "prompts": [
+      "{{mensaje}}"
+    ],
+    "providers": [
+      {
+        "id": "ollama:chat:deepseek-coder",
+        "config": {
+          "temperature": 0.2,
+          "num_predict": 100
+        }
+      }
+    ],
+    "tests": [
+      {
+        "description": "Prueba de humo basica: el modelo responde algo no vacio",
+        "vars": {
+          "mensaje": "Responde unicamente con la palabra: OK"
+        },
+        "assert": [
+          {
+            "type": "icontains",
+            "value": "ok"
+          }
+        ]
+      },
+      {
+        "description": "Prueba de humo: el modelo puede seguir una instruccion simple",
+        "vars": {
+          "mensaje": "Cuanto es 2 + 2? Responde solo con el numero."
+        },
+        "assert": [
+          {
+            "type": "contains",
+            "value": "4"
+          }
+        ]
+      }
+    ],
+    "scenarios": [],
+    "env": {},
+    "outputPath": [
+      "docs/evidencia_smoke_test/promptfoo_resultado.json"
+    ],
+    "extensions": [],
+    "metadata": {},
+    "evaluateOptions": {}
+  },
+  "shareableUrl": null,
+  "metadata": {
+    "promptfooVersion": "0.120.19",
+    "nodeVersion": "v22.15.0",
+    "platform": "win32",
+    "arch": "x64",
+    "exportedAt": "2026-08-27T19:14:53.231Z",
+    "evaluationCreatedAt": "2026-08-27T19:14:51.111Z"
+  }
+}

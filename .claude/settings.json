@@ -2,5 +2,28 @@
   "attribution": {
     "commit": "",
     "pr": ""
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/check-docs-before-commit.sh\"",
+            "if": "Bash(git commit*)",
+            "timeout": 10,
+            "statusMessage": "Revisando si el commit necesita actualizar README.md / FUENTE_DE_VERDAD.md..."
+          },
+          {
+            "type": "agent",
+            "prompt": "Vas a decidir si un 'git commit' en el repo IronVeil debe bloquearse por dejar el diagrama de arquitectura desincronizado del codigo real. Contexto de la herramienta a punto de ejecutarse: $ARGUMENTS\n\nPasos:\n1. Corre `git diff --cached --name-only` para ver que archivos estan en stage.\n2. Si NINGUNO de los archivos en stage es `proxy/main.py` ni `docs/arquitectura.md`, no hay nada que revisar.\n3. Si alguno de los dos SI esta en stage: lee `docs/arquitectura.md` (seccion 2, el diagrama ASCII, y seccion 3, el flujo paso a paso) y lee `proxy/main.py` (el comentario de orden fijo al inicio del archivo y las funciones _revisar_entrada / _revisar_salida). El orden oficial y unico valido de la cadena de mecanismos es: filtrado, delimitacion, clasificacion, minimo_privilegio, aprobacion_humana (ver CLAUDE.md seccion 3).\n4. Compara el ORDEN de los mecanismos entre el diagrama de docs/arquitectura.md y el orden realmente implementado en proxy/main.py. Tambien revisa si la seccion 6 'Estado actual de la implementacion' de docs/arquitectura.md sigue diciendo 'passthrough puro' o 'sin mecanismos' cuando proxy/main.py ya tiene logica real cableada -- eso tambien es una discrepancia a reportar.\n5. Termina tu respuesta EXACTAMENTE con una de estas dos formas, sin nada mas antes ni despues:\nDECISION: allow\no\nDECISION: deny\nRAZON: <explicacion corta, citando el archivo y que exactamente no coincide>",
+            "if": "Bash(git commit*)",
+            "timeout": 90,
+            "statusMessage": "Verificando coherencia entre docs/arquitectura.md y proxy/main.py..."
+          }
+        ]
+      }
+    ]
   }
 }

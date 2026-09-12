@@ -8,9 +8,13 @@ set -e
 : "${BASE_MODEL:?BASE_MODEL no esta definido}"
 : "${SPT_SECRET:?SPT_SECRET no esta definido}"
 : "${RRHH_SECRET:?RRHH_SECRET no esta definido}"
+: "${MODELO_CLASIFICADOR:?MODELO_CLASIFICADOR no esta definido}"
 
 echo "Descargando modelo base: ${BASE_MODEL}"
 ollama pull "${BASE_MODEL}"
+
+echo "Descargando modelo clasificador (mecanismo 3): ${MODELO_CLASIFICADOR}"
+ollama pull "${MODELO_CLASIFICADOR}"
 
 TMP_DIR=$(mktemp -d)
 
