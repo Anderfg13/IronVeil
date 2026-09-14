@@ -1,9 +1,9 @@
 """Los 5 mecanismos defensivos de IronVeil y carga de configuracion.
 
-Implementados y cableados al endpoint /chat: filtrado (mecanismo 1),
-delimitacion (mecanismo 2), clasificacion (mecanismo 3), minimo privilegio
-(mecanismo 4).
-Aun stub con comportamiento neutro (passthrough): aprobacion_humana.
+Los 5 mecanismos estan implementados y cableados al endpoint /chat:
+filtrado (1), delimitacion (2), clasificacion (3), minimo privilegio (4),
+aprobacion humana + rate limit (5, backend en proxy/cola.py; la interfaz
+de aprobacion/rechazo la construye Piedrahita por separado).
 
 Cada funcion respeta la firma del contrato compartido; ver CLAUDE.md,
 seccion "Contratos estables", antes de tocar cualquier firma.
@@ -19,6 +19,8 @@ from typing import Any
 
 import httpx
 import yaml
+
+import proxy.cola as cola
 
 logger = logging.getLogger(__name__)
 
@@ -392,16 +394,32 @@ def validar_privilegio(modelo_destino: str, texto_entrada: str) -> bool:
 def enviar_a_revision(peticion: dict) -> bool:
     """Mecanismo 5 (aprobacion humana + rate limit): humano en el loop.
 
-    Recibe la peticion completa a encolar. Devuelve una senal de
-    "pendiente" (True si quedo encolada para revision).
+    Recibe la peticion completa a encolar (dict con, al menos, modelo,
+    mensaje y el motivo por el que se marco para revision -- por ejemplo
+    el nombre de otro mecanismo que ya la detecto, o "limite_de_peticiones"
+    si fue el rate limiter). Devuelve una senal de "pendiente": True si
+    quedo encolada; False si la cola ya esta llena
+    (`cola.MAX_TAMANO_COLA`) y no se pudo diferir.
 
-    Cuando este implementado, encolara la peticion en una cola compartida
-    entre peticiones concurrentes (protegida con lock), aplicara el limite
-    de peticiones por minuto y conservara que otros mecanismos ya la
-    hubieran marcado, para que quien revise tenga contexto.
+    Naturaleza distinta a los otros 4 mecanismos: no es determinista ni
+    probabilistico sobre el CONTENIDO de la peticion -- no vuelve a
+    evaluar si es peligrosa, solo decide DONDE queda mientras un humano la
+    revisa. Por eso, a diferencia de filtrar()/delimitar()/clasificar()/
+    validar_privilegio(), esta funcion SI tiene un efecto secundario
+    intencional (mantiene la cola compartida de proxy/cola.py): es
+    literalmente su unica razon de existir, ya fijada en el contrato de
+    CLAUDE.md ("encola y devuelve senal de pendiente"). Sigue sin escribir
+    el log del experimento -- eso sigue siendo trabajo exclusivo del
+    endpoint -- la cola de revision humana es un estado distinto, para la
+    interfaz de aprobacion/rechazo que construye Piedrahita.
 
-    Stub: no hay logica ni cola todavia. Retorna siempre False (nunca
-    encola nada), comportamiento neutro equivalente a que el mecanismo
-    este desactivado.
+    Si False (cola llena): quien llama debe tratar la peticion como
+    rechazada, nunca como aprobada por defecto -- fail closed, igual que
+    el resto de mecanismos ante una condicion de error (CLAUDE.md, seccion
+    9: "encolar no es rechazar", pero una cola llena que se ignorara SI
+    seria dejar pasar por defecto, y eso nunca).
+
+    Delega en `cola.cola_global`, la instancia compartida entre peticiones
+    concurrentes de todo el proceso (protegida con lock, ver cola.py).
     """
-    return False
+    return cola.cola_global.encolar(peticion)

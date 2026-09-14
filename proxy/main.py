@@ -1,16 +1,16 @@
 """Proxy FastAPI hacia la API de Ollama (/api/chat), con los mecanismos
 defensivos de IronVeil activables por config.yaml.
 
-Con las 5 banderas en false (C0) el comportamiento es passthrough puro,
-identico al de la semana anterior. Cadena de mecanismos, orden fijo:
-filtrado -> delimitacion -> clasificacion -> minimo_privilegio ->
-aprobacion_humana. Cada paso se ejecuta solo si su bandera esta activa;
-el primer bloqueo corta la cadena. Ver CLAUDE.md, seccion 3.
-
-Los mecanismos que pueden BLOQUEAR se recorren como una lista ordenada
-(_CADENA_MECANISMOS), no como if anidados: agregar aprobacion_humana la
-proxima semana es anadir una tupla, sin tocar el endpoint. La delimitacion
-no bloquea (reescribe el prompt) y se aplica aparte, en _preparar_prompt().
+Con las 5 banderas en false (C0) el comportamiento es passthrough puro.
+Los 5 mecanismos ya estan cableados. filtrado, clasificacion y
+minimo_privilegio se recorren como una lista ordenada
+(_CADENA_MECANISMOS), no como if anidados; el primer bloqueo corta la
+cadena. delimitacion no bloquea (reescribe el prompt) y se aplica aparte,
+en _preparar_prompt(). aprobacion_humana tampoco vive en esa lista: en vez
+de ser un paso mas, INTERCEPTA el resultado de la cadena de entrada (o el
+propio rate limit) y lo convierte en "encolar para revision" en vez de
+"rechazar con 400" -- ver _gestionar_aprobacion_humana() y el comentario
+junto a _CADENA_MECANISMOS. Ver CLAUDE.md, seccion 3.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -26,10 +27,11 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
+import proxy.cola as cola
 import proxy.mecanismos as mecanismos
 
 logger = logging.getLogger(__name__)
@@ -48,6 +50,17 @@ _DETALLE_BLOQUEO: str = "Solicitud bloqueada por los mecanismos de defensa activ
 _CONTENIDO_RETENIDO: str = (
     "La respuesta del asistente fue retenida por los mecanismos de seguridad "
     "activos."
+)
+# Mecanismo 5. Cuando aprobacion_humana intercepta una peticion (rate limit
+# excedido, u otro mecanismo ya la habia marcado en entrada), responde 429
+# en vez del 400 generico -- status ya usado como placeholder por el script
+# de ataque de Sabogal (ataques/vector5_carga.py, --status-bloqueo) antes
+# de que este mecanismo existiera; se confirma aqui como definitivo (ver
+# docs/FUENTE_DE_VERDAD.md, seccion 4).
+_STATUS_EN_REVISION: int = 429
+_DETALLE_EN_REVISION: str = (
+    "Tu solicitud fue puesta en revision por los mecanismos de aprobacion "
+    "humana. Intentalo de nuevo mas tarde."
 )
 
 # Mecanismo 2 (delimitacion). Texto que el proxy coloca en el bloque
@@ -181,10 +194,8 @@ async def _paso_minimo_privilegio(
 
 
 # Cadena de mecanismos que pueden BLOQUEAR, en el orden fijo del proyecto
-# (CLAUDE.md seccion 3). Se recorre como lista, no como if anidados: agregar
-# aprobacion_humana la proxima semana es anadir una tupla
-# (clave_de_config, funcion_paso) aqui, sin tocar el endpoint. La clave de
-# config es tambien el nombre que va a `mecanismo_que_bloqueo`.
+# (CLAUDE.md seccion 3). Se recorre como lista, no como if anidados. La
+# clave de config es tambien el nombre que va a `mecanismo_que_bloqueo`.
 #
 # Orden y justificacion:
 #   1. filtrado           - regex local en memoria, coste ~0. Primero, para
@@ -204,6 +215,16 @@ async def _paso_minimo_privilegio(
 # evaluar el texto ORIGINAL del usuario, no el ya envuelto en delimitadores
 # (CLAUDE.md seccion 3, y CONFLICTOS_RESUELTOS.md). Se aplica aparte, en
 # _preparar_prompt(), solo si la cadena de entrada no bloqueo.
+#
+# aprobacion_humana (mecanismo 5) TAMPOCO esta aqui, y a proposito -- pese
+# a lo que decia el comentario anterior de este archivo ("agregarla es
+# anadir una tupla"). No encaja en el patron PasoCadena: su trabajo es
+# INTERCEPTAR el resultado de esta misma cadena (convertir un bloqueo de
+# cualquiera de los 3 pasos de arriba en "encolar" en vez de "rechazar"),
+# y con "el primer bloqueo gana" un cuarto paso aqui nunca llegaria a
+# ejecutarse cuando otro ya bloqueo antes -- justo el caso que se supone
+# que debe manejar. Por eso se aplica aparte, envolviendo el resultado de
+# _ejecutar_cadena(): ver _gestionar_aprobacion_humana() mas abajo.
 _CADENA_MECANISMOS: tuple[tuple[str, PasoCadena], ...] = (
     ("filtrado", _paso_filtrado),
     ("clasificacion", _paso_clasificacion),
@@ -270,17 +291,35 @@ def _determinar_resultado(
     return "exitoso_para_atacante" if vector_probado else "permitido_normal"
 
 
+# Protege el open()+write() de _registrar_evento(): sin este lock, dos
+# peticiones concurrentes pueden intercalar sus escrituras (o perder una
+# linea completa) al abrir el mismo archivo en modo "a" al mismo tiempo.
+# Encontrado por el test de rafaga concurrente de aprobacion_humana
+# (mecanismo 5): con la cadena de mecanismos ya en cero-lock hasta ahora,
+# nunca antes habia habido un test que disparara peticiones realmente
+# simultaneas contra el mismo proceso. Es exactamente la clase de bug que
+# CLAUDE.md (seccion 7) advierte que el V5 hace real, no teorico -- y no
+# era exclusivo de aprobacion_humana: cualquier rafaga concurrente contra
+# /chat, con cualquier mecanismo activo, podia perder eventos del log.
+_registro_lock = threading.Lock()
+
+
 def _registrar_evento(evento: dict[str, Any]) -> None:
     """Agrega una linea a resultados/<fecha>/eventos.jsonl (JSON Lines).
 
     No pasa por el modulo logging: el evento es una fila del dataset del
     experimento, no un mensaje operativo, y el esquema de log del proyecto
     exige exactamente un objeto JSON por linea (ver skill esquema-log).
+
+    Protegida con `_registro_lock`: sin esto, peticiones concurrentes
+    (V5) pueden pisarse la escritura entre si y perder eventos completos.
     """
     fecha = datetime.now().astimezone().strftime("%Y-%m-%d")
     directorio = RESULTADOS_DIR / fecha
     directorio.mkdir(parents=True, exist_ok=True)
-    with (directorio / "eventos.jsonl").open("a", encoding="utf-8") as f:
+    with _registro_lock, (directorio / "eventos.jsonl").open(
+        "a", encoding="utf-8"
+    ) as f:
         f.write(json.dumps(evento, ensure_ascii=False) + "\n")
 
 
@@ -303,6 +342,68 @@ async def _llamar_ollama(modelo: str, mensaje: str) -> dict[str, Any]:
                 status_code=502, detail=f"No se pudo contactar a Ollama: {exc}"
             ) from exc
     return response.json()
+
+
+def _identificar_cliente(http_request: Request) -> str:
+    """Clave de rate limiting para mecanismo 5: IP del cliente que conecta.
+
+    "Por IP" es la opcion mas simple de las dos que menciona la tarea (IP
+    o sesion simulada): este proxy no tiene autenticacion de usuario, asi
+    que no hay una nocion de sesion mas confiable que construir sin
+    inventar un sistema aparte. "desconocido" solo puede pasar en un
+    cliente de pruebas sin socket real (p. ej. TestClient sin transporte
+    ASGI real); nunca en trafico HTTP genuino.
+    """
+    return http_request.client.host if http_request.client else "desconocido"
+
+
+def _gestionar_aprobacion_humana(
+    request: ChatRequest,
+    http_request: Request,
+    mecanismo_bloqueo: str | None,
+) -> str | None:
+    """Mecanismo 5. Convierte un bloqueo (o exceso de tasa) en cola de revision.
+
+    Solo se llama si config["aprobacion_humana"] es true, DESPUES de que
+    ya se supo si el rate limit se excedio y de correr (o no) la cadena de
+    entrada. Dos disparadores posibles, ambos terminan igual -- encolar en
+    vez de rechazar de una:
+    - El cliente ya supero cola.LIMITE_PETICIONES_POR_MINUTO (V5): esto
+      se resuelve ANTES de llegar aqui (ver chat()), asi que si el llamador
+      ya sabe que se excedio, `mecanismo_bloqueo` ya llega como
+      "aprobacion_humana".
+    - `mecanismo_bloqueo` viene marcado por filtrado/clasificacion/
+      minimo_privilegio (la cadena de entrada ya corrio antes de esta
+      funcion): en vez de que ese bloqueo se traduzca en un 400 automatico,
+      se encola para que un humano decida.
+
+    Devuelve "aprobacion_humana" si intercepto la peticion -- encolada o
+    no: si la cola esta llena, se rechaza de todas formas (fail closed,
+    nunca se deja pasar solo porque la cola de revision se satura; eso
+    seria un bypass del propio rate limiting bajo V5). Devuelve
+    `mecanismo_bloqueo` sin cambios (None) si nada la marco.
+    """
+    if mecanismo_bloqueo is None:
+        return None
+
+    en_cola = mecanismos.enviar_a_revision(
+        {
+            "modelo": request.modelo,
+            "mensaje": request.mensaje,
+            "vector_probado": request.vector_probado,
+            "cliente": _identificar_cliente(http_request),
+            "motivo": mecanismo_bloqueo,
+        }
+    )
+    if not en_cola:
+        logger.warning(
+            "cola de revision llena (limite %d); rechazando en vez de "
+            "encolar (modelo=%s, motivo=%s)",
+            cola.MAX_TAMANO_COLA,
+            request.modelo,
+            mecanismo_bloqueo,
+        )
+    return "aprobacion_humana"
 
 
 @app.get("/health")
@@ -340,15 +441,45 @@ def _construir_evento(
 
 
 @app.post("/chat")
-async def chat(request: ChatRequest) -> dict[str, Any]:
+async def chat(request: ChatRequest, http_request: Request) -> dict[str, Any]:
     inicio = time.perf_counter()
     config = mecanismos.cargar_config(mecanismos.CONFIG_PATH)
     activos = _mecanismos_activos(config)
     metricas = _MetricasCadena()
 
-    mensaje, mecanismo_bloqueo = await _ejecutar_cadena(
-        request.mensaje, "entrada", request.modelo, config, metricas
-    )
+    mecanismo_bloqueo: str | None = None
+    mensaje = request.mensaje
+
+    # Mecanismo 5, disparador 1: rate limit. Se revisa ANTES de correr la
+    # cadena de entrada (que puede incluir la llamada de red a Llama Guard)
+    # para no gastar computo en una peticion que de todas formas se va a
+    # encolar -- justo lo que V5 (agotamiento de recursos) busca explotar.
+    if config["aprobacion_humana"] and cola.cola_global.excede_limite(
+        _identificar_cliente(http_request)
+    ):
+        mecanismo_bloqueo = "aprobacion_humana"
+        mecanismos.enviar_a_revision(
+            {
+                "modelo": request.modelo,
+                "mensaje": request.mensaje,
+                "vector_probado": request.vector_probado,
+                "cliente": _identificar_cliente(http_request),
+                "motivo": "limite_de_peticiones",
+            }
+        )
+    else:
+        mensaje, mecanismo_bloqueo = await _ejecutar_cadena(
+            request.mensaje, "entrada", request.modelo, config, metricas
+        )
+        # Mecanismo 5, disparador 2: la cadena de entrada ya marco un
+        # bloqueo. Con aprobacion_humana activo, ese bloqueo se convierte
+        # en cola en vez de rechazo automatico (ver
+        # _gestionar_aprobacion_humana()).
+        if config["aprobacion_humana"]:
+            mecanismo_bloqueo = _gestionar_aprobacion_humana(
+                request, http_request, mecanismo_bloqueo
+            )
+
     respuesta: dict[str, Any] | None = None
 
     if mecanismo_bloqueo is None:
@@ -369,6 +500,13 @@ async def chat(request: ChatRequest) -> dict[str, Any]:
     )
 
     if respuesta is None:
+        if mecanismo_bloqueo == "aprobacion_humana":
+            logger.warning(
+                "peticion puesta en revision humana (modelo=%s)", request.modelo
+            )
+            raise HTTPException(
+                status_code=_STATUS_EN_REVISION, detail=_DETALLE_EN_REVISION
+            )
         logger.warning(
             "peticion bloqueada en entrada por %s (modelo=%s)",
             mecanismo_bloqueo,
