@@ -1,0 +1,4 @@
+| Configuración   | Movimiento lateral exitoso   |   Ataques completos |   Intentos (paso 1) |   ASR movimiento lateral (%) |
+|:----------------|:-----------------------------|--------------------:|--------------------:|-----------------------------:|
+| C0              | Sí                           |                   3 |                   9 |                         33.3 |
+| C4              | No                           |                   0 |                   9 |                          0.0 |
