@@ -81,6 +81,20 @@ def test_filtrar_salida_sin_credencial_no_modifica_texto() -> None:
     assert texto_resultado == texto
 
 
+def test_filtrar_salida_redacta_credencial_con_prefijo_nuevo() -> None:
+    # PATRON_CREDENCIAL_GENERICO no se limita a SPT/RRHH: cualquier prefijo
+    # en mayusculas con formato "<PREFIJO>-DEMO-<numero>" se redacta, para
+    # que un modelo nuevo con credencial propia quede cubierto sin tocar
+    # este mecanismo.
+    texto = "La clave temporal es FIN-DEMO-4567 para el area financiera."
+
+    texto_resultado, redactado = filtrar(texto, "salida")
+
+    assert redactado is True
+    assert TEXTO_REDACTADO in texto_resultado
+    assert "FIN-DEMO-4567" not in texto_resultado
+
+
 def test_filtrar_salida_redacta_todas_las_coincidencias() -> None:
     texto = "Credenciales: SPT-DEMO-1111 y también RRHH-DEMO-2222."
 

@@ -88,10 +88,16 @@ PATRONES_PROHIBIDOS_ENTRADA: tuple[re.Pattern[str], ...] = tuple(
 # un solo lugar.
 LIMITE_LONGITUD_MENSAJE: int = 10_000
 
-# Mecanismo 1 (filtrado), direccion "salida". Solo la ESTRUCTURA del
-# identificador (prefijo + digitos), nunca el valor real de la credencial:
-# los valores viven en .env / Modelfiles, jamas aqui (ver CLAUDE.md, regla 2).
-PATRON_CREDENCIAL_CANARIO = re.compile(r"\b(?:SPT|RRHH)-DEMO-\d+\b")
+# Patron de credencial, compartido por mecanismo 1 (filtrado, direccion
+# "salida") y mecanismo 4 (minimo privilegio): solo la ESTRUCTURA del
+# identificador (prefijo en mayusculas + "-DEMO-" + digitos), nunca el valor
+# real de la credencial -- los valores viven en .env / Modelfiles, jamas
+# aqui (ver CLAUDE.md, regla 2). Deliberadamente generico en el prefijo
+# (`[A-Z]+`, no una lista fija tipo "SPT|RRHH"): si el equipo agrega un
+# modelo nuevo con prefijo propio, ambos mecanismos lo reconocen sin tocar
+# esta constante. Definido una sola vez para que los dos mecanismos nunca
+# puedan divergir sobre que cuenta como credencial.
+PATRON_CREDENCIAL_GENERICO = re.compile(r"\b([A-Z]+)-DEMO-\d+\b")
 
 TEXTO_REDACTADO = "[REDACTADO]"
 
@@ -191,9 +197,10 @@ def filtrar(texto: str, direccion: str) -> tuple[str, bool]:
     retorna (texto_original, True) sin modificar el texto: la decision de
     rechazar la peticion completa la toma quien llama, no esta funcion.
 
-    Si `direccion == "salida"`: busca PATRON_CREDENCIAL_CANARIO (el formato
-    SPT-DEMO-<numero> / RRHH-DEMO-<numero>) y reemplaza cada coincidencia por
-    TEXTO_REDACTADO. Retorna (texto_redactado, True) si redacto algo.
+    Si `direccion == "salida"`: busca PATRON_CREDENCIAL_GENERICO (cualquier
+    prefijo en mayusculas + "-DEMO-" + numero, p. ej. SPT-DEMO-<numero> /
+    RRHH-DEMO-<numero>) y reemplaza cada coincidencia por TEXTO_REDACTADO.
+    Retorna (texto_redactado, True) si redacto algo.
 
     Si no hay coincidencia en ningun caso, retorna (texto, False).
 
@@ -206,7 +213,7 @@ def filtrar(texto: str, direccion: str) -> tuple[str, bool]:
         return texto, bloquear
 
     if direccion == "salida":
-        texto_redactado, coincidencias = PATRON_CREDENCIAL_CANARIO.subn(
+        texto_redactado, coincidencias = PATRON_CREDENCIAL_GENERICO.subn(
             TEXTO_REDACTADO, texto
         )
         return texto_redactado, coincidencias > 0
@@ -385,13 +392,10 @@ PREFIJOS_POR_MODELO: dict[str, str] = {
     "rrhh": "RRHH",
 }
 
-# Patron generico de credencial: prefijo en mayusculas + "-DEMO-" + numero.
-# Deliberadamente mas amplio que "SPT|RRHH" (a diferencia de
-# PATRON_CREDENCIAL_CANARIO, que solo redacta los 2 prefijos ya conocidos):
-# este mecanismo debe seguir detectando movimiento lateral aunque
-# Piedrahita defina credenciales cruzadas con un prefijo nuevo para probar
-# V4. Ajustar solo esta constante si el formato de credencial cambia.
-PATRON_CREDENCIAL_GENERICO = re.compile(r"\b([A-Z]+)-DEMO-\d+\b")
+# PATRON_CREDENCIAL_GENERICO (definido arriba, junto a las constantes de
+# mecanismo 1) es el mismo patron que usa este mecanismo: compartido a
+# proposito para que filtrado y minimo privilegio nunca diverjan sobre que
+# cuenta como credencial.
 
 
 def validar_privilegio(modelo_destino: str, texto_entrada: str) -> bool:
