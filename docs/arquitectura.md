@@ -38,7 +38,8 @@ a la vez, `C6` los cinco activos) cambiando únicamente `config.yaml`.
         │   │  estan aqui, ver mas abajo por que.               │  │
         │   │                                                   │  │
         │   │   1. filtrado           (patrones/regex)         │  │
-        │   │   3. clasificación      (Llama Guard)             │  │
+        │   │   3. clasificación      (2 modelos, por dirección│  │
+        │   │                          -- ver nota debajo)      │  │
         │   │   4. mínimo privilegio  (credencial de otro       │  │
         │   │                          dominio; solo entrada)   │  │
         │   │                                                   │  │
@@ -95,6 +96,17 @@ a la vez, `C6` los cinco activos) cambiando únicamente `config.yaml`.
 `11434` solo es alcanzable desde otros contenedores en `ironveil-net`. La
 única excepción documentada a "Ollama nunca se expone al host" es `C0`, y
 solo si el experimento lo exige de forma explícita (regla 3 de `CLAUDE.md`).
+
+**Nota sobre "clasificación (2 modelos, por dirección)"** (desde
+2026-09-18): a diferencia de los otros 4 mecanismos, `clasificar()` no usa
+un solo modelo. En dirección **entrada** usa **Llama Prompt Guard 2**
+(Meta, vía Hugging Face — no vía Ollama), un clasificador entrenado
+específicamente para prompt injection/jailbreak. En dirección **salida**
+sigue usando **Llama Guard 3 en Ollama**, como antes, porque evalúa
+seguridad de contenido en general sobre la respuesta ya generada — una
+tarea distinta a la de Prompt Guard. Ninguno de los dos reemplaza al otro:
+cada uno cubre la dirección para la que fue entrenado. Justificación
+completa en `docs/FUENTE_DE_VERDAD.md`, sección 4.
 
 ## 3. Flujo paso a paso
 
@@ -171,7 +183,7 @@ solo si el experimento lo exige de forma explícita (regla 3 de `CLAUDE.md`).
 |---|-----------|---------|------------|------------|
 | 1 | Filtrado | `filtrado` | Determinista (regex/patrones) | Redacta o bloquea por patrón, en entrada y salida |
 | 2 | Delimitación (spotlighting) | `delimitacion` | Determinista en estructura (token aleatorio por petición) | Reestructura el prompt para separar instrucciones de contenido no confiable |
-| 3 | Clasificación | `clasificacion` | Probabilístico (Llama Guard) | `unsafe`/`safe` sobre el texto original del usuario |
+| 3 | Clasificación | `clasificacion` | Probabilístico (Prompt Guard en entrada, Llama Guard en salida) | `unsafe`/`safe` (o `malicious`/`benign`) sobre el texto original del usuario |
 | 4 | Mínimo privilegio | `minimo_privilegio` | Determinista (regex de dominio) | Detecta credenciales de otro dominio dirigidas al modelo equivocado |
 | 5 | Aprobación humana + rate limit | `aprobacion_humana` | Humano en el loop | Encola o limita, con lock sobre el estado compartido entre peticiones concurrentes |
 
@@ -296,10 +308,17 @@ con `json.dumps(evento, ensure_ascii=False)` + salto de línea.
   pueda fabricar de antemano un cierre falso — `delimitar()` ya no es pura
   en el sentido estricto de "mismos argumentos, mismo string", solo
   determinista en su estructura.
-  `clasificar()` llama a `llama-guard3:1b` en Ollama (`POST /api/chat`, rol
-  `user` para `direccion="entrada"` o `assistant` para `"salida"`) e
-  interpreta `safe`/`unsafe`; falla cerrado (`True`) ante timeout, error de
-  red o respuesta malformada — es la única probabilística y con red real.
+  `clasificar()` usa un modelo distinto por dirección desde el 2026-09-18:
+  en **entrada**, Llama Prompt Guard 2 (86M, Meta) vía Hugging Face —no vía
+  Ollama—, cargado una sola vez de forma perezosa (`_obtener_pipeline_
+  prompt_guard()`, protegido con lock) y evaluado con
+  `_predecir_prompt_guard()`; en **salida**, sigue llamando a
+  `llama-guard3:1b` en Ollama (`POST /api/chat`, rol `assistant`) e
+  interpretando `safe`/`unsafe`. Falla cerrado (`True`) en las dos
+  direcciones ante cualquier error — timeout/red/respuesta malformada en
+  salida, o fallo de carga/inferencia (incluido `HF_TOKEN` ausente) en
+  entrada — es la única probabilística, y la única con dos backends
+  distintos.
   `validar_privilegio()` es determinista (regex de dominio,
   `PATRON_CREDENCIAL_GENERICO`): detecta si el texto dirigido a
   `modelo_destino` trae una credencial cuyo prefijo pertenece a otro modelo

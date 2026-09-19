@@ -15,6 +15,7 @@ import logging
 import os
 import re
 import secrets
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -371,32 +372,69 @@ TIMEOUT_CLASIFICADOR_S: float = float(os.getenv("TIMEOUT_CLASIFICADOR_S", "10"))
 # solitario sin turno "user" previo (ver docs/FUENTE_DE_VERDAD.md, seccion 3).
 _ROL_LLAMA_GUARD: dict[str, str] = {"entrada": "user", "salida": "assistant"}
 
+# Mecanismo 3, direccion "entrada": Llama Prompt Guard 2 (Meta), via Hugging
+# Face -- NO via Ollama, a diferencia de Llama Guard. Es un clasificador
+# (no un modelo de chat/generacion) entrenado especificamente para prompt
+# injection / jailbreak, a diferencia de Llama Guard, que es seguridad de
+# contenido en general (categorias S1-S13) y nunca fue evaluado para esto
+# (ver docs/FUENTE_DE_VERDAD.md, seccion 4, decision "Clasificador de
+# mecanismo 3 por direccion"). Llama Guard se queda para "salida": Prompt
+# Guard no esta pensado para juzgar si una RESPUESTA ya generada es
+# contenido peligroso en general, solo si un TEXTO es un intento de
+# manipular instrucciones -- usar el modelo equivocado para cada direccion
+# perderia cobertura, no la ganaria.
+#
+# Modelo con licencia restringida en Hugging Face (hay que aceptarla con
+# una cuenta y usar un token, ver docs/FUENTE_DE_VERDAD.md seccion 4).
+MODELO_PROMPT_GUARD_ID: str = os.getenv(
+    "MODELO_PROMPT_GUARD_ID", "meta-llama/Llama-Prompt-Guard-2-86M"
+)
+HF_TOKEN: str | None = os.getenv("HF_TOKEN")
+
+# Carga perezosa: el pipeline de transformers/torch solo se construye la
+# PRIMERA vez que se necesita, nunca al importar este modulo. Asi (a) los
+# tests que no ejercitan clasificacion nunca pagan el costo de cargar el
+# modelo ni necesitan transformers/torch instalados, y (b) si
+# `clasificacion` esta en false, el proceso del proxy jamas descarga nada.
+# Protegido con lock porque varias peticiones concurrentes podrian llegar
+# antes de que la primera termine de cargar el modelo (mismo motivo que
+# _registro_lock en proxy/main.py: el V5 dispara rafagas reales).
+_pipeline_prompt_guard: Any = None
+_lock_pipeline_prompt_guard = threading.Lock()
+
 
 def clasificar(texto: str, direccion: str) -> bool:
-    """Mecanismo 3 (clasificacion): probabilistico, via Llama Guard en Ollama.
+    """Mecanismo 3 (clasificacion): probabilistico, un modelo distinto por
+    direccion, cada uno usado para lo que fue entrenado.
 
     Recibe el texto a evaluar y `direccion` ("entrada" | "salida"). True
-    significa "unsafe" (debe bloquearse); False significa "safe".
+    significa "unsafe"/"malicious" (debe bloquearse); False significa
+    "safe"/"benign".
 
     Naturaleza: **probabilistico** (defensa "blanda"), a diferencia de
-    filtrar()/delimitar() (deterministas). Es la unica de las 3 funciones
-    implementadas hasta ahora que hace una llamada de red real.
+    filtrar()/delimitar() (deterministas). Es la unica de las 5 funciones
+    de mecanismos que hace llamadas de red/inferencia real.
 
-    Envia `texto` a MODELO_CLASIFICADOR via `POST {OLLAMA_BASE_URL}/api/chat`
-    como turno "user" si `direccion == "entrada"`, o "assistant" si
-    `direccion == "salida"` (formato oficial de Llama Guard 3:
-    https://developer.meta.com/ai/docs/model-cards-and-prompt-formats/llama-guard-3/
-    -- Ollama aplica la plantilla completa de categorias S1-S13
-    automaticamente segun el rol, no hay que reconstruirla a mano aqui).
-    Interpreta solo la primera linea de la respuesta ("safe" -> False,
-    "unsafe" -> True); ignora la segunda linea con las categorias violadas
-    (p. ej. "S1,S2"), porque esta funcion solo promete un bool.
+    - `direccion == "entrada"`: Llama Prompt Guard 2 (Meta, via Hugging
+      Face -- NO via Ollama), un clasificador binario entrenado
+      especificamente para prompt injection / jailbreak. Ver
+      `_clasificar_entrada_prompt_guard()`.
+    - `direccion == "salida"`: Llama Guard 3 en Ollama (como antes), que
+      evalua seguridad de contenido en general (categorias S1-S13) sobre
+      la respuesta ya generada por el modelo. Ver
+      `_clasificar_salida_llama_guard()`.
 
-    **Fail closed, siempre, nunca dejar pasar por defecto:**
-    - Timeout (TIMEOUT_CLASIFICADOR_S) o error de conexion -> True.
-    - Respuesta que no empieza por "safe" ni "unsafe" -> True, con un
-      logger.error() describiendo la respuesta cruda recibida (para poder
-      diagnosticar sin adivinar que paso).
+    Por que dos modelos distintos y no uno solo para las dos direcciones:
+    Prompt Guard nunca fue entrenado para juzgar si una respuesta completa
+    es "contenido peligroso en general"; Llama Guard nunca fue evaluado
+    para prompt injection (su propia ficha lo reconoce como limitacion, no
+    como algo que mide). Usar el modelo equivocado en una direccion
+    perderia cobertura en vez de ganarla. Decision documentada en
+    docs/FUENTE_DE_VERDAD.md, seccion 4.
+
+    **Fail closed, siempre, nunca dejar pasar por defecto**, en las dos
+    direcciones -- ver el docstring de cada funcion interna para el detalle
+    de que cuenta como fallo en cada una.
 
     Sin efectos secundarios de logging del experimento: no escribe el JSONL
     del esquema de log, igual que filtrar()/delimitar() -- eso es trabajo
@@ -411,6 +449,29 @@ def clasificar(texto: str, direccion: str) -> bool:
     if direccion not in _ROL_LLAMA_GUARD:
         raise ValueError(f"direccion invalida para clasificar(): {direccion!r}")
 
+    if direccion == "entrada":
+        return _clasificar_entrada_prompt_guard(texto)
+
+    return _clasificar_salida_llama_guard(texto, direccion)
+
+
+def _clasificar_salida_llama_guard(texto: str, direccion: str) -> bool:
+    """Mecanismo 3, direccion "salida": Llama Guard 3 via Ollama.
+
+    Envia `texto` a MODELO_CLASIFICADOR via `POST {OLLAMA_BASE_URL}/api/chat`
+    como turno "assistant" (formato oficial de Llama Guard 3:
+    https://developer.meta.com/ai/docs/model-cards-and-prompt-formats/llama-guard-3/
+    -- Ollama aplica la plantilla completa de categorias S1-S13
+    automaticamente segun el rol, no hay que reconstruirla a mano aqui).
+    Interpreta solo la primera linea de la respuesta ("safe" -> False,
+    "unsafe" -> True); ignora la segunda linea con las categorias violadas
+    (p. ej. "S1,S2"), porque esta funcion solo promete un bool.
+
+    Fail closed:
+    - Timeout (TIMEOUT_CLASIFICADOR_S) o error de conexion -> True.
+    - Respuesta que no empieza por "safe" ni "unsafe" -> True, con un
+      logger.error() describiendo la respuesta cruda recibida.
+    """
     payload = {
         "model": MODELO_CLASIFICADOR,
         "messages": [{"role": _ROL_LLAMA_GUARD[direccion], "content": texto}],
@@ -437,6 +498,91 @@ def clasificar(texto: str, direccion: str) -> bool:
 
     contenido = respuesta.json().get("message", {}).get("content", "")
     return _interpretar_respuesta_llama_guard(contenido)
+
+
+def _obtener_pipeline_prompt_guard() -> Any:
+    """Carga (una sola vez, protegida por lock) el pipeline de Prompt Guard.
+
+    Import perezoso de `transformers` aqui adentro: no pagar el costo de
+    importar torch/transformers si `clasificacion` nunca se activa o si
+    este proceso nunca recibe una peticion en direccion "entrada".
+
+    Lanza RuntimeError si HF_TOKEN no esta configurado (Prompt Guard es un
+    modelo con licencia restringida en Hugging Face) o si la descarga/carga
+    falla por cualquier otro motivo -- quien llama (
+    `_clasificar_entrada_prompt_guard`) atrapa esto y falla cerrado.
+    """
+    global _pipeline_prompt_guard
+    if _pipeline_prompt_guard is not None:
+        return _pipeline_prompt_guard
+
+    with _lock_pipeline_prompt_guard:
+        if _pipeline_prompt_guard is None:
+            if not HF_TOKEN:
+                raise RuntimeError(
+                    "HF_TOKEN no esta configurado (.env) -- requerido para "
+                    f"descargar {MODELO_PROMPT_GUARD_ID}, un modelo con "
+                    "licencia restringida en Hugging Face."
+                )
+            from transformers import pipeline as _crear_pipeline
+
+            _pipeline_prompt_guard = _crear_pipeline(
+                "text-classification",
+                model=MODELO_PROMPT_GUARD_ID,
+                token=HF_TOKEN,
+            )
+    return _pipeline_prompt_guard
+
+
+# VERIFICADO CONTRA EL MODELO REAL (2026-09-18, no solo contra la
+# documentacion): la ficha de meta-llama/Llama-Prompt-Guard-2-86M en
+# Hugging Face muestra en su ejemplo de codigo que las etiquetas son
+# "BENIGN"/"MALICIOUS" (via model.config.id2label). El checkpoint real que
+# carga pipeline() para este modelo NO trae esos nombres -- su
+# config.id2label es {0: "LABEL_0", 1: "LABEL_1"}, generico. Confirmado
+# empiricamente con texto de prueba conocido: frases de inyeccion en
+# espanol e ingles obtuvieron score > 0.999 para "LABEL_1"; texto legitimo,
+# score > 0.999 para "LABEL_0" -- ver docs/FUENTE_DE_VERDAD.md, seccion 4,
+# para el detalle completo (incluido el script de verificacion). Si un
+# futuro checkpoint trae labels con nombre, hay que revisar esta constante.
+_ETIQUETA_PROMPT_GUARD_MALICIOSO = "LABEL_1"
+
+
+def _predecir_prompt_guard(texto: str) -> str:
+    """Corre Prompt Guard sobre `texto` y devuelve la etiqueta cruda.
+
+    Etiquetas reales del modelo (binarias, ver _ETIQUETA_PROMPT_GUARD_
+    MALICIOSO arriba): "LABEL_0" (benigno) | "LABEL_1" (malicioso). Aislada
+    en su propia funcion, separada de _clasificar_entrada_prompt_guard(),
+    para que los tests puedan mockear esta unica linea sin descargar el
+    modelo real ni depender de transformers/torch instalados (misma logica
+    que ya usa el resto del proyecto para clasificar() con mocks de
+    Ollama).
+    """
+    clasificador = _obtener_pipeline_prompt_guard()
+    return clasificador(texto)[0]["label"]
+
+
+def _clasificar_entrada_prompt_guard(texto: str) -> bool:
+    """Mecanismo 3, direccion "entrada": Llama Prompt Guard 2 (Meta).
+
+    Fail closed ante CUALQUIER fallo -- descarga/carga del modelo (incluido
+    HF_TOKEN ausente o invalido), o error de inferencia: se trata como
+    malicioso y se registra con logger.error() la excepcion real, para
+    poder diagnosticar sin adivinar que paso (mismo criterio que
+    _clasificar_salida_llama_guard(), aplicado a un modelo local en vez de
+    una llamada HTTP).
+    """
+    try:
+        etiqueta = _predecir_prompt_guard(texto)
+    except Exception as exc:  # noqa: BLE001 -- fail closed ante cualquier fallo
+        logger.error(
+            "clasificar(): error usando Prompt Guard (%s): %s; fail closed (unsafe).",
+            MODELO_PROMPT_GUARD_ID,
+            exc,
+        )
+        return True
+    return etiqueta == _ETIQUETA_PROMPT_GUARD_MALICIOSO
 
 
 def _interpretar_respuesta_llama_guard(contenido: str) -> bool:

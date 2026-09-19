@@ -45,6 +45,12 @@ services:
     environment:
       OLLAMA_BASE_URL: http://ollama:11434
       MODELO_CLASIFICADOR: ${MODELO_CLASIFICADOR:-llama-guard3:1b}
+      # Mecanismo 3, direccion "entrada" (Llama Prompt Guard 2, via Hugging
+      # Face, NO via Ollama). HF_TOKEN es obligatorio: es un modelo con
+      # licencia restringida. Sin el, clasificar() en entrada falla cerrado
+      # (unsafe) en cada peticion -- ver docs/FUENTE_DE_VERDAD.md, seccion 4.
+      MODELO_PROMPT_GUARD_ID: ${MODELO_PROMPT_GUARD_ID:-meta-llama/Llama-Prompt-Guard-2-86M}
+      HF_TOKEN: ${HF_TOKEN}
     volumes:
       # Monta config.yaml (no se copia en la imagen) para poder cambiar de
       # configuracion (C0..C6) con solo editar el archivo y reiniciar el

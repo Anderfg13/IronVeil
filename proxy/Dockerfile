@@ -6,6 +6,11 @@ FROM python:3.12-slim
 # volumen de solo lectura para poder cambiar de configuracion sin rebuild.
 WORKDIR /app
 
+# torch CPU-only, aparte de requirements.txt: el indice por defecto de PyPI
+# trae la variante CUDA (varios GB), innecesaria sin GPU en el laboratorio.
+# Usado por transformers (mecanismo 3, direccion "entrada", Prompt Guard).
+RUN pip install --no-cache-dir torch==2.14.0 --index-url https://download.pytorch.org/whl/cpu
+
 COPY proxy/requirements.txt proxy/requirements.txt
 RUN pip install --no-cache-dir -r proxy/requirements.txt
 
