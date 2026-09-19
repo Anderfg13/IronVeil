@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -98,6 +99,76 @@ def _preparar_entorno(
     monkeypatch.setattr(main.httpx, "AsyncClient", lambda *a, **k: cliente_falso)
 
     return cliente_falso, resultados_dir
+
+
+class _ClienteOllamaConError:
+    """Simula que Ollama devolvio un error (HTTPStatusError/RequestError)."""
+
+    def __init__(self, excepcion: Exception) -> None:
+        self._excepcion = excepcion
+
+    async def __aenter__(self) -> _ClienteOllamaConError:
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        return None
+
+    async def post(self, *args: object, **kwargs: object) -> Any:
+        raise self._excepcion
+
+
+# --- Manejo de errores de Ollama: mensaje generico (OWASP Error Handling) --
+#
+# ataques/variantes_ataque.md V1-D prueba justo esto: pedir un modelo que
+# no existe para ver si el error revela detalles del backend. Encontrado el
+# 2026-09-19 que _llamar_ollama() reenviaba exc.response.text tal cual al
+# cliente -- corregido para que el cliente solo vea un mensaje generico, y
+# el detalle real quede solo en el log del servidor.
+
+
+def test_chat_error_http_de_ollama_no_revela_detalle_crudo(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    flags = dict.fromkeys(mecanismos.FLAGS_REQUERIDAS, False)
+    _preparar_entorno(monkeypatch, tmp_path, flags, "no se usa")
+
+    peticion_ollama = httpx.Request("POST", "http://ollama:11434/api/chat")
+    respuesta_ollama = httpx.Response(
+        404,
+        request=peticion_ollama,
+        content=b'{"error":"model \'noexiste\' not found"}',
+    )
+    excepcion = httpx.HTTPStatusError(
+        "404 Not Found", request=peticion_ollama, response=respuesta_ollama
+    )
+    monkeypatch.setattr(
+        main.httpx, "AsyncClient", lambda *a, **k: _ClienteOllamaConError(excepcion)
+    )
+
+    respuesta = client.post("/chat", json={"modelo": "noexiste", "mensaje": "hola"})
+
+    assert respuesta.status_code == 404
+    assert respuesta.json()["detail"] == main._DETALLE_ERROR_OLLAMA
+    assert "noexiste" not in respuesta.text
+    assert "not found" not in respuesta.text
+
+
+def test_chat_error_de_conexion_a_ollama_no_revela_detalle_crudo(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    flags = dict.fromkeys(mecanismos.FLAGS_REQUERIDAS, False)
+    _preparar_entorno(monkeypatch, tmp_path, flags, "no se usa")
+
+    excepcion = httpx.ConnectError("Connection refused a ironveil-ollama.internal")
+    monkeypatch.setattr(
+        main.httpx, "AsyncClient", lambda *a, **k: _ClienteOllamaConError(excepcion)
+    )
+
+    respuesta = client.post("/chat", json={"modelo": "soporte", "mensaje": "hola"})
+
+    assert respuesta.status_code == 502
+    assert respuesta.json()["detail"] == main._DETALLE_ERROR_OLLAMA
+    assert "ironveil-ollama.internal" not in respuesta.text
 
 
 def _leer_eventos(resultados_dir: Path) -> list[dict[str, Any]]:

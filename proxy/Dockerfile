@@ -18,4 +18,11 @@ COPY proxy/ proxy/
 
 EXPOSE 8000
 
-CMD ["uvicorn", "proxy.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# --no-server-header: OWASP Error Handling Cheat Sheet (no revelar detalles
+# tecnicos que ayuden a reconocimiento). Sin esto, Uvicorn agrega
+# "Server: uvicorn" a cada respuesta -- exactamente lo que prueba V1-B/V1-E
+# de ataques/variantes_ataque.md. Encontrado el 2026-09-19 (ver
+# docs/FUENTE_DE_VERDAD.md, seccion 9). No se puede probar con TestClient
+# (corre la app ASGI directo, sin pasar por Uvicorn); verificado a mano
+# contra el contenedor real con curl -i.
+CMD ["uvicorn", "proxy.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-server-header"]

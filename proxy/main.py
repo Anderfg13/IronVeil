@@ -62,6 +62,15 @@ _DETALLE_EN_REVISION: str = (
     "Tu solicitud fue puesta en revision por los mecanismos de aprobacion "
     "humana. Intentalo de nuevo mas tarde."
 )
+# OWASP Error Handling Cheat Sheet ("generic error responses... error
+# details logged server side, not returned to the user"): un error de
+# Ollama pasado tal cual al cliente revela detalles internos (p. ej. que el
+# backend es Ollama, o el nombre exacto del modelo probado, util para
+# enumeracion por contraste -- vector V1-D de ataques/variantes_ataque.md).
+# El detalle real siempre se loggea server-side en _llamar_ollama(); el
+# cliente solo ve este mensaje generico. Encontrado el 2026-09-19 al
+# revisar V1 contra OWASP (ver docs/FUENTE_DE_VERDAD.md, seccion 9).
+_DETALLE_ERROR_OLLAMA: str = "No se pudo procesar la solicitud."
 
 # Mecanismo 2 (delimitacion). Texto que el proxy coloca en el bloque
 # [INSTRUCCIONES DEL SISTEMA] del andamiaje de spotlighting.
@@ -334,13 +343,18 @@ async def _llamar_ollama(modelo: str, mensaje: str) -> dict[str, Any]:
             response = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload)
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
+            logger.warning(
+                "Ollama devolvio %d para modelo=%r: %s",
+                exc.response.status_code,
+                modelo,
+                exc.response.text,
+            )
             raise HTTPException(
-                status_code=exc.response.status_code, detail=exc.response.text
+                status_code=exc.response.status_code, detail=_DETALLE_ERROR_OLLAMA
             ) from exc
         except httpx.RequestError as exc:
-            raise HTTPException(
-                status_code=502, detail=f"No se pudo contactar a Ollama: {exc}"
-            ) from exc
+            logger.warning("No se pudo contactar a Ollama (modelo=%r): %s", modelo, exc)
+            raise HTTPException(status_code=502, detail=_DETALLE_ERROR_OLLAMA) from exc
     return response.json()
 
 
