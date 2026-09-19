@@ -11,11 +11,13 @@ contra sistemas de terceros.
 
 ## Estado actual
 
-Mecanismos con logica real y cableados en el proxy: **filtrado** (C1),
-**delimitacion / spotlighting** (C2) y **clasificacion / Llama Guard** (C3).
-Con sus banderas de `config.yaml` en `false` el proxy es un passthrough puro
-hacia Ollama (C0). Minimo privilegio y aprobacion humana siguen como stubs
-neutros: se conectan en las siguientes semanas.
+Los 5 mecanismos tienen logica real y estan cableados en el proxy:
+**filtrado** (C1), **delimitacion / spotlighting** (C2), **clasificacion /
+Llama Guard** (C3), **minimo privilegio** (C4) y **aprobacion humana + rate
+limit** (C5, backend). Con las 5 banderas de `config.yaml` en `false` el
+proxy es un passthrough puro hacia Ollama (C0). Pendiente: la interfaz para
+aprobar/rechazar desde afuera las peticiones que quedan en revision
+(`proxy/cola.py` ya expone `listar()`/`retirar()` para construirla).
 
 ## Estructura del proyecto
 
@@ -25,6 +27,8 @@ neutros: se conectan en las siguientes semanas.
 ├── .env.example
 ├── proxy/
 │   ├── main.py            # FastAPI: POST /chat -> Ollama /api/chat
+│   ├── mecanismos.py       # Los 5 mecanismos defensivos
+│   ├── cola.py             # Cola de revision humana + rate limiter (mecanismo 5)
 │   ├── requirements.txt
 │   └── Dockerfile
 ├── ollama/
@@ -32,6 +36,7 @@ neutros: se conectan en las siguientes semanas.
 │   └── modelfiles/
 │       ├── Modelfile.soporte.template
 │       └── Modelfile.rrhh.template
+├── tests/                  # pytest: unitarias e integracion
 └── docs/
     └── arquitectura.md
 ```

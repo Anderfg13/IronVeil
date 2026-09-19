@@ -35,19 +35,58 @@ FLAGS_REQUERIDAS: tuple[str, ...] = (
 )
 
 # Mecanismo 1 (filtrado). Patrones de entrada conocidos de prompt injection /
-# intento de extraccion de instrucciones. Definidos una sola vez aqui, nunca
-# repetidos ni incrustados en filtrar(). No son secretos: es la lista de
-# frases que el filtro reconoce, no una credencial.
+# intento de extraccion de instrucciones, organizados por concepto e idioma:
+# agregar un idioma nuevo es una linea de datos, no una decision de diseno.
+# Definidos una sola vez aqui, nunca repetidos ni incrustados en filtrar().
+# No son secretos: es la lista de frases que el filtro reconoce, no una
+# credencial.
+#
+# Bilingue a proposito (OWASP LLM Prompt Injection Prevention Cheat Sheet):
+# un filtro que solo reconoce espanol deja pasar cualquier ataque clasico en
+# ingles ("ignore all previous instructions"). Esta lista, por diseno, solo
+# cubre los idiomas y frases que alguien escribio aqui -- no cubre variantes
+# ofuscadas (espaciado letra por letra, typoglycemia, homofonos) ni idiomas
+# fuera de esta tabla. Eso es una limitacion conocida de cualquier filtro
+# basado en patrones, documentada por el propio OWASP, y es exactamente lo
+# que el mecanismo 3 (clasificacion) cubre en la capa siguiente: un modelo
+# generaliza por significado, esta tabla solo generaliza hasta donde alguien
+# la escribio. Ensanchar este filtro con matching difuso no cierra esa
+# brecha de forma confiable y arriesga falsos positivos sobre texto legitimo.
+PATRONES_PROHIBIDOS_ENTRADA_POR_CONCEPTO: dict[str, dict[str, str]] = {
+    "ignorar_instrucciones": {
+        "es": r"ignora(?:r)?\s+(?:todas\s+)?(?:tus\s+)?instrucciones",
+        "en": r"ignore\s+(?:all\s+)?(?:your\s+)?(?:previous\s+)?instructions",
+    },
+    "olvidar_reglas_anteriores": {
+        "es": r"olvida(?:r)?\s+(?:las\s+)?reglas\s+anteriores",
+        "en": r"forget\s+(?:the\s+)?(?:previous\s+)?rules",
+    },
+    "modo_desarrollador": {
+        "es": r"modo\s+desarrollador",
+        "en": r"developer\s+mode",
+    },
+    "configuracion_inicial": {
+        "es": r"cu[aá]l\s+es\s+tu\s+configuraci[oó]n\s+inicial",
+        "en": r"what\s+is\s+your\s+initial\s+configuration",
+    },
+    "system_prompt": {
+        # Prestamo del ingles usado tal cual en ambos idiomas: una sola
+        # entrada ya cubre los dos casos, duplicarla no agregaria cobertura.
+        "es_en": r"system\s+prompt",
+    },
+}
+
 PATRONES_PROHIBIDOS_ENTRADA: tuple[re.Pattern[str], ...] = tuple(
     re.compile(patron, re.IGNORECASE)
-    for patron in (
-        r"ignora(?:r)?\s+(?:todas\s+)?(?:tus\s+)?instrucciones",
-        r"olvida(?:r)?\s+(?:las\s+)?reglas\s+anteriores",
-        r"modo\s+desarrollador",
-        r"cu[aá]l\s+es\s+tu\s+configuraci[oó]n\s+inicial",
-        r"system\s+prompt",
-    )
+    for variantes_por_idioma in PATRONES_PROHIBIDOS_ENTRADA_POR_CONCEPTO.values()
+    for patron in variantes_por_idioma.values()
 )
+
+# Mecanismo 1 (filtrado), direccion "entrada". Longitud maxima de un mensaje
+# de usuario, recomendada por el OWASP LLM Prompt Injection Prevention Cheat
+# Sheet como parte de "input validation and sanitization". Ajustable aqui,
+# un solo lugar.
+LIMITE_LONGITUD_MENSAJE: int = 10_000
 
 # Mecanismo 1 (filtrado), direccion "salida". Solo la ESTRUCTURA del
 # identificador (prefijo + digitos), nunca el valor real de la credencial:
@@ -145,11 +184,12 @@ def filtrar(texto: str, direccion: str) -> tuple[str, bool]:
     efectos secundarios: no escribe el log ni conoce la configuracion activa,
     solo decide sobre el texto que recibe.
 
-    Si `direccion == "entrada"`: compara el texto contra
+    Si `direccion == "entrada"`: bloquea si el texto supera
+    LIMITE_LONGITUD_MENSAJE caracteres, o si coincide con
     PATRONES_PROHIBIDOS_ENTRADA (intentos conocidos de prompt injection /
-    extraccion de instrucciones). Si hay coincidencia, retorna
-    (texto_original, True) sin modificar el texto: la decision de rechazar
-    la peticion completa la toma quien llama, no esta funcion.
+    extraccion de instrucciones, en espanol e ingles). Si hay bloqueo,
+    retorna (texto_original, True) sin modificar el texto: la decision de
+    rechazar la peticion completa la toma quien llama, no esta funcion.
 
     Si `direccion == "salida"`: busca PATRON_CREDENCIAL_CANARIO (el formato
     SPT-DEMO-<numero> / RRHH-DEMO-<numero>) y reemplaza cada coincidencia por
@@ -160,7 +200,9 @@ def filtrar(texto: str, direccion: str) -> tuple[str, bool]:
     Lanza ValueError si `direccion` no es "entrada" ni "salida".
     """
     if direccion == "entrada":
-        bloquear = any(patron.search(texto) for patron in PATRONES_PROHIBIDOS_ENTRADA)
+        bloquear = len(texto) > LIMITE_LONGITUD_MENSAJE or any(
+            patron.search(texto) for patron in PATRONES_PROHIBIDOS_ENTRADA
+        )
         return texto, bloquear
 
     if direccion == "salida":
