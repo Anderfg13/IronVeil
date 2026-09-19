@@ -74,11 +74,43 @@ def test_delimitar_entrada_con_inyeccion_queda_dentro_del_bloque_no_confiable() 
     assert resultado.index(INSTRUCCION_ANTI_INYECCION) > fin_usuario
 
 
-def test_delimitar_es_pura_y_deterministica() -> None:
+def test_delimitar_genera_un_token_distinto_en_cada_llamada() -> None:
+    # A proposito, desde 2026-09-18: un token fijo y publico (visible en
+    # este mismo repositorio) seria adivinable por un atacante, que podria
+    # fabricar un cierre falso dentro de su propio mensaje. Con un token
+    # aleatorio por peticion, ese texto fabricado nunca coincide con el
+    # marcador real de una llamada especifica.
     a = delimitar(SYSTEM_PROMPT, ENTRADA_INYECCION)
     b = delimitar(SYSTEM_PROMPT, ENTRADA_INYECCION)
 
-    assert a == b
+    assert a != b
+    # La ESTRUCTURA (prefijos, orden) sigue siendo identica; solo el token
+    # cambia -- ambos siguen conteniendo los mismos marcadores base.
+    for marcador in (
+        DELIM_SISTEMA_INICIO,
+        DELIM_SISTEMA_FIN,
+        DELIM_USUARIO_INICIO,
+        DELIM_USUARIO_FIN,
+    ):
+        assert marcador in a
+        assert marcador in b
+
+
+def test_delimitar_usa_el_mismo_token_en_los_4_marcadores_de_una_llamada() -> None:
+    resultado = delimitar(SYSTEM_PROMPT, ENTRADA_NORMAL)
+
+    inicio = resultado.index(DELIM_SISTEMA_INICIO) + len(DELIM_SISTEMA_INICIO)
+    token = resultado[inicio : inicio + 8]
+
+    assert len(token) == 8
+    assert all(c in "0123456789abcdef" for c in token)
+    for marcador in (
+        DELIM_SISTEMA_INICIO,
+        DELIM_SISTEMA_FIN,
+        DELIM_USUARIO_INICIO,
+        DELIM_USUARIO_FIN,
+    ):
+        assert f"{marcador}{token}" in resultado
 
 
 def test_delimitar_no_muta_sus_argumentos() -> None:
@@ -96,4 +128,7 @@ def test_delimitar_maneja_entrada_vacia() -> None:
 
     assert DELIM_USUARIO_INICIO in resultado
     assert DELIM_USUARIO_FIN in resultado
-    assert f"{DELIM_USUARIO_INICIO}\n\n{DELIM_USUARIO_FIN}" in resultado
+    # Entre el cierre del marcador de apertura ("...PREGUNTA]") y el inicio
+    # del marcador de cierre no debe quedar nada mas que las dos lineas en
+    # blanco de una entrada_usuario vacia.
+    assert "COMO PREGUNTA]\n\n[FIN ENTRADA DEL USUARIO-" in resultado

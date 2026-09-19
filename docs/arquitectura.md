@@ -170,7 +170,7 @@ solo si el experimento lo exige de forma explícita (regla 3 de `CLAUDE.md`).
 | # | Mecanismo | Bandera | Naturaleza | Qué decide |
 |---|-----------|---------|------------|------------|
 | 1 | Filtrado | `filtrado` | Determinista (regex/patrones) | Redacta o bloquea por patrón, en entrada y salida |
-| 2 | Delimitación (spotlighting) | `delimitacion` | Determinista, función pura | Reestructura el prompt para separar instrucciones de contenido no confiable |
+| 2 | Delimitación (spotlighting) | `delimitacion` | Determinista en estructura (token aleatorio por petición) | Reestructura el prompt para separar instrucciones de contenido no confiable |
 | 3 | Clasificación | `clasificacion` | Probabilístico (Llama Guard) | `unsafe`/`safe` sobre el texto original del usuario |
 | 4 | Mínimo privilegio | `minimo_privilegio` | Determinista (regex de dominio) | Detecta credenciales de otro dominio dirigidas al modelo equivocado |
 | 5 | Aprobación humana + rate limit | `aprobacion_humana` | Humano en el loop | Encola o limita, con lock sobre el estado compartido entre peticiones concurrentes |
@@ -288,9 +288,14 @@ con `json.dumps(evento, ensure_ascii=False)` + salto de línea.
     de la escritura — ver `docs/FUENTE_DE_VERDAD.md`, sección 9.
 - `proxy/mecanismos.py`: las 5 funciones tienen lógica real. `filtrar()`
   bloquea en entrada por patrones de prompt injection y redacta
-  credenciales canario en salida. `delimitar()` es una función pura que
-  envuelve la entrada del usuario entre delimitadores textuales explícitos
-  (spotlighting, arXiv:2403.14720); nunca bloquea, solo reestructura.
+  credenciales canario en salida. `delimitar()` envuelve la entrada del
+  usuario entre delimitadores textuales explícitos (spotlighting,
+  arXiv:2403.14720); nunca bloquea, solo reestructura. Desde el
+  2026-09-18 cada marcador lleva un token aleatorio distinto por petición
+  (no es sesión: el proxy no tiene ese concepto), para que un atacante no
+  pueda fabricar de antemano un cierre falso — `delimitar()` ya no es pura
+  en el sentido estricto de "mismos argumentos, mismo string", solo
+  determinista en su estructura.
   `clasificar()` llama a `llama-guard3:1b` en Ollama (`POST /api/chat`, rol
   `user` para `direccion="entrada"` o `assistant` para `"salida"`) e
   interpreta `safe`/`unsafe`; falla cerrado (`True`) ante timeout, error de

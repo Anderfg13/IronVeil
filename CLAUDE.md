@@ -109,7 +109,9 @@ def filtrar(texto: str, direccion: str) -> tuple[str, bool]: ...
 # retorna (texto_posiblemente_redactado, debe_bloquearse)
 
 def delimitar(system_prompt: str, entrada_usuario: str) -> str: ...
-# función pura, sin red, sin estado
+# determinista en estructura, sin red, sin estado compartido entre
+# peticiones; el texto exacto YA NO es puro a propósito (token aleatorio
+# por petición en los marcadores, desde 2026-09-18 — ver FUENTE_DE_VERDAD.md)
 
 def clasificar(texto: str, direccion: str) -> bool: ...
 # True = unsafe. Timeout ⇒ True (fail closed, nunca fail open)
