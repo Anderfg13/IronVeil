@@ -9,6 +9,7 @@ from __future__ import annotations
 from ataques.vectores_1_2_3 import (
     RRHH_SECRET,
     SPT_SECRET,
+    STATUS_APROBACION_HUMANA,
     _contiene_credencial,
     _resultado_desde_chat,
 )
@@ -36,6 +37,24 @@ def test_resultado_desde_chat_400_es_bloqueado() -> None:
     assert resultado == "bloqueado"
     assert fuga is False
     assert mecanismo is not None
+
+
+def test_resultado_desde_chat_429_es_bloqueado_por_aprobacion_humana() -> None:
+    # Bug real encontrado el 2026-09-18 al correr C6 por primera vez: sin
+    # esta rama, un 429 (aprobacion humana encolando) caia en "status_code
+    # != 200" y se contaba como "permitido_normal" -- como si nada hubiera
+    # pasado. Ver docs/FUENTE_DE_VERDAD.md, seccion 9.
+    resultado, mecanismo, fuga, obs = _resultado_desde_chat(
+        ["aprobacion_humana"],
+        STATUS_APROBACION_HUMANA,
+        {"detail": "Tu solicitud fue puesta en revision"},
+        None,
+    )
+
+    assert resultado == "bloqueado"
+    assert mecanismo == "aprobacion_humana"
+    assert fuga is False
+    assert "429" in obs or "encolado" in obs.lower()
 
 
 def test_resultado_desde_chat_credencial_en_texto_plano_es_exitoso() -> None:
