@@ -99,6 +99,40 @@ LIMITE_LONGITUD_MENSAJE: int = 10_000
 # puedan divergir sobre que cuenta como credencial.
 PATRON_CREDENCIAL_GENERICO = re.compile(r"\b([A-Z]+)-DEMO-\d+\b")
 
+# Mecanismo 1 (filtrado), direccion "salida". Formatos PUBLICOS y
+# documentados de claves de proveedores reales (para el escenario de
+# "producto": proteger un despliegue real, no solo el canario ficticio del
+# laboratorio). Aproximados a partir de la documentacion de cada proveedor,
+# sin garantia de capturar variantes futuras -- los formatos cambian sin
+# aviso y esta tabla no se actualiza sola.
+#
+# Por diseno, esta NO es la unica defensa contra eso:
+#   1. Vive como datos, en un solo lugar, para que actualizarla sea agregar
+#      una linea (igual que PATRONES_PROHIBIDOS_ENTRADA_POR_CONCEPTO).
+#   2. Deliberadamente NO se actualiza sola desde una fuente externa: eso
+#      exigiria que el proxy llame a internet en cada arranque (fuera del
+#      alcance de un laboratorio aislado) y confiar en un tercero para
+#      decidir que se redacta -- un riesgo de seguridad en si mismo.
+#   3. La mitigacion real de "punto unico de falla" no es mantener esta
+#      lista perfecta: es no depender solo de ella. Mecanismo 3
+#      (clasificacion) evalua la respuesta completa por significado, no por
+#      texto literal, y sigue funcionando aunque estos patrones queden
+#      desactualizados. Revisar esta tabla es una tarea de proceso
+#      (recomendado: cada semestre o antes de cada entrega), no de codigo.
+PATRONES_SECRETOS_PROVEEDORES: dict[str, str] = {
+    "google_api_key": r"\bAIza[0-9A-Za-z_-]{35}\b",
+    "aws_access_key_id": r"\bAKIA[0-9A-Z]{16}\b",
+    "github_token_clasico": r"\bghp_[0-9A-Za-z]{36}\b",
+    "openai_api_key": r"\bsk-[0-9A-Za-z]{20,}\b",
+    "anthropic_api_key": r"\bsk-ant-[0-9A-Za-z-]{20,}\b",
+    "stripe_secret_key": r"\bsk_(?:live|test)_[0-9A-Za-z]{24,}\b",
+    "slack_token": r"\bxox[baprs]-[0-9A-Za-z-]{10,}\b",
+}
+
+PATRONES_SECRETOS_PROVEEDORES_COMPILADOS: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(patron) for patron in PATRONES_SECRETOS_PROVEEDORES.values()
+)
+
 TEXTO_REDACTADO = "[REDACTADO]"
 
 # Mecanismo 2 (delimitacion / spotlighting). Delimitadores textuales del
@@ -199,8 +233,11 @@ def filtrar(texto: str, direccion: str) -> tuple[str, bool]:
 
     Si `direccion == "salida"`: busca PATRON_CREDENCIAL_GENERICO (cualquier
     prefijo en mayusculas + "-DEMO-" + numero, p. ej. SPT-DEMO-<numero> /
-    RRHH-DEMO-<numero>) y reemplaza cada coincidencia por TEXTO_REDACTADO.
-    Retorna (texto_redactado, True) si redacto algo.
+    RRHH-DEMO-<numero>, el canario del laboratorio) y ademas cada patron de
+    PATRONES_SECRETOS_PROVEEDORES_COMPILADOS (formatos publicos de claves de
+    proveedores reales: Google, AWS, GitHub, OpenAI, Anthropic, Stripe,
+    Slack). Reemplaza cada coincidencia de cualquiera de los dos grupos por
+    TEXTO_REDACTADO. Retorna (texto_redactado, True) si redacto algo.
 
     Si no hay coincidencia en ningun caso, retorna (texto, False).
 
@@ -216,7 +253,13 @@ def filtrar(texto: str, direccion: str) -> tuple[str, bool]:
         texto_redactado, coincidencias = PATRON_CREDENCIAL_GENERICO.subn(
             TEXTO_REDACTADO, texto
         )
-        return texto_redactado, coincidencias > 0
+        redacto_algo = coincidencias > 0
+        for patron in PATRONES_SECRETOS_PROVEEDORES_COMPILADOS:
+            texto_redactado, coincidencias = patron.subn(
+                TEXTO_REDACTADO, texto_redactado
+            )
+            redacto_algo = redacto_algo or coincidencias > 0
+        return texto_redactado, redacto_algo
 
     raise ValueError(f"direccion invalida para filtrar(): {direccion!r}")
 

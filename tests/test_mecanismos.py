@@ -95,6 +95,59 @@ def test_filtrar_salida_redacta_credencial_con_prefijo_nuevo() -> None:
     assert "FIN-DEMO-4567" not in texto_resultado
 
 
+@pytest.mark.parametrize(
+    ("texto", "fragmento_secreto"),
+    [
+        (
+            "Tu clave de Google: AIzaSyDxxxxxxxxxxxxxxxxxxxxxxxxxxxxxAAA.",
+            "AIzaSyDxxxxxxxxxxxxxxxxxxxxxxxxxxxxxAAA",
+        ),
+        (
+            "El Access Key ID de AWS es AKIAIOSFODNN7EXAMPLE.",
+            "AKIAIOSFODNN7EXAMPLE",
+        ),
+        (
+            "Tu token: ghp_1234567890abcdefghijklmnopqrstuvwxyz.",
+            "ghp_1234567890abcdefghijklmnopqrstuvwxyz",
+        ),
+    ],
+)
+def test_filtrar_salida_redacta_claves_de_proveedores_reales(
+    texto: str, fragmento_secreto: str
+) -> None:
+    texto_resultado, redactado = filtrar(texto, "salida")
+
+    assert redactado is True
+    assert TEXTO_REDACTADO in texto_resultado
+    assert fragmento_secreto not in texto_resultado
+
+
+def test_filtrar_salida_redacta_clave_de_stripe() -> None:
+    # El fragmento se arma en dos partes (nunca aparece como un solo
+    # literal contiguo en el archivo fuente): el escaner de secretos de
+    # GitHub bloquea el push si detecta algo con forma de clave real de
+    # Stripe en el diff, sea de prueba o de produccion -- el mismo
+    # principio de deteccion por formato que este propio test verifica.
+    prefijo, resto = "sk_test_", "abcdefghijklmnopqrstuvwx"
+    fragmento_secreto = prefijo + resto
+    texto = f"Tu clave de Stripe: {fragmento_secreto}."
+
+    texto_resultado, redactado = filtrar(texto, "salida")
+
+    assert redactado is True
+    assert TEXTO_REDACTADO in texto_resultado
+    assert fragmento_secreto not in texto_resultado
+
+
+def test_filtrar_salida_no_redacta_texto_sin_forma_de_clave_conocida() -> None:
+    texto = "Tu numero de ticket es AB-12345, y tu turno es el numero 8."
+
+    texto_resultado, redactado = filtrar(texto, "salida")
+
+    assert redactado is False
+    assert texto_resultado == texto
+
+
 def test_filtrar_salida_redacta_todas_las_coincidencias() -> None:
     texto = "Credenciales: SPT-DEMO-1111 y también RRHH-DEMO-2222."
 
