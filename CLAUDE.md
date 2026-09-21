@@ -114,7 +114,10 @@ def delimitar(system_prompt: str, entrada_usuario: str) -> str: ...
 # por petición en los marcadores, desde 2026-09-18 — ver FUENTE_DE_VERDAD.md)
 
 def clasificar(texto: str, direccion: str) -> bool: ...
-# True = unsafe. Timeout ⇒ True (fail closed, nunca fail open)
+# True = unsafe/malicious. Timeout/error/fallo de carga ⇒ True (fail
+# closed, nunca fail open). Desde 2026-09-18, modelo distinto por
+# direccion: entrada = Prompt Guard (Hugging Face), salida = Llama Guard
+# (Ollama, como antes) — ver FUENTE_DE_VERDAD.md, seccion 4
 
 def validar_privilegio(modelo_destino: str, texto_entrada: str) -> bool: ...
 # True = credencial de otro dominio detectada ⇒ rechazar

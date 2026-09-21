@@ -12,12 +12,16 @@ contra sistemas de terceros.
 ## Estado actual
 
 Los 5 mecanismos tienen logica real y estan cableados en el proxy:
-**filtrado** (C1), **delimitacion / spotlighting** (C2), **clasificacion /
-Llama Guard** (C3), **minimo privilegio** (C4) y **aprobacion humana + rate
-limit** (C5, backend). Con las 5 banderas de `config.yaml` en `false` el
-proxy es un passthrough puro hacia Ollama (C0). Pendiente: la interfaz para
-aprobar/rechazar desde afuera las peticiones que quedan en revision
-(`proxy/cola.py` ya expone `listar()`/`retirar()` para construirla).
+**filtrado** (C1), **delimitacion / spotlighting** (C2), **clasificacion**
+(C3), **minimo privilegio** (C4) y **aprobacion humana + rate limit** (C5,
+backend + interfaz). Con las 5 banderas de `config.yaml` en `false` el
+proxy es un passthrough puro hacia Ollama (C0). La cola de revision humana
+(`proxy/cola.py`) ya se puede consultar y resolver por HTTP: `GET
+/revision` lista lo pendiente, `POST /revision/{id}/aprobar` completa la
+peticion contra Ollama y devuelve la respuesta real, `POST
+/revision/{id}/rechazar` la descarta; `GET /revision/ui` sirve una pagina
+HTML minima sobre esos mismos 3 endpoints para no depender de `curl` a
+mano durante las pruebas.
 
 ## Estructura del proyecto
 
