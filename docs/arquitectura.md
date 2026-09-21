@@ -330,16 +330,39 @@ con `json.dumps(evento, ensure_ascii=False)` + salto de línea.
   el contrato de `CLAUDE.md`): mantener la cola de revisión humana, no el
   log del experimento. También vive aquí `cargar_config()`, que es
   funcional.
-- `proxy/cola.py` (nuevo): `ColaRevision` — cola FIFO de peticiones
-  pendientes (con `id` estable para que la interfaz de Piedrahita pueda
-  retirarlas sin ambigüedad) y rate limiter por cliente (ventana deslizante
-  de `VENTANA_LIMITE_S` segundos). Ambas operaciones protegidas con el
-  mismo `threading.Lock`. `cola_global` es la instancia compartida por todo
-  el proceso; los tests crean instancias propias para no compartir estado.
-  Interfaz mínima pensada para que la interfaz de aprobación/rechazo
-  (Piedrahita, en paralelo esta semana) opere sobre ella: `listar()` y
-  `retirar(id)` además de `encolar()`/`excede_limite()`. Todavía no expone
-  esa interfaz por HTTP — solo el backend.
+- `proxy/cola.py`: `ColaRevision` — cola FIFO de peticiones pendientes (con
+  `id` estable para que la interfaz de revisión pueda retirarlas sin
+  ambigüedad) y rate limiter por cliente (ventana deslizante de
+  `VENTANA_LIMITE_S` segundos). Ambas operaciones protegidas con el mismo
+  `threading.Lock`. `cola_global` es la instancia compartida por todo el
+  proceso; los tests crean instancias propias para no compartir estado.
+  Expone `listar()` y `retirar(id)` además de `encolar()`/`excede_limite()`
+  — el formato del diccionario que representa una petición pendiente (`id`,
+  `encolado_en`, `modelo`, `mensaje`, `vector_probado`, `cliente`,
+  `motivo`) se define una sola vez aquí; los endpoints de `/revision`
+  (abajo) lo consumen tal cual, sin redefinirlo.
+- `proxy/main.py`, interfaz de revisión humana (mecanismo 5, HTTP): `GET
+  /revision` lista lo pendiente (`cola.cola_global.listar()`, la más
+  antigua primero, con su `encolado_en`). `POST /revision/{id}/rechazar`
+  retira la petición y la descarta sin tocar Ollama. `POST
+  /revision/{id}/aprobar` la retira y corre `_completar_peticion()` —el
+  resto del pipeline que comparte con `/chat` (delimitación → Ollama →
+  cadena de SALIDA)—, **sin volver a evaluar la cadena de bloqueo de
+  entrada**: esa es justamente la decisión que el humano anula. Ambos
+  devuelven `404` explícito (no un error genérico) si el `id` ya no está en
+  la cola (`_obtener_pendiente_o_404()`; `ColaRevision.retirar()` ya lanza
+  `KeyError` para ese caso). Ambos escriben además un evento de log propio
+  —aparte del que `/chat` ya escribió al encolar (JSONL es append-only,
+  nunca se edita una fila existente)— con el campo extendido
+  `tiempo_revision_humana_ms` (`_ms_transcurridos_desde()`: milisegundos
+  entre `encolado_en` y el momento de la decisión). En el evento de
+  aprobación, `latencia_ms` es el tiempo **total** (espera en cola +
+  tiempo de completar la petición), y `tiempo_revision_humana_ms` es solo
+  la parte de espera — la métrica de costo que necesita Fiquitiva, sin
+  reemplazar el total (invariante 5 del esquema de log). `GET /revision/ui`
+  sirve una página HTML mínima (JS vanilla, sin plantillas ni dependencias
+  nuevas) sobre esos mismos 3 endpoints, para no depender de `curl` a mano
+  durante las pruebas del equipo.
 - `config.yaml`: las 5 banderas existen; el estado por defecto del repo es
   todas en `false` (`C0`).
 - `proxy/Dockerfile` y `docker-compose.yml`: el build context es la raíz
@@ -350,10 +373,11 @@ con `json.dumps(evento, ensure_ascii=False)` + salto de línea.
   campos + `nivel_carga`, útil como referencia de implementación del logger.
 - `ollama/init.sh` ahora también descarga `MODELO_CLASIFICADOR`
   (`llama-guard3:1b` por defecto, `.env.example`) junto con `BASE_MODEL`.
-- Pendiente: la interfaz de aprobación/rechazo humano en sí (endpoint HTTP
-  o UI sobre `cola.listar()`/`cola.retirar()`) — a cargo de Piedrahita, en
-  paralelo esta semana. El backend (cola + rate limit + el cableado a
-  `/chat`) ya está completo.
+- Los 5 mecanismos están completos de punta a punta, incluida la interfaz
+  HTTP de aprobación/rechazo humano descrita arriba (`GET /revision`,
+  `POST /revision/{id}/aprobar`, `POST /revision/{id}/rechazar`, `GET
+  /revision/ui`). No queda pendiente ningún mecanismo del núcleo del
+  experimento.
 
 ## 7. Documentos relacionados
 

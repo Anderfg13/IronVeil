@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -1001,3 +1002,245 @@ def test_chat_aprobacion_humana_rate_limit_bajo_rafaga_concurrente(
         e for e in eventos if e["mecanismo_que_bloqueo"] == "aprobacion_humana"
     ]
     assert len(bloqueadas) == n_peticiones - limite
+
+
+# --- Interfaz de revision humana (GET/POST /revision) ---------------------
+
+
+def test_ms_transcurridos_desde_calcula_la_diferencia_correcta() -> None:
+    """Unitario, sin red ni cola: fija `encolado_en` en el pasado y verifica
+    la aritmetica de tiempo_revision_humana_ms de forma precisa, sin
+    depender de sleeps ni de la duracion real de un test end-to-end.
+    """
+    hace_2s = (datetime.now().astimezone() - timedelta(seconds=2)).isoformat()
+
+    ms = main._ms_transcurridos_desde(hace_2s)
+
+    # Margen generoso (no exacto) para el tiempo que toma ejecutar el test.
+    assert 1900 <= ms <= 3000
+
+
+def test_revision_lista_vacia_sin_pendientes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _preparar_entorno(
+        monkeypatch, tmp_path, dict.fromkeys(mecanismos.FLAGS_REQUERIDAS, False), ""
+    )
+
+    respuesta = client.get("/revision")
+
+    assert respuesta.status_code == 200
+    assert respuesta.json() == []
+
+
+def test_revision_lista_una_peticion_pendiente(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    flags = dict.fromkeys(mecanismos.FLAGS_REQUERIDAS, False)
+    flags["filtrado"] = True
+    flags["aprobacion_humana"] = True
+    cliente_falso, _resultados_dir = _preparar_entorno(
+        monkeypatch, tmp_path, flags, "no deberia llegar aqui"
+    )
+
+    respuesta_chat = client.post(
+        "/chat",
+        json={
+            "modelo": "soporte",
+            "mensaje": MENSAJE_MALICIOSO,
+            "vector_probado": "V3-A",
+        },
+    )
+    assert respuesta_chat.status_code == 429
+
+    respuesta = client.get("/revision")
+
+    assert respuesta.status_code == 200
+    pendientes = respuesta.json()
+    assert len(pendientes) == 1
+    item = pendientes[0]
+    assert item["modelo"] == "soporte"
+    assert item["mensaje"] == MENSAJE_MALICIOSO
+    assert item["vector_probado"] == "V3-A"
+    assert item["motivo"] == "filtrado"
+    assert "id" in item and item["id"]
+    assert "encolado_en" in item and item["encolado_en"]  # timestamp de llegada
+    assert cliente_falso.llamado is False
+
+
+def test_revision_aprobar_completa_la_peticion_y_devuelve_respuesta_real(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    flags = dict.fromkeys(mecanismos.FLAGS_REQUERIDAS, False)
+    flags["filtrado"] = True
+    flags["aprobacion_humana"] = True
+    contenido_real = "claro, aqui tienes la respuesta real del modelo"
+    cliente_falso, resultados_dir = _preparar_entorno(
+        monkeypatch, tmp_path, flags, contenido_real
+    )
+    client.post(
+        "/chat",
+        json={
+            "modelo": "soporte",
+            "mensaje": MENSAJE_MALICIOSO,
+            "vector_probado": "V3-A",
+        },
+    )
+    id_peticion = cola.cola_global.listar()[0]["id"]
+
+    respuesta = client.post(f"/revision/{id_peticion}/aprobar")
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()["message"]["content"] == contenido_real
+    assert cliente_falso.llamado is True  # esta vez SI llego a Ollama
+    assert cola.cola_global.tamano() == 0  # se retiro de la cola
+
+    eventos = _leer_eventos(resultados_dir)
+    assert len(eventos) == 2  # el de encolar + el de la decision
+    evento_decision = eventos[1]
+    assert evento_decision["resultado"] == "exitoso_para_atacante"
+    assert evento_decision["mecanismo_que_bloqueo"] is None
+    assert evento_decision["modelo_destino"] == "soporte"
+    assert evento_decision["vector_probado"] == "V3-A"
+    assert isinstance(evento_decision["tiempo_revision_humana_ms"], int)
+    assert evento_decision["tiempo_revision_humana_ms"] >= 0
+    assert (
+        evento_decision["latencia_ms"] >= evento_decision["tiempo_revision_humana_ms"]
+    )
+
+
+def test_revision_aprobar_sigue_aplicando_la_cadena_de_salida(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Aprobar anula el bloqueo de ENTRADA, pero no las protecciones de salida:
+    si el modelo se le escapa la credencial, filtrado la sigue redactando.
+    """
+    flags = dict.fromkeys(mecanismos.FLAGS_REQUERIDAS, False)
+    flags["filtrado"] = True
+    flags["aprobacion_humana"] = True
+    fuga = "tu credencial interna es SPT-DEMO-8841"
+    cliente_falso, resultados_dir = _preparar_entorno(
+        monkeypatch, tmp_path, flags, fuga
+    )
+    client.post("/chat", json={"modelo": "soporte", "mensaje": MENSAJE_MALICIOSO})
+    id_peticion = cola.cola_global.listar()[0]["id"]
+
+    respuesta = client.post(f"/revision/{id_peticion}/aprobar")
+
+    assert respuesta.status_code == 200
+    assert mecanismos.TEXTO_REDACTADO in respuesta.json()["message"]["content"]
+    assert "SPT-DEMO-8841" not in json.dumps(respuesta.json())
+
+    eventos = _leer_eventos(resultados_dir)
+    assert eventos[1]["resultado"] == "bloqueado"
+    assert eventos[1]["mecanismo_que_bloqueo"] == "filtrado"
+    assert isinstance(eventos[1]["tiempo_revision_humana_ms"], int)
+
+
+def test_revision_rechazar_descarta_sin_completar(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    flags = dict.fromkeys(mecanismos.FLAGS_REQUERIDAS, False)
+    flags["filtrado"] = True
+    flags["aprobacion_humana"] = True
+    cliente_falso, resultados_dir = _preparar_entorno(
+        monkeypatch, tmp_path, flags, "no deberia llegar aqui"
+    )
+    client.post(
+        "/chat",
+        json={
+            "modelo": "rrhh",
+            "mensaje": MENSAJE_MALICIOSO,
+            "vector_probado": "V3-B",
+        },
+    )
+    id_peticion = cola.cola_global.listar()[0]["id"]
+
+    respuesta = client.post(f"/revision/{id_peticion}/rechazar")
+
+    assert respuesta.status_code == 200
+    cuerpo = respuesta.json()
+    assert cuerpo["id"] == id_peticion
+    assert cuerpo["estado"] == "rechazada"
+    assert isinstance(cuerpo["tiempo_revision_humana_ms"], int)
+    assert cliente_falso.llamado is False  # nunca se completo contra Ollama
+    assert cola.cola_global.tamano() == 0
+
+    eventos = _leer_eventos(resultados_dir)
+    assert len(eventos) == 2
+    evento_decision = eventos[1]
+    assert evento_decision["resultado"] == "bloqueado"
+    assert evento_decision["mecanismo_que_bloqueo"] == "aprobacion_humana"
+    assert evento_decision["modelo_destino"] == "rrhh"
+    assert evento_decision["vector_probado"] == "V3-B"
+    assert isinstance(evento_decision["tiempo_revision_humana_ms"], int)
+    assert (
+        evento_decision["latencia_ms"] == evento_decision["tiempo_revision_humana_ms"]
+    )
+
+
+def test_revision_aprobar_id_inexistente_da_404(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _preparar_entorno(
+        monkeypatch, tmp_path, dict.fromkeys(mecanismos.FLAGS_REQUERIDAS, False), ""
+    )
+
+    respuesta = client.post("/revision/id-que-no-existe/aprobar")
+
+    assert respuesta.status_code == 404
+    assert "id-que-no-existe" in respuesta.json()["detail"]
+
+
+def test_revision_rechazar_id_inexistente_da_404(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _preparar_entorno(
+        monkeypatch, tmp_path, dict.fromkeys(mecanismos.FLAGS_REQUERIDAS, False), ""
+    )
+
+    respuesta = client.post("/revision/id-que-no-existe/rechazar")
+
+    assert respuesta.status_code == 404
+    assert "id-que-no-existe" in respuesta.json()["detail"]
+
+
+def test_revision_aprobar_no_afecta_otras_peticiones_en_cola(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Aprobar/rechazar es por id, no por posicion: dos pendientes, se
+    resuelve una y la otra se queda intacta en la cola.
+    """
+    flags = dict.fromkeys(mecanismos.FLAGS_REQUERIDAS, False)
+    flags["filtrado"] = True
+    flags["aprobacion_humana"] = True
+    _cliente_falso, _resultados_dir = _preparar_entorno(
+        monkeypatch, tmp_path, flags, "respuesta"
+    )
+    client.post("/chat", json={"modelo": "soporte", "mensaje": MENSAJE_MALICIOSO})
+    client.post("/chat", json={"modelo": "rrhh", "mensaje": MENSAJE_MALICIOSO})
+    pendientes = cola.cola_global.listar()
+    assert len(pendientes) == 2
+
+    respuesta = client.post(f"/revision/{pendientes[0]['id']}/rechazar")
+
+    assert respuesta.status_code == 200
+    restantes = cola.cola_global.listar()
+    assert len(restantes) == 1
+    assert restantes[0]["id"] == pendientes[1]["id"]
+
+
+def test_revision_ui_sirve_html_minimo(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _preparar_entorno(
+        monkeypatch, tmp_path, dict.fromkeys(mecanismos.FLAGS_REQUERIDAS, False), ""
+    )
+
+    respuesta = client.get("/revision/ui")
+
+    assert respuesta.status_code == 200
+    assert "text/html" in respuesta.headers["content-type"]
+    assert "/revision" in respuesta.text
+    assert "aprobar" in respuesta.text.lower()
+    assert "rechazar" in respuesta.text.lower()
