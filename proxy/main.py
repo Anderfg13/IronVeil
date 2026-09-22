@@ -372,6 +372,46 @@ def _identificar_cliente(http_request: Request) -> str:
     return http_request.client.host if http_request.client else "desconocido"
 
 
+def _verificar_limite_de_tasa(
+    request: ChatRequest, http_request: Request
+) -> str | None:
+    """Mecanismo 5, disparador 1: limite de tasa, por cliente y global.
+
+    Se llama ANTES de correr la cadena de entrada (que puede incluir la
+    llamada de red a Llama Guard), para no gastar computo en una peticion
+    que de todas formas se va a encolar -- justo lo que V5 (agotamiento de
+    recursos) busca explotar.
+
+    Dos limites independientes, evaluados siempre los dos (nunca en
+    cortocircuito, para que ambos contadores se actualicen aunque el
+    primero ya haya excedido):
+    - Por cliente (`cola.excede_limite`): un solo origen mandando demasiado.
+    - Global (`cola.excede_limite_global`): muchos clientes distintos, cada
+      uno por debajo de su propio limite, saturando el servicio entre
+      todos -- el caso que un limite solo por IP no puede frenar (ver
+      docs/FUENTE_DE_VERDAD.md).
+
+    Devuelve "aprobacion_humana" si cualquiera de los dos se excedio (y ya
+    encolo la peticion), None si ninguno.
+    """
+    cliente = _identificar_cliente(http_request)
+    excede_cliente = cola.cola_global.excede_limite(cliente)
+    excede_global = cola.cola_global.excede_limite_global()
+    if not (excede_cliente or excede_global):
+        return None
+    motivo = "limite_de_peticiones" if excede_cliente else "limite_global_de_peticiones"
+    mecanismos.enviar_a_revision(
+        {
+            "modelo": request.modelo,
+            "mensaje": request.mensaje,
+            "vector_probado": request.vector_probado,
+            "cliente": cliente,
+            "motivo": motivo,
+        }
+    )
+    return "aprobacion_humana"
+
+
 def _gestionar_aprobacion_humana(
     request: ChatRequest,
     http_request: Request,
@@ -517,24 +557,10 @@ async def chat(request: ChatRequest, http_request: Request) -> dict[str, Any]:
     mecanismo_bloqueo: str | None = None
     mensaje = request.mensaje
 
-    # Mecanismo 5, disparador 1: rate limit. Se revisa ANTES de correr la
-    # cadena de entrada (que puede incluir la llamada de red a Llama Guard)
-    # para no gastar computo en una peticion que de todas formas se va a
-    # encolar -- justo lo que V5 (agotamiento de recursos) busca explotar.
-    if config["aprobacion_humana"] and cola.cola_global.excede_limite(
-        _identificar_cliente(http_request)
-    ):
-        mecanismo_bloqueo = "aprobacion_humana"
-        mecanismos.enviar_a_revision(
-            {
-                "modelo": request.modelo,
-                "mensaje": request.mensaje,
-                "vector_probado": request.vector_probado,
-                "cliente": _identificar_cliente(http_request),
-                "motivo": "limite_de_peticiones",
-            }
-        )
-    else:
+    if config["aprobacion_humana"]:
+        mecanismo_bloqueo = _verificar_limite_de_tasa(request, http_request)
+
+    if mecanismo_bloqueo is None:
         mensaje, mecanismo_bloqueo = await _ejecutar_cadena(
             request.mensaje, "entrada", request.modelo, config, metricas
         )

@@ -37,6 +37,16 @@ from typing import Any
 # el experimento.
 LIMITE_PETICIONES_POR_MINUTO: int = 10
 VENTANA_LIMITE_S: float = 60.0
+# LIMITE_GLOBAL_PETICIONES_POR_MINUTO=50: limite por cliente/IP arriba no
+# protege contra un ataque distribuido (muchas IPs distintas, cada una por
+# debajo de su propio limite, saturando el servicio entre todas). Este
+# limite es independiente y se aplica al total de peticiones de TODOS los
+# clientes juntos, en la misma ventana deslizante. 50 = 5x el limite por
+# cliente: generoso para varios usuarios legitimos concurrentes (p. ej. 5
+# personas cada una cerca de su propio limite de 10), pero bien por debajo
+# de una rafaga V5 real (niveles de concurrencia de 50/100, ver
+# docs/FUENTE_DE_VERDAD.md hallazgo 7).
+LIMITE_GLOBAL_PETICIONES_POR_MINUTO: int = 50
 # Limite de seguridad de la cola misma: sin este techo, un atacante podria
 # agotar memoria encolando peticiones sin limite -- el propio V5 contra la
 # cola de revision, no solo contra Ollama. 200 es generoso para una sola
@@ -61,13 +71,16 @@ class ColaRevision:
         limite_por_minuto: int = LIMITE_PETICIONES_POR_MINUTO,
         ventana_s: float = VENTANA_LIMITE_S,
         tamano_maximo: int = MAX_TAMANO_COLA,
+        limite_global_por_minuto: int = LIMITE_GLOBAL_PETICIONES_POR_MINUTO,
     ) -> None:
         self.limite_por_minuto = limite_por_minuto
         self.ventana_s = ventana_s
         self.tamano_maximo = tamano_maximo
+        self.limite_global_por_minuto = limite_global_por_minuto
         self._lock = threading.Lock()
         self._cola: deque[dict[str, Any]] = deque()
         self._peticiones_por_cliente: dict[str, deque[float]] = {}
+        self._peticiones_globales: deque[float] = deque()
 
     def excede_limite(self, cliente: str) -> bool:
         """True si `cliente` ya alcanzo `limite_por_minuto` peticiones en
@@ -91,6 +104,37 @@ class ColaRevision:
                 marcas.popleft()
             excede = len(marcas) >= self.limite_por_minuto
             marcas.append(ahora)
+        return excede
+
+    def excede_limite_global(self) -> bool:
+        """True si TODOS los clientes juntos ya alcanzaron
+        `limite_global_por_minuto` peticiones en los ultimos `ventana_s`
+        segundos, sin importar de que cliente venga cada una.
+
+        Complementa a `excede_limite()` (por cliente), no lo reemplaza: un
+        ataque distribuido (muchas IPs distintas, cada una por debajo de su
+        propio limite individual) puede seguir saturando el servicio sin
+        que ninguna IP dispare `excede_limite()` sola. Quien llama debe
+        evaluar los dos, siempre, sin cortocircuito -- ver
+        `proxy/main.py::_verificar_limite_de_tasa()`.
+
+        Misma logica de ventana deslizante y el mismo conteo-siempre
+        (cuenta esta llamada aunque exceda) que `excede_limite()`, por la
+        misma razon: si no se contara, el servicio ya saturado podria
+        "resetear" el conteo global con la sola llamada de verificacion.
+
+        Thread-safe: mismo lock que el resto de la clase.
+        """
+        ahora = time.monotonic()
+        limite_inferior = ahora - self.ventana_s
+        with self._lock:
+            while (
+                self._peticiones_globales
+                and self._peticiones_globales[0] < limite_inferior
+            ):
+                self._peticiones_globales.popleft()
+            excede = len(self._peticiones_globales) >= self.limite_global_por_minuto
+            self._peticiones_globales.append(ahora)
         return excede
 
     def encolar(self, peticion: dict[str, Any]) -> bool:

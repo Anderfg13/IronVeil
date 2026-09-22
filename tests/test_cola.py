@@ -110,6 +110,55 @@ def test_excede_limite_libera_espacio_fuera_de_la_ventana() -> None:
     assert c.excede_limite("cliente-a") is False  # la ventana ya expiro
 
 
+# --- excede_limite_global() (rate limiter, todos los clientes juntos) -----
+
+
+def test_excede_limite_global_permite_hasta_el_limite() -> None:
+    c = ColaRevision(limite_global_por_minuto=3, ventana_s=60.0)
+
+    assert c.excede_limite_global() is False
+    assert c.excede_limite_global() is False
+    assert c.excede_limite_global() is False  # 3ra: aun no excede
+    assert c.excede_limite_global() is True  # 4ta: ya excede
+
+
+def test_excede_limite_global_cuenta_distintos_clientes_juntos() -> None:
+    """El caso que excede_limite() por si sola no puede frenar: muchos
+    clientes distintos, cada uno muy por debajo de su propio limite, pero
+    saturando el servicio entre todos. Los dos contadores son
+    independientes (deques separadas) -- quien llama debe evaluar los dos
+    en cada peticion real para que el global sume algo, tal como hace
+    proxy/main.py::_verificar_limite_de_tasa() (llama a las dos juntas,
+    nunca solo una)."""
+    c = ColaRevision(limite_por_minuto=100, limite_global_por_minuto=3)
+
+    resultados_globales = []
+    for cliente in ["cliente-a", "cliente-b", "cliente-c", "cliente-d"]:
+        excede_cliente = c.excede_limite(cliente)
+        assert excede_cliente is False  # ninguno se acerca a su propio limite
+        resultados_globales.append(c.excede_limite_global())
+
+    # 4 clientes distintos, limite global de 3: los 3 primeros pasan, el 4to no.
+    assert resultados_globales == [False, False, False, True]
+
+
+def test_excede_limite_global_libera_espacio_fuera_de_la_ventana() -> None:
+    c = ColaRevision(limite_global_por_minuto=1, ventana_s=0.05)
+
+    assert c.excede_limite_global() is False
+    assert c.excede_limite_global() is True
+    time.sleep(0.1)
+    assert c.excede_limite_global() is False  # la ventana ya expiro
+
+
+def test_excede_limite_global_es_independiente_de_excede_limite_por_cliente() -> None:
+    """Los dos contadores no interfieren entre si en ninguna direccion."""
+    c = ColaRevision(limite_por_minuto=1, limite_global_por_minuto=1, ventana_s=60.0)
+
+    assert c.excede_limite_global() is False  # gasta el cupo global
+    assert c.excede_limite("cliente-a") is False  # el cupo por cliente sigue intacto
+
+
 # --- Concurrencia: exactamente los escenarios que dispara el V5 -----------
 #
 # encolar() y excede_limite() hacen "verificar y luego actuar" (leer un
@@ -146,6 +195,27 @@ def test_excede_limite_cuenta_exacto_bajo_rafaga_concurrente(intento: int) -> No
     with ThreadPoolExecutor(max_workers=n_hilos) as executor:
         resultados = list(
             executor.map(lambda _: c.excede_limite("mismo-cliente"), range(n_hilos))
+        )
+
+    no_excedidas = sum(1 for r in resultados if not r)
+    excedidas = sum(1 for r in resultados if r)
+    assert no_excedidas == limite
+    assert excedidas == n_hilos - limite
+
+
+@pytest.mark.parametrize("intento", range(5))
+def test_excede_limite_global_cuenta_exacto_bajo_rafaga_concurrente(
+    intento: int,
+) -> None:
+    """Mismo escenario que el de arriba, pero con muchos clientes DISTINTOS
+    -- el caso real que excede_limite_global() existe para cubrir."""
+    limite = 20
+    n_hilos = 60
+    c = ColaRevision(limite_por_minuto=1000, limite_global_por_minuto=limite)
+
+    with ThreadPoolExecutor(max_workers=n_hilos) as executor:
+        resultados = list(
+            executor.map(lambda i: c.excede_limite_global(), range(n_hilos))
         )
 
     no_excedidas = sum(1 for r in resultados if not r)

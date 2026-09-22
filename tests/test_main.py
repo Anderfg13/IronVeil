@@ -911,6 +911,47 @@ def test_chat_aprobacion_humana_rate_limit_encola_peticiones_extra(
     ]
 
 
+def test_chat_aprobacion_humana_rate_limit_global_encola_aunque_cliente_no_excedio(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Limite global se dispara aunque el cliente este muy por debajo de su
+    propio limite individual -- cubre el caso de un ataque distribuido
+    (muchos clientes, cada uno por debajo de su cupo) que excede_limite()
+    por si sola no puede frenar. Todas las peticiones de este test vienen
+    del mismo TestClient (mismo "cliente" simulado); el limite POR CLIENTE
+    se deja generoso a proposito para que solo el global pueda dispararse.
+    """
+    flags = dict.fromkeys(mecanismos.FLAGS_REQUERIDAS, False)
+    flags["aprobacion_humana"] = True
+    cliente_falso, resultados_dir = _preparar_entorno(
+        monkeypatch, tmp_path, flags, "respuesta normal"
+    )
+    monkeypatch.setattr(
+        cola,
+        "cola_global",
+        ColaRevision(limite_por_minuto=1000, limite_global_por_minuto=2),
+    )
+
+    respuestas = [
+        client.post("/chat", json={"modelo": "soporte", "mensaje": MENSAJE_LEGITIMO})
+        for _ in range(3)
+    ]
+
+    assert [r.status_code for r in respuestas] == [200, 200, 429]
+    assert cliente_falso.veces_llamado == 2  # la 3ra nunca llego a Ollama
+
+    pendientes = cola.cola_global.listar()
+    assert len(pendientes) == 1
+    assert pendientes[0]["motivo"] == "limite_global_de_peticiones"
+
+    eventos = _leer_eventos(resultados_dir)
+    assert [e["mecanismo_que_bloqueo"] for e in eventos] == [
+        None,
+        None,
+        "aprobacion_humana",
+    ]
+
+
 def test_chat_aprobacion_humana_cola_llena_rechaza_en_vez_de_procesar(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
