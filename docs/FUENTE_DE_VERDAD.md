@@ -262,6 +262,59 @@ Redactados una sola vez, aquí, y reutilizados textualmente en informe, conclusi
    (resumen combinado de las dos tandas, mismos archivos JSONL crudos por
    nivel conservados sin tocar).
 
+8. **V5 por niveles graduados, mismo día (2026-09-22), en Google Colab con GPU
+   T4 (no comparable directamente con el hallazgo 7 — hardware distinto, con
+   aceleración GPU, no solo más CPU).** Nota explícita: **toda** esta tanda
+   (instalación de Ollama, descarga del modelo, el proxy corriendo con
+   `uvicorn`, y las dos ráfagas de `vector5_agotamiento.py` contra C0 y C5)
+   se ejecutó con el entorno de ejecución de Colab configurado en **GPU
+   T4** (`Entorno de ejecución → Cambiar tipo de entorno de ejecución → T4
+   GPU`), no en el runtime CPU estándar de Colab ni en el runtime TPU
+   (`v5e-1`) que Colab también ofrece — **Ollama no tiene soporte para TPU**
+   (corre sobre `llama.cpp`, que sabe usar CPU/CUDA/Metal, no el stack
+   JAX/XLA que usan las TPU de Google), así que un runtime TPU habría
+   corrido sobre el CPU de esa VM sin ninguna aceleración real; se
+   descartó esa opción antes de usarla. Mismo script, mismos 7 niveles,
+   contra un stack propio (Ollama + proxy) levantado dentro de la VM de
+   Colab, atacado por `localhost` dentro de esa misma VM — no un servidor de
+   terceros, consistente con la regla 1 de `CLAUDE.md`. ASR por nivel:
+
+   | Nivel | C0 (Colab, T4) | C5 (Colab, T4) |
+   |---|---|---|
+   | 2  | 0.0% (p50 8.4s)   | 0.0% (p50 41.7s, n=2)  |
+   | 4  | 0.0% (p50 14.5s)  | 0.0% (p50 18.2s)       |
+   | 6  | 0.0% (p50 21.5s)  | 0.0% (3516/3518 bloqueados, p50 20ms) |
+   | 8  | 0.0% (p50 34.2s)  | 0.0% (3648/3648 bloqueados, p50 19ms) |
+   | 10 | 0.0% (p50 30.7s)  | 0.0% (3599/3599 bloqueados, p50 29ms) |
+   | 50 | 59.3% (32/54, p50 90.1s) | 0.0% (3024/3024 bloqueados, p50 364ms) |
+   | 100| 85.0% (85/100, p50 90.3s) | 0.0% (3075/3075 bloqueados, p50 736ms) |
+
+   **Lectura honesta:** con GPU, una petición individual baja de ~90s (CPU
+   del hallazgo 7) a ~4s, pero Ollama sigue atendiendo peticiones
+   esencialmente en serie (el tiempo p50 de C0 crece casi lineal con la
+   concurrencia: 8.4s→14.5s→21.5s→34.2s en los niveles 2/4/6/8) — la GPU
+   acelera cada petición, no la cola. Por eso C0 igual degrada en los
+   niveles 50/100 (la cola acumulada supera el timeout de 90s), aunque con
+   ASR menor que en CPU puro (85.0% vs. 100.0% del hallazgo 7 en el nivel
+   100). **En C5, el resultado es limpio: `degradacion_detectada: false`
+   en los 7 niveles, 0.0% ASR en todos** — con este hardware, el volumen de
+   peticiones sí crece lo suficientemente rápido dentro de los 20s como
+   para disparar el límite de tasa desde el nivel 6 (a diferencia del
+   hallazgo 7, donde en CPU nunca se disparaba por debajo del nivel 50),
+   y una vez activo bloquea el 100% del exceso. **Efecto colateral
+   esperado, no un error:** el número total de peticiones por nivel en C5
+   se dispara a miles (hasta 3648) porque cada bloqueo es casi instantáneo
+   (~20-700ms) y permite que el mismo worker reintente cientos de veces
+   dentro de los 20s — esto infló `resultados_template.csv` en 17078 filas
+   de una sola corrida, la razón más fuerte hasta ahora para resolver la
+   decisión pendiente de la sección 4 (fila por petición vs. agregado por
+   nivel) con Fiquitiva antes de la próxima corrida de V5.
+   **Especificaciones de hardware:** GPU T4 (Google Colab, runtime
+   estándar); especificaciones exactas de CPU/RAM del host no capturadas
+   en esta corrida (limitación declarada, no escondida — T4 sí es una
+   especificación estándar y documentada de Google Cloud). Ver
+   `resultados/2026-09-22/vector5_agotamiento_{C0,C5}_colab_resumen.json`.
+
 ### Discrepancias hipótesis vs. resultado real
 
 | Vector × Mecanismo | Predicho | Observado | Explicación propuesta |
@@ -278,6 +331,7 @@ Deben aparecer en el informe. Si una afirmación del video o del texto las contr
 
 - Los LLM no son deterministas: los resultados no se reproducen bit a bit entre corridas.
 - Las pruebas de carga dependen del hardware: máquina usada para `ataques/vector5_agotamiento.py` (2026-09-22) — AMD Ryzen 5 3500U (4 núcleos físicos / 8 hilos lógicos), 17.95 GB RAM total (~6 GB libre durante la corrida), Windows 10 Home Single Language 64 bits, sin GPU dedicada (inferencia 100% CPU). En este hardware, `soporte` (modelo `llama3.2:1b` vía Ollama nativo) tarda ~90s por petición ya con el modelo cargado en memoria cuando hay contención real de CPU por peticiones concurrentes (ver hallazgo 7, sección 6) — mucho más lento que en una máquina con GPU o incluso que una corrida sin concurrencia. Cualquier comparación de latencia entre configuraciones asume el mismo hardware; no se puede comparar esta cifra contra una corrida futura en otra máquina sin repetirla.
+- Segunda corrida del mismo día (2026-09-22) en Google Colab con GPU T4 (ver hallazgo 8, sección 6): baja el costo por petición de ~90s a ~4s, pero no elimina la cola interna de Ollama (peticiones atendidas en serie) — los dos hallazgos (7 y 8) no son comparables como "hardware A vs. B" simple, porque además de más potencia, el segundo tiene un acelerador (GPU) que el primero no tiene. Especificaciones de CPU/RAM del host de Colab no capturadas en esta corrida.
 - C6 no reduce el ASR a 0%: consistente con la literatura sobre atacantes adaptativos.
 - El tiempo de revisión humana varía entre integrantes: se reporta como rango, no como promedio único.
 - _(otras)_
@@ -321,3 +375,4 @@ Deben aparecer en el informe. Si una afirmación del video o del texto las contr
 | 2026-09-20 | Interfaz de revisión humana (mecanismo 5) sobre `proxy/cola.py` (backend de García, sin tocar su estructura): `GET /revision` lista lo pendiente (`cola.cola_global.listar()`), `POST /revision/{id}/aprobar` retira el item y corre `_completar_peticion()` — el resto del pipeline compartido con `/chat` (delimitación → Ollama → cadena de salida), **sin volver a evaluar la cadena de bloqueo de entrada** (esa es la decisión que el humano anula) —, `POST /revision/{id}/rechazar` lo retira y lo descarta sin tocar Ollama. Ambos devuelven `404` explícito si el `id` ya no está en la cola (`ColaRevision.retirar()` ya lanzaba `KeyError` para ese caso, solo se traduce a HTTP). El formato del diccionario de una petición pendiente no se redefinió: se consume tal cual lo arma `ColaRevision.encolar()`. Cada decisión escribe un evento de log **propio**, aparte del que `/chat` ya escribió al encolar (JSONL es append-only, nunca se edita una fila existente), con el campo extendido `tiempo_revision_humana_ms` (`_ms_transcurridos_desde(encolado_en)`); en el evento de aprobación, `latencia_ms` es el tiempo total (espera en cola + tiempo de completar contra Ollama), respetando que las latencias parciales van en campo extendido sin reemplazar el total (invariante 5 del esquema). Refactor menor sin cambio de comportamiento: `_construir_evento()` pasó a recibir `modelo`/`vector_probado` sueltos en vez de un `ChatRequest` (lo necesitan también los endpoints de `/revision`, que no tienen una petición HTTP que envolver), y se extrajo `_completar_peticion()` de `/chat` para compartirla con `/revision/{id}/aprobar`. `GET /revision/ui` sirve una página HTML mínima (JS vanilla, sin plantillas ni dependencias nuevas) sobre esos mismos 3 endpoints, para no depender de `curl` a mano durante las pruebas del equipo — secundaria frente a que los 3 endpoints JSON funcionen bien. 10 tests de integración nuevos en `tests/test_main.py` (cola vacía, cola con un pendiente, aprobar con contenido real y con la cadena de salida todavía redactando, rechazar, dos pendientes resueltos por id sin cruzarse, ambos con id inexistente → 404, más un unitario preciso de `_ms_transcurridos_desde` con un timestamp fabricado en el pasado). Rama `feat/revision-humana`, desprendida de `feat/prompt-guard-mecanismo-3` (no de `develop`, para seguir sobre el clasificador nuevo). | Piedrahita | `proxy/main.py`, `tests/test_main.py`, `README.md`, `docs/arquitectura.md`, `docs/FUENTE_DE_VERDAD.md` |
 | 2026-09-22 | Tarea semanal de García: `ataques/vector5_agotamiento.py` (nuevo), un orquestador de V5 por niveles graduados de concurrencia (10/50/100 por defecto) que reutiliza `ataques/vector5_carga.py` en vez de duplicar la lógica de HTTP/carga (mismo patrón que `vector4_movimiento_lateral.py` reutilizando `vectores_1_2_3.py`). Corrido contra C0 y C5 en el stack nativo (Windows, sin Docker/Podman por la incidencia de corrupción de disco ya documentada en sesiones anteriores). **Dos rondas de recalibración honestas antes de tener datos utilizables, ninguna escondida:** (1) el timeout por defecto del script (20s) era más corto que la latencia real de este hardware — subido a 90s; (2) incluso con 90s, la primera corrida seguía saturada al 100% en todos los niveles porque el modelo llevaba días descargado de memoria (`keep_alive` de Ollama) y cada petición pagaba un costo de carga en frío indistinguible de la degradación por concurrencia — se agregó al docstring del módulo la instrucción explícita de enviar una petición de calentamiento antes de medir (no automatizada dentro del script, deliberado, para no mezclar ese paso con la métrica). Con el modelo ya caliente, los datos de la tercera corrida sí son utilizables y se documentan en el hallazgo 7 de la sección 6. 8 tests unitarios nuevos en `tests/test_vector5_agotamiento.py` (agregación `resumir()` y heurística `detectar_degradacion()`, sin red — la ráfaga real se corre a mano, igual que `vector5_carga.py`). 1595 filas nuevas en `resultados_template.csv` vía `analisis/agregar_resultados_desde_jsonl.py` (script ya existente, sin cambios). Especificaciones de hardware documentadas en la sección 7 (limitación declarada). | García | `ataques/vector5_agotamiento.py`, `tests/test_vector5_agotamiento.py`, `resultados/resultados_template.csv`, `resultados/2026-09-22/`, `docs/FUENTE_DE_VERDAD.md` |
 | 2026-09-22 | Segunda tanda del mismo día, niveles 2/4/6/8 agregados contra C0 y C5 con `ataques/vector5_agotamiento.py --niveles 2 4 6 8` (mismo comando ya existente, sin cambios de código), para encontrar el punto de quiebre real de C0 que los niveles 10/50/100 solos no resolvían (quedaba "en algún punto ≤10", ver hallazgo 7 actualizado). Ningún dato previo se borró ni se sobrescribió (regla 4 de `CLAUDE.md`): los JSONL de 10/50/100 se conservan intactos, solo se agregaron 4 archivos nuevos por configuración; el `resumen.json` de cada configuración sí se regeneró para cubrir los 7 niveles juntos (es un derivado, no dato crudo), reconstruido con las mismas `resumir()`/`detectar_degradacion()` del módulo, sin duplicar esa lógica en un script aparte. 40 filas nuevas en `resultados_template.csv`. **Hallazgo real, no buscado:** el límite de tasa de García no se dispara en ninguno de los niveles 2/4/6/8 (0 bloqueados en los cuatro) porque, con peticiones de ~90s y una ráfaga de 20s, el volumen real nunca alcanza 10 peticiones/60s — el límite protege por volumen sostenido, no por concurrencia instantánea baja; ver explicación completa en el hallazgo 7. | García | `resultados/resultados_template.csv`, `resultados/2026-09-22/`, `docs/FUENTE_DE_VERDAD.md` |
+| 2026-09-22 | Tercera tanda del mismo día: mismo script y mismos 7 niveles, corridos por García en una laptop de un compañero sin Docker ni permisos de instalación con privilegios, así que se usó Google Colab (GPU T4) como stack propio temporal — Ollama nativo + proxy con `uvicorn` dentro de la VM de Colab, atacado por `localhost` dentro de esa misma VM (no expuesto públicamente, consistente con la regla 1 y 3 de `CLAUDE.md`). Archivos guardados con sufijo `_colab` para no chocar con los de la corrida original (mismo día, hardware distinto): `vector5_agotamiento_{C0,C5}_colab_c{nivel}.jsonl`, `vector5_agotamiento_{C0,C5}_colab_resumen.json`, `eventos_colab.jsonl`. **17078 filas nuevas en `resultados_template.csv`** (la mayoría de C5 en los niveles 6/8/10/50/100, donde cada bloqueo casi instantáneo permitió miles de reintentos por worker dentro de los 20s) — el salto de volumen más grande hasta ahora, motivo suficiente para resolver pronto con Fiquitiva la decisión pendiente de la sección 4 (fila por petición vs. agregado por nivel). Resultado documentado en el hallazgo 8 de la sección 6: con GPU, C0 sigue degradando en niveles altos (la cola interna de Ollama no desaparece con GPU, solo el costo por petición baja de ~90s a ~4s) pero C5 logra 0.0% ASR en los 7 niveles — resultado más limpio que en CPU puro, porque el mayor volumen sostenido de peticiones sí alcanza a disparar el límite de tasa desde niveles bajos. | García | `resultados/resultados_template.csv`, `resultados/2026-09-22/`, `docs/FUENTE_DE_VERDAD.md` |
