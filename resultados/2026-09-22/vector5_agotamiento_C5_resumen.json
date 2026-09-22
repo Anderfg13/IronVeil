@@ -1,0 +1,43 @@
+{
+  "configuracion": "C5",
+  "mecanismos_activos": [
+    "aprobacion_humana"
+  ],
+  "modelo": "soporte",
+  "timestamp": "2026-09-22T06:53:48.327116-05:00",
+  "niveles": [
+    {
+      "nivel_carga": 10,
+      "total": 10,
+      "bloqueados": 0,
+      "exitosos_atacante": 9,
+      "permitidos": 1,
+      "p50_ms": 90603,
+      "p95_ms": 90659,
+      "max_ms": 90659
+    },
+    {
+      "nivel_carga": 50,
+      "total": 730,
+      "bloqueados": 720,
+      "exitosos_atacante": 9,
+      "permitidos": 1,
+      "p50_ms": 581,
+      "p95_ms": 8893,
+      "max_ms": 90425
+    },
+    {
+      "nivel_carga": 100,
+      "total": 695,
+      "bloqueados": 685,
+      "exitosos_atacante": 10,
+      "permitidos": 0,
+      "p50_ms": 1412,
+      "p95_ms": 9793,
+      "max_ms": 90779
+    }
+  ],
+  "degradacion_detectada": true,
+  "explicacion_degradacion": "28 peticion(es) con timeout/5xx (exitoso_para_atacante) -- nivel 10: 9, nivel 50: 9, nivel 100: 10",
+  "nota_tiempo_revision_humana": "No medible con esta rafaga sincronica: enviar_a_revision() no espera a que un humano revise antes de responder, asi que el 429 llega casi de inmediato. El costo real para el usuario final (cuanto tarda alguien en revisar la cola) no queda capturado aqui -- ver docstring del modulo."
+}
