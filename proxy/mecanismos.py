@@ -489,7 +489,7 @@ def _clasificar_salida_llama_guard(texto: str, direccion: str) -> bool:
         )
         return True
     except httpx.HTTPError as exc:
-        logger.error(
+        logger.exception(
             "clasificar(): error llamando a %s: %s; fail closed (unsafe).",
             MODELO_CLASIFICADOR,
             exc,
@@ -576,7 +576,7 @@ def _clasificar_entrada_prompt_guard(texto: str) -> bool:
     try:
         etiqueta = _predecir_prompt_guard(texto)
     except Exception as exc:  # noqa: BLE001 -- fail closed ante cualquier fallo
-        logger.error(
+        logger.exception(
             "clasificar(): error usando Prompt Guard (%s): %s; fail closed (unsafe).",
             MODELO_PROMPT_GUARD_ID,
             exc,

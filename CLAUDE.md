@@ -168,7 +168,9 @@ Campos adicionales acordados sobre la marcha (latencia propia del clasificador, 
 Esta es la estructura **objetivo**. Lo marcado `[ya existe]` está en el repo hoy; el resto es lo que se va creando a medida que avanzan las semanas — no asumas que ya está ahí sin comprobarlo.
 
 ```
-/proxy/                 main.py (FastAPI) [ya existe], mecanismos.py, cola.py
+/proxy/                 main.py (FastAPI) [ya existe], mecanismos.py, cola.py,
+                        siem.py (andamiaje Adapter para exportar a un SIEM
+                        futuro, aun no cableado a /chat — ver su docstring)
 /ollama/modelfiles/     Modelfile.soporte.template, Modelfile.rrhh.template [ya existen]
 /tests/                 pruebas unitarias y de integración
 /ataques/               variantes_ataque.md, vector4_*.py, vector5_*.py, promptfooconfig.yaml
@@ -225,6 +227,69 @@ python analisis/validar_dataset.py
 - Ramas para trabajo exploratorio sobre código compartido; merge solo con las pruebas en verde.
 - Nada de `--force` sobre `main`.
 
+### Seguridad del código (SonarCloud en A)
+
+Aplica al código de infraestructura del proyecto (`proxy/`, `ataques/`,
+`analisis/`) — **no** a los canarios (`SPT-DEMO-*`, `RRHH-DEMO-*`) ni a
+los payloads de ataque en `ataques/variantes_ataque.md`: esos son el
+objeto de estudio del experimento, no una vulnerabilidad del código, y
+`.env`/`.env.example` los declara así a propósito (regla 2, sección 2).
+Sobre el código que sí es "nuestro":
+
+- **Nunca credenciales, tokens ni secretos hardcodeados fuera de `.env` /
+  Modelfiles** (ya era regla 2 de este documento; SonarCloud lo marca como
+  vulnerabilidad `Hardcoded credentials`, no solo como estilo). Tampoco en
+  tests: usar valores claramente ficticios y distintos de los canarios
+  reales (patrón ya seguido en `tests/test_main.py`, p. ej.
+  `SPT-DEMO-4321`).
+- **`yaml.safe_load()` siempre, nunca `yaml.load()`** (ya era contrato de
+  `cargar_config()`, sección 4) — `yaml.load()` sin `Loader` es
+  deserialización insegura (RCE), uno de los hotspots más comunes que
+  reporta SonarCloud en proyectos Python.
+- **Aleatoriedad de propósito criptográfico/de seguridad usa `secrets`,
+  nunca `random`.** Ya es el caso de los marcadores de `delimitar()`
+  (`secrets.token_hex()`); mantenerlo si se agrega cualquier otro token,
+  ID de sesión o valor impredecible con fines de seguridad.
+- **Nunca `subprocess` con `shell=True` sobre una cadena construida con
+  entrada externa** (inyección de comandos). Si un script de `ataques/`
+  necesita invocar una herramienta externa (p. ej. `nmap`, `hey`), pasar
+  los argumentos como lista, nunca como string interpolado.
+- **Nunca desactivar la verificación TLS** (`verify=False` en `httpx`/
+  `requests`) ni bajar a versiones de TLS obsoletas, ni siquiera "solo
+  para probar en local".
+- **Mensajes de error hacia el cliente, siempre genéricos** (ya aplicado
+  en `proxy/main.py` tras la revisión OWASP del V1): el detalle real
+  (traceback, texto de excepción, nombre de modelo/backend) se loggea
+  server-side, nunca se reenvía tal cual en una respuesta HTTP — evita
+  tanto fuga de información como los hotspots de "Error messages should
+  not reveal implementation details" de SonarCloud.
+- **Nunca loggear el cuerpo completo de una petición/respuesta a nivel
+  INFO si puede contener una credencial** (el propio experimento las
+  maneja a propósito). El esquema de log de 8 campos ya evita esto: loggea
+  campos estructurados, no el payload crudo sin pasar antes por
+  `filtrado`/`clasificación`.
+- **Dependencias con versión exacta fijada** en `requirements.txt` /
+  `requirements-dev.txt` / `Dockerfile` (ya es la convención del
+  proyecto) — una dependencia sin pin es un hallazgo de SonarCloud
+  (`Vulnerable and outdated dependencies`) y además rompe la
+  reproducibilidad entre las 4 máquinas del equipo.
+- **Si se agrega CORS al proxy en algún momento:** nunca
+  `allow_origins=["*"]` combinado con `allow_credentials=True`. Hoy el
+  proxy no tiene CORS configurado; si hace falta, restringir a orígenes
+  explícitos.
+- Antes de comitear, si hay tiempo, correr un vistazo con `ruff check .`
+  pensando específicamente en estas categorías (hoy `ruff.toml` no tiene
+  habilitado el set `S` de flake8-bandit, que cubre buena parte de esto
+  automáticamente — considerarlo como mejora futura, avisando antes al
+  equipo porque cambia lo que `ruff check .` reporta para las 4 personas).
+- **Security Hotspots de SonarCloud que sean falsos positivos deliberados
+  de este proyecto** (p. ej. algo relacionado con los canarios o con que
+  el proxy intencionalmente no tiene autenticación de usuario, fuera de
+  alcance del experimento): márcalos como revisados con una nota en
+  SonarCloud explicando por qué, en vez de ignorarlos en silencio — igual
+  que `CONFLICTOS_RESUELTOS.md` exige registrar toda decisión de diseño no
+  obvia.
+
 ---
 
 ## 8. Coordinación del equipo
@@ -259,4 +324,5 @@ Cuatro personas trabajan sobre el mismo repo en paralelo. Reparto grueso:
 - [ ] Los criterios de aceptación de la tarea de la semana están todos marcados.
 - [ ] Si cambió un contrato compartido, este archivo está actualizado en el mismo commit.
 - [ ] Si se resolvió un conflicto de integración, quedó en `CONFLICTOS_RESUELTOS.md`.
+- [ ] Sin credenciales/tokens hardcodeados, sin `yaml.load()` sin `Loader`, sin `subprocess(shell=True)` con entrada externa, sin TLS deshabilitado (ver sección 7, "Seguridad del código").
 - [ ] Commit con mensaje descriptivo y push.

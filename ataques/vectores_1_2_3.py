@@ -54,6 +54,7 @@ from ataques.vector5_carga import (  # noqa: E402
     CONFIGURACIONES_VALIDAS,
     validar_configuracion_consistente,
     validar_host_laboratorio_propio,
+    validar_ruta_salida_segura,
 )
 from proxy.mecanismos import CONFIG_PATH, FLAGS_REQUERIDAS, cargar_config  # noqa: E402
 
@@ -731,7 +732,9 @@ def main(argv: list[str] | None = None) -> None:
     ctx = ContextoEjecucion(
         args.url_proxy, args.url_ollama_directo, args.configuracion, mecanismos_activos
     )
-    salida_path = args.salida or _ruta_salida_defecto(args.configuracion)
+    salida_path = validar_ruta_salida_segura(
+        args.salida or _ruta_salida_defecto(args.configuracion)
+    )
     salida_path.parent.mkdir(parents=True, exist_ok=True)
 
     LOGGER.info(

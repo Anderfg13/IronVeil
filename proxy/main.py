@@ -73,6 +73,25 @@ _DETALLE_EN_REVISION: str = (
 # revisar V1 contra OWASP (ver docs/FUENTE_DE_VERDAD.md, seccion 9).
 _DETALLE_ERROR_OLLAMA: str = "No se pudo procesar la solicitud."
 
+# Documenta en el esquema OpenAPI (Swagger /docs) los codigos de error que
+# cada endpoint puede devolver ademas del 200 por defecto (SonarCloud:
+# "Document this HTTPException ... in the 'responses' parameter"). Mismos
+# mensajes genericos que ya usa el cliente real -- no se agrega detalle
+# nuevo aqui, solo se declara el codigo para que la documentacion generada
+# no mienta por omision.
+_RESPUESTAS_CHAT: dict[int | str, dict[str, str]] = {
+    400: {"description": _DETALLE_BLOQUEO},
+    429: {"description": _DETALLE_EN_REVISION},
+    502: {"description": _DETALLE_ERROR_OLLAMA},
+}
+_RESPUESTAS_RECHAZAR_REVISION: dict[int | str, dict[str, str]] = {
+    404: {"description": "No hay ninguna peticion en revision con ese id."},
+}
+_RESPUESTAS_APROBAR_REVISION: dict[int | str, dict[str, str]] = {
+    404: {"description": "No hay ninguna peticion en revision con ese id."},
+    502: {"description": _DETALLE_ERROR_OLLAMA},
+}
+
 # Mecanismo 2 (delimitacion). Texto que el proxy coloca en el bloque
 # [INSTRUCCIONES DEL SISTEMA] del andamiaje de spotlighting.
 #
@@ -164,7 +183,16 @@ PasoCadena = Callable[[str, str, str, _MetricasCadena], Awaitable[tuple[str, boo
 async def _paso_filtrado(
     texto: str, direccion: str, modelo: str, metricas: _MetricasCadena
 ) -> tuple[str, bool]:
-    """Mecanismo 1. En entrada bloquea por patron; en salida redacta la credencial."""
+    """Mecanismo 1. En entrada bloquea por patron; en salida redacta la credencial.
+
+    SonarCloud sugiere quitar `async` (esta funcion no usa `await`
+    internamente) -- falso positivo revisado y descartado: la firma tiene
+    que respetar `PasoCadena` (`Awaitable[tuple[str, bool]]`), el tipo
+    comun de `_CADENA_MECANISMOS`, porque `_ejecutar_cadena()` hace
+    `await paso(...)` de forma uniforme sobre los 3 pasos sin distinguir
+    cual de ellos si necesita red (`_paso_clasificacion`). Quitar `async`
+    aqui rompe esa lista polimorfica.
+    """
     return mecanismos.filtrar(texto, direccion)
 
 
@@ -197,6 +225,10 @@ async def _paso_minimo_privilegio(
     mecanismo (mecanismos.validar_privilegio() no toma `direccion`, ver su
     docstring). En "salida" nunca bloquea, para que la cadena de salida
     (filtrado/clasificacion) siga funcionando igual que hoy.
+
+    Mismo caso que `_paso_filtrado()`: SonarCloud sugiere quitar `async`
+    (no usa `await`); revisado y descartado por la misma razon -- el tipo
+    `PasoCadena` de `_CADENA_MECANISMOS` lo exige.
     """
     if direccion != "entrada":
         return texto, False
@@ -323,6 +355,15 @@ def _registrar_evento(evento: dict[str, Any]) -> None:
 
     Protegida con `_registro_lock`: sin esto, peticiones concurrentes
     (V5) pueden pisarse la escritura entre si y perder eventos completos.
+
+    Punto de integracion futuro para SIEM (ver `proxy/siem.py`, patron
+    Adapter, todavia no cableado aqui): quien conecte un SIEM real
+    llamaria `siem.enviar_a_siem(evento, formateador, conector)` con este
+    mismo `evento`, ademas de (nunca en vez de) esta escritura -- el SIEM
+    es un consumidor adicional, no reemplaza el dataset del experimento.
+    Decision pendiente de esa integracion, no de esta funcion: si ese envio
+    va sincrono aqui mismo o desacoplado (cola, hilo aparte) para no sumarle
+    latencia de red a cada peticion.
     """
     fecha = datetime.now().astimezone().strftime("%Y-%m-%d")
     directorio = RESULTADOS_DIR / fecha
@@ -331,6 +372,21 @@ def _registrar_evento(evento: dict[str, Any]) -> None:
         "a", encoding="utf-8"
     ) as f:
         f.write(json.dumps(evento, ensure_ascii=False) + "\n")
+
+
+def _sanear_para_log(valor: str) -> str:
+    """Escapa saltos de linea y retornos de carro antes de loggear un valor
+    que viene de la peticion del cliente (`modelo`, principalmente).
+
+    CWE-117 (Log Injection): sin esto, un `modelo` con un '\\n' incrustado
+    podria fabricar una linea de log falsa (p. ej. simulando otro nivel u
+    otro mensaje) o romper herramientas que parseen los logs linea por
+    linea. `%r` ya escapaba esto de forma implicita en algunos de estos
+    logs, pero SonarCloud no lo reconoce como saneo explicito -- se
+    reemplaza por esta funcion en todos los logs con datos de entrada, para
+    que la proteccion sea explicita y facil de verificar en un solo lugar.
+    """
+    return valor.replace("\r", "\\r").replace("\n", "\\n")
 
 
 async def _llamar_ollama(modelo: str, mensaje: str) -> dict[str, Any]:
@@ -347,14 +403,18 @@ async def _llamar_ollama(modelo: str, mensaje: str) -> dict[str, Any]:
             logger.warning(
                 "Ollama devolvio %d para modelo=%r: %s",
                 exc.response.status_code,
-                modelo,
+                _sanear_para_log(modelo),
                 exc.response.text,
             )
             raise HTTPException(
                 status_code=exc.response.status_code, detail=_DETALLE_ERROR_OLLAMA
             ) from exc
         except httpx.RequestError as exc:
-            logger.warning("No se pudo contactar a Ollama (modelo=%r): %s", modelo, exc)
+            logger.warning(
+                "No se pudo contactar a Ollama (modelo=%r): %s",
+                _sanear_para_log(modelo),
+                exc,
+            )
             raise HTTPException(status_code=502, detail=_DETALLE_ERROR_OLLAMA) from exc
     return response.json()
 
@@ -455,7 +515,7 @@ def _gestionar_aprobacion_humana(
             "cola de revision llena (limite %d); rechazando en vez de "
             "encolar (modelo=%s, motivo=%s)",
             cola.MAX_TAMANO_COLA,
-            request.modelo,
+            _sanear_para_log(request.modelo),
             mecanismo_bloqueo,
         )
     return "aprobacion_humana"
@@ -547,7 +607,7 @@ async def _completar_peticion(
     return respuesta, mecanismo_bloqueo
 
 
-@app.post("/chat")
+@app.post("/chat", responses=_RESPUESTAS_CHAT)
 async def chat(request: ChatRequest, http_request: Request) -> dict[str, Any]:
     inicio = time.perf_counter()
     config = mecanismos.cargar_config(mecanismos.CONFIG_PATH)
@@ -596,7 +656,8 @@ async def chat(request: ChatRequest, http_request: Request) -> dict[str, Any]:
     if respuesta is None:
         if mecanismo_bloqueo == "aprobacion_humana":
             logger.warning(
-                "peticion puesta en revision humana (modelo=%s)", request.modelo
+                "peticion puesta en revision humana (modelo=%s)",
+                _sanear_para_log(request.modelo),
             )
             raise HTTPException(
                 status_code=_STATUS_EN_REVISION, detail=_DETALLE_EN_REVISION
@@ -604,7 +665,7 @@ async def chat(request: ChatRequest, http_request: Request) -> dict[str, Any]:
         logger.warning(
             "peticion bloqueada en entrada por %s (modelo=%s)",
             mecanismo_bloqueo,
-            request.modelo,
+            _sanear_para_log(request.modelo),
         )
         raise HTTPException(status_code=400, detail=_DETALLE_BLOQUEO)
 
@@ -650,7 +711,7 @@ def listar_revision() -> list[dict[str, Any]]:
     return cola.cola_global.listar()
 
 
-@app.post("/revision/{id_peticion}/rechazar")
+@app.post("/revision/{id_peticion}/rechazar", responses=_RESPUESTAS_RECHAZAR_REVISION)
 def rechazar_revision(id_peticion: str) -> dict[str, Any]:
     """Mecanismo 5: descarta una peticion pendiente sin completarla.
 
@@ -682,7 +743,7 @@ def rechazar_revision(id_peticion: str) -> dict[str, Any]:
         "peticion id=%s rechazada tras %dms en revision humana (modelo=%s)",
         id_peticion,
         tiempo_revision_humana_ms,
-        item["modelo"],
+        _sanear_para_log(item["modelo"]),
     )
     return {
         "id": id_peticion,
@@ -691,7 +752,7 @@ def rechazar_revision(id_peticion: str) -> dict[str, Any]:
     }
 
 
-@app.post("/revision/{id_peticion}/aprobar")
+@app.post("/revision/{id_peticion}/aprobar", responses=_RESPUESTAS_APROBAR_REVISION)
 async def aprobar_revision(id_peticion: str) -> dict[str, Any]:
     """Mecanismo 5: completa una peticion pendiente y devuelve la respuesta real.
 
@@ -735,7 +796,7 @@ async def aprobar_revision(id_peticion: str) -> dict[str, Any]:
         "(modelo=%s, mecanismo_salida=%s)",
         id_peticion,
         tiempo_revision_humana_ms,
-        item["modelo"],
+        _sanear_para_log(item["modelo"]),
         mecanismo_bloqueo,
     )
     return respuesta

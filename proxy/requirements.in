@@ -1,0 +1,9 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+httpx==0.27.2
+PyYAML==6.0.2
+# Mecanismo 3, direccion "entrada" (Llama Prompt Guard 2). torch NO va aqui
+# a proposito: se instala aparte en el Dockerfile con el indice CPU-only de
+# PyTorch (ver requirements-torch.in), para no traer la variante CUDA
+# (varios GB de mas, innecesarios sin GPU en el laboratorio).
+transformers==5.17.0

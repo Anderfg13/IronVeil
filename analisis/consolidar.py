@@ -44,6 +44,8 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+RAIZ = Path(__file__).resolve().parent.parent
+
 RESULTADOS_VALIDOS = {"bloqueado", "exitoso_para_atacante", "permitido_normal"}
 COLUMNAS_REQUERIDAS = ("configuracion", "vector_probado", "resultado")
 COLUMNAS_VERIFICACION_REQUERIDAS = (
@@ -52,11 +54,17 @@ COLUMNAS_VERIFICACION_REQUERIDAS = (
     "vector_probado",
     "fuga_confirmada_por_contenido",
 )
-RUTA_CSV_DEFECTO = (
-    Path(__file__).resolve().parent.parent / "resultados" / "resultados_template.csv"
-)
+RUTA_CSV_DEFECTO = RAIZ / "resultados" / "resultados_template.csv"
 PATRON_VECTOR_BASE = re.compile(r"^V\d+")
 COLUMNA_TIEMPO_REVISION = "tiempo_revision_humana_ms"
+
+# Encabezados de columna reutilizados entre varias de las tablas que arma
+# este modulo (SonarCloud: "Define a constant instead of duplicating this
+# literal"). Una sola definicion para que un cambio de redaccion no tenga
+# que buscarse en cada rename()/seleccion/groupby por separado.
+COL_CONFIGURACION = "Configuración"
+COL_PASO1_EXITOSO = "Paso 1 exitoso (fuga real)"
+COL_ATAQUE_COMPLETO = "Ataque completo"
 COLUMNAS_TIEMPO_COSTO = {
     "media_ms": "Tiempo revisión media (ms)",
     "desv_estandar_ms": "Tiempo revisión desv. estándar (ms)",
@@ -134,12 +142,12 @@ def calcular_asr(df: pd.DataFrame) -> pd.DataFrame:
 
     return resumen.rename(
         columns={
-            "configuracion": "Configuración",
+            "configuracion": COL_CONFIGURACION,
             "vector": "Vector",
             "asr_pct": "ASR (%)",
             "numero_intentos": "Número de intentos",
         }
-    )[["Configuración", "Vector", "ASR (%)", "Número de intentos"]]
+    )[[COL_CONFIGURACION, "Vector", "ASR (%)", "Número de intentos"]]
 
 
 def cargar_verificacion_fuga(rutas_csv: list[Path]) -> pd.DataFrame:
@@ -301,23 +309,23 @@ def calcular_tabla_v4(df_unido: pd.DataFrame) -> pd.DataFrame:
 
     return tabla.rename(
         columns={
-            "configuracion": "Configuración",
+            "configuracion": COL_CONFIGURACION,
             "id_base": "Variante",
             "corrida": "Corrida",
-            "paso1_exitoso": "Paso 1 exitoso (fuga real)",
+            "paso1_exitoso": COL_PASO1_EXITOSO,
             "paso2_intentado": "Paso 2 intentado",
             "paso2_exitoso": "Paso 2 exitoso (uso cruzado)",
-            "ataque_completo": "Ataque completo",
+            "ataque_completo": COL_ATAQUE_COMPLETO,
         }
     )[
         [
-            "Configuración",
+            COL_CONFIGURACION,
             "Variante",
             "Corrida",
-            "Paso 1 exitoso (fuga real)",
+            COL_PASO1_EXITOSO,
             "Paso 2 intentado",
             "Paso 2 exitoso (uso cruzado)",
-            "Ataque completo",
+            COL_ATAQUE_COMPLETO,
         ]
     ]
 
@@ -336,10 +344,10 @@ def calcular_metrica_binaria_v4(tabla_v4: pd.DataFrame) -> pd.DataFrame:
     razones quedan visibles por separado en `calcular_tabla_v4`).
     """
     resumen = (
-        tabla_v4.groupby("Configuración")
+        tabla_v4.groupby(COL_CONFIGURACION)
         .agg(
-            intentos_paso1=("Paso 1 exitoso (fuga real)", "size"),
-            ataques_completos=("Ataque completo", "sum"),
+            intentos_paso1=(COL_PASO1_EXITOSO, "size"),
+            ataques_completos=(COL_ATAQUE_COMPLETO, "sum"),
         )
         .reset_index()
     )
@@ -357,7 +365,7 @@ def calcular_metrica_binaria_v4(tabla_v4: pd.DataFrame) -> pd.DataFrame:
         }
     )[
         [
-            "Configuración",
+            COL_CONFIGURACION,
             "Movimiento lateral exitoso",
             "Ataques completos",
             "Intentos (paso 1)",
@@ -473,7 +481,7 @@ def calcular_costo_operativo(df: pd.DataFrame) -> pd.DataFrame:
         t = tiempos.loc[configuracion] if configuracion in tiempos.index else None
         filas.append(
             {
-                "Configuración": configuracion,
+                COL_CONFIGURACION: configuracion,
                 "Intercepciones aprobación humana": int(
                     intercepciones.get(configuracion, 0)
                 ),
@@ -487,10 +495,31 @@ def calcular_costo_operativo(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(filas)
 
 
+def validar_ruta_salida_segura(ruta: Path, *, base: Path | None = None) -> Path:
+    """Verifica que `ruta` (tipicamente de `--output-dir`) quede dentro de
+    `base` (por defecto, la raiz del repo) antes de crearla o escribir ahi.
+
+    Devuelve la ruta ya resuelta. Lanza ValueError si `ruta` escapa de
+    `base` (p. ej. `--output-dir ../../../etc/algo`) -- CWE-22, path
+    traversal via un argumento de linea de comandos mal formado.
+    """
+    base_resuelta = (base or RAIZ).resolve()
+    ruta_resuelta = ruta.resolve()
+    if not ruta_resuelta.is_relative_to(base_resuelta):
+        raise ValueError(
+            f"La ruta de salida {ruta} (resuelta: {ruta_resuelta}) queda "
+            f"fuera de {base_resuelta}. No se acepta, para evitar escribir "
+            "fuera del repositorio por un argumento mal formado (path "
+            "traversal, CWE-22)."
+        )
+    return ruta_resuelta
+
+
 def guardar_tabla(
     tabla: pd.DataFrame, directorio_salida: Path, nombre_base: str
 ) -> tuple[Path, Path]:
     """Exporta la tabla resumen a CSV y a Markdown. Devuelve las rutas escritas."""
+    directorio_salida = validar_ruta_salida_segura(directorio_salida)
     directorio_salida.mkdir(parents=True, exist_ok=True)
     ruta_csv = directorio_salida / f"{nombre_base}.csv"
     ruta_md = directorio_salida / f"{nombre_base}.md"

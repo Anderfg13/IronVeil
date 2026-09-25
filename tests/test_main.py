@@ -118,6 +118,26 @@ class _ClienteOllamaConError:
         raise self._excepcion
 
 
+# --- _sanear_para_log() (CWE-117, log injection) --------------------------
+
+
+def test_sanear_para_log_escapa_saltos_de_linea() -> None:
+    entrada = "modelo-real\nINFO: linea de log falsa"
+
+    saneado = main._sanear_para_log(entrada)
+
+    assert "\n" not in saneado
+    assert saneado == "modelo-real\\nINFO: linea de log falsa"
+
+
+def test_sanear_para_log_escapa_retorno_de_carro() -> None:
+    assert main._sanear_para_log("a\rb") == "a\\rb"
+
+
+def test_sanear_para_log_no_toca_texto_normal() -> None:
+    assert main._sanear_para_log("soporte") == "soporte"
+
+
 # --- Manejo de errores de Ollama: mensaje generico (OWASP Error Handling) --
 #
 # ataques/variantes_ataque.md V1-D prueba justo esto: pedir un modelo que
@@ -1104,8 +1124,10 @@ def test_revision_lista_una_peticion_pendiente(
     assert item["mensaje"] == MENSAJE_MALICIOSO
     assert item["vector_probado"] == "V3-A"
     assert item["motivo"] == "filtrado"
-    assert "id" in item and item["id"]
-    assert "encolado_en" in item and item["encolado_en"]  # timestamp de llegada
+    assert "id" in item
+    assert item["id"]
+    assert "encolado_en" in item
+    assert item["encolado_en"]  # timestamp de llegada
     assert cliente_falso.llamado is False
 
 

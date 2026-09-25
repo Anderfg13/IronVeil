@@ -61,40 +61,65 @@ def _percentil(valores: list[int], p: float) -> int:
     return ordenados[min(len(ordenados) - 1, int(len(ordenados) * p))]
 
 
+def _validar_evento_v5(
+    evento: dict, *, ruta: Path, numero: int, configuracion: str, nivel: str
+) -> None:
+    """Falla ruidosamente si `evento` no coincide con lo que su nombre de
+    archivo promete, o si su `resultado` sale del esquema.
+
+    Extraida de `cargar_corridas_v5()` para mantener su complejidad
+    cognitiva dentro del limite (SonarCloud): son las dos validaciones que
+    antes vivian anidadas dos niveles dentro de los dos `for`.
+    """
+    if evento["configuracion"] != configuracion or evento.get("nivel_carga") != int(
+        nivel
+    ):
+        raise ValueError(
+            f"{ruta.name}:{numero} no coincide con su nombre de archivo "
+            f"(configuracion={evento['configuracion']!r}, "
+            f"nivel_carga={evento.get('nivel_carga')!r})"
+        )
+    if evento["resultado"] not in RESULTADOS_VALIDOS:
+        raise ValueError(
+            f"{ruta.name}:{numero}: resultado fuera de esquema "
+            f"{evento['resultado']!r}"
+        )
+
+
+def _leer_eventos_de_archivo(ruta: Path) -> list[dict]:
+    """Lee un JSONL de V5, agregando `hardware`/`nivel` a partir de su
+    nombre de archivo. Devuelve `[]` si el nombre no matchea el patron
+    esperado (no es un archivo de esta herramienta, se ignora).
+    """
+    coincidencia = PATRON_ARCHIVO.match(ruta.name)
+    if coincidencia is None:
+        return []
+    configuracion, sufijo_colab, nivel = coincidencia.groups()
+    hardware = HARDWARE_COLAB if sufijo_colab else HARDWARE_LOCAL
+
+    filas: list[dict] = []
+    for numero, linea in enumerate(ruta.read_text(encoding="utf-8").splitlines(), 1):
+        if not linea.strip():
+            continue
+        evento = json.loads(linea)
+        _validar_evento_v5(
+            evento, ruta=ruta, numero=numero, configuracion=configuracion, nivel=nivel
+        )
+        filas.append({**evento, "hardware": hardware, "nivel": int(nivel)})
+    return filas
+
+
 def cargar_corridas_v5(directorio: Path) -> pd.DataFrame:
     """Lee todos los JSONL por nivel de V5 de `directorio`, un evento por fila.
 
     Agrega `hardware` y `nivel` a partir del nombre del archivo, y falla
     ruidosamente si la configuracion o el nivel dentro del archivo no
-    coinciden con su nombre, o si algun `resultado` sale del esquema.
+    coinciden con su nombre, o si algun `resultado` sale del esquema (ver
+    `_validar_evento_v5()`).
     """
     filas: list[dict] = []
     for ruta in sorted(directorio.glob("vector5_agotamiento_*.jsonl")):
-        coincidencia = PATRON_ARCHIVO.match(ruta.name)
-        if coincidencia is None:
-            continue
-        configuracion, sufijo_colab, nivel = coincidencia.groups()
-        hardware = HARDWARE_COLAB if sufijo_colab else HARDWARE_LOCAL
-        for numero, linea in enumerate(
-            ruta.read_text(encoding="utf-8").splitlines(), 1
-        ):
-            if not linea.strip():
-                continue
-            evento = json.loads(linea)
-            if evento["configuracion"] != configuracion or evento.get(
-                "nivel_carga"
-            ) != int(nivel):
-                raise ValueError(
-                    f"{ruta.name}:{numero} no coincide con su nombre de archivo "
-                    f"(configuracion={evento['configuracion']!r}, "
-                    f"nivel_carga={evento.get('nivel_carga')!r})"
-                )
-            if evento["resultado"] not in RESULTADOS_VALIDOS:
-                raise ValueError(
-                    f"{ruta.name}:{numero}: resultado fuera de esquema "
-                    f"{evento['resultado']!r}"
-                )
-            filas.append({**evento, "hardware": hardware, "nivel": int(nivel)})
+        filas.extend(_leer_eventos_de_archivo(ruta))
 
     if not filas:
         raise FileNotFoundError(f"No hay JSONL de vector5_agotamiento en {directorio}")
