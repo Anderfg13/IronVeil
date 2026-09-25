@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 
 from analisis.consolidar import (
+    RAIZ,
     calcular_asr,
     calcular_costo_operativo,
     calcular_metrica_binaria_v4,
@@ -16,11 +17,38 @@ from analisis.consolidar import (
     extraer_vector_base,
     resumir_tiempo_revision_humana,
     unir_con_verificacion,
+    validar_ruta_salida_segura,
 )
 
 
 def _df(filas: list[dict[str, str]]) -> pd.DataFrame:
     return pd.DataFrame(filas)
+
+
+# --- validar_ruta_salida_segura() (CWE-22, path traversal) ---------------
+
+
+def test_validar_ruta_salida_segura_acepta_ruta_dentro_del_repo() -> None:
+    ruta = RAIZ / "analisis" / "salida_prueba.csv"
+
+    resuelta = validar_ruta_salida_segura(ruta)
+
+    assert resuelta == ruta.resolve()
+
+
+def test_validar_ruta_salida_segura_rechaza_ruta_fuera_del_repo() -> None:
+    ruta_fuera = RAIZ / ".." / "fuera_del_repo"
+
+    with pytest.raises(ValueError, match="fuera de"):
+        validar_ruta_salida_segura(ruta_fuera)
+
+
+def test_validar_ruta_salida_segura_respeta_base_custom(tmp_path: Path) -> None:
+    dentro = tmp_path / "sub"
+
+    resuelta = validar_ruta_salida_segura(dentro, base=tmp_path)
+
+    assert resuelta == dentro.resolve()
 
 
 def test_calcular_asr_dos_de_cuatro_da_50_por_ciento() -> None:

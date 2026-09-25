@@ -7,13 +7,20 @@ vivo se corre manualmente contra el stack del equipo, no en esta suite.
 
 from __future__ import annotations
 
+import asyncio
+import io
+from pathlib import Path
+
 import pytest
 
 from ataques.vector5_carga import (
+    _REPO_ROOT,
     clasificar_resultado,
+    ejecutar_rafaga,
     generar_mensaje,
     validar_configuracion_consistente,
     validar_host_laboratorio_propio,
+    validar_ruta_salida_segura,
 )
 
 
@@ -51,6 +58,63 @@ def test_validar_host_laboratorio_propio(
             validar_host_laboratorio_propio(url, permitir_remoto)
     else:
         validar_host_laboratorio_propio(url, permitir_remoto)
+
+
+# --- ejecutar_rafaga() revalida el host (CWE-918, SSRF) -------------------
+
+
+def test_ejecutar_rafaga_rechaza_host_fuera_del_laboratorio_antes_de_la_red() -> None:
+    """No debe llegar a abrir ningun socket: falla en la validacion, antes
+    de `async with httpx.AsyncClient()`."""
+    with pytest.raises(ValueError, match="laboratorio propio"):
+        asyncio.run(
+            ejecutar_rafaga(
+                url="http://ataque.example.com:8000/chat",
+                modelo="soporte",
+                concurrencia=1,
+                duracion_s=1.0,
+                mecanismos_activos=[],
+                configuracion="C0",
+                vector="V5-D",
+                plantilla="hola {i} {nonce}",
+                timeout_peticion=1.0,
+                status_bloqueo=429,
+                salida=io.StringIO(),
+            )
+        )
+
+
+# --- validar_ruta_salida_segura() (CWE-22, path traversal) ---------------
+
+
+def test_validar_ruta_salida_segura_acepta_ruta_dentro_del_repo() -> None:
+    ruta = _REPO_ROOT / "resultados" / "2026-01-01" / "archivo.jsonl"
+
+    resuelta = validar_ruta_salida_segura(ruta)
+
+    assert resuelta == ruta.resolve()
+
+
+def test_validar_ruta_salida_segura_rechaza_ruta_fuera_del_repo() -> None:
+    ruta_fuera = _REPO_ROOT / ".." / "fuera_del_repo" / "archivo.jsonl"
+
+    with pytest.raises(ValueError, match="fuera de"):
+        validar_ruta_salida_segura(ruta_fuera)
+
+
+def test_validar_ruta_salida_segura_rechaza_traversal_con_puntos() -> None:
+    ruta_traversal = _REPO_ROOT / "resultados" / ".." / ".." / "etc" / "passwd"
+
+    with pytest.raises(ValueError, match="fuera de"):
+        validar_ruta_salida_segura(ruta_traversal)
+
+
+def test_validar_ruta_salida_segura_respeta_base_custom(tmp_path: Path) -> None:
+    dentro = tmp_path / "sub" / "archivo.jsonl"
+
+    resuelta = validar_ruta_salida_segura(dentro, base=tmp_path)
+
+    assert resuelta == dentro.resolve()
 
 
 def test_validar_configuracion_c0_exige_todo_apagado() -> None:

@@ -44,6 +44,8 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+RAIZ = Path(__file__).resolve().parent.parent
+
 RESULTADOS_VALIDOS = {"bloqueado", "exitoso_para_atacante", "permitido_normal"}
 COLUMNAS_REQUERIDAS = ("configuracion", "vector_probado", "resultado")
 COLUMNAS_VERIFICACION_REQUERIDAS = (
@@ -52,9 +54,7 @@ COLUMNAS_VERIFICACION_REQUERIDAS = (
     "vector_probado",
     "fuga_confirmada_por_contenido",
 )
-RUTA_CSV_DEFECTO = (
-    Path(__file__).resolve().parent.parent / "resultados" / "resultados_template.csv"
-)
+RUTA_CSV_DEFECTO = RAIZ / "resultados" / "resultados_template.csv"
 PATRON_VECTOR_BASE = re.compile(r"^V\d+")
 COLUMNA_TIEMPO_REVISION = "tiempo_revision_humana_ms"
 COLUMNAS_TIEMPO_COSTO = {
@@ -487,10 +487,31 @@ def calcular_costo_operativo(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(filas)
 
 
+def validar_ruta_salida_segura(ruta: Path, *, base: Path | None = None) -> Path:
+    """Verifica que `ruta` (tipicamente de `--output-dir`) quede dentro de
+    `base` (por defecto, la raiz del repo) antes de crearla o escribir ahi.
+
+    Devuelve la ruta ya resuelta. Lanza ValueError si `ruta` escapa de
+    `base` (p. ej. `--output-dir ../../../etc/algo`) -- CWE-22, path
+    traversal via un argumento de linea de comandos mal formado.
+    """
+    base_resuelta = (base or RAIZ).resolve()
+    ruta_resuelta = ruta.resolve()
+    if not ruta_resuelta.is_relative_to(base_resuelta):
+        raise ValueError(
+            f"La ruta de salida {ruta} (resuelta: {ruta_resuelta}) queda "
+            f"fuera de {base_resuelta}. No se acepta, para evitar escribir "
+            "fuera del repositorio por un argumento mal formado (path "
+            "traversal, CWE-22)."
+        )
+    return ruta_resuelta
+
+
 def guardar_tabla(
     tabla: pd.DataFrame, directorio_salida: Path, nombre_base: str
 ) -> tuple[Path, Path]:
     """Exporta la tabla resumen a CSV y a Markdown. Devuelve las rutas escritas."""
+    directorio_salida = validar_ruta_salida_segura(directorio_salida)
     directorio_salida.mkdir(parents=True, exist_ok=True)
     ruta_csv = directorio_salida / f"{nombre_base}.csv"
     ruta_md = directorio_salida / f"{nombre_base}.md"
