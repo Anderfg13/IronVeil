@@ -9,10 +9,12 @@ import pytest
 
 from analisis.consolidar import (
     calcular_asr,
+    calcular_costo_operativo,
     calcular_metrica_binaria_v4,
     calcular_tabla_v4,
     cargar_verificacion_fuga,
     extraer_vector_base,
+    resumir_tiempo_revision_humana,
     unir_con_verificacion,
 )
 
@@ -443,3 +445,94 @@ def test_calcular_metrica_binaria_v4_si_no() -> None:
     assert filas["C4"]["Movimiento lateral exitoso"] == "No"
     assert filas["C4"]["Ataques completos"] == 0
     assert filas["C4"]["ASR movimiento lateral (%)"] == 0.0
+
+
+# --- Costo operativo de aprobacion humana (mecanismo 5) --------------------
+
+
+def _evento_c5(
+    mecanismo: str = "aprobacion_humana", tiempo_revision: str = ""
+) -> dict[str, str]:
+    return {
+        "configuracion": "C5",
+        "mecanismos_activos": "aprobacion_humana",
+        "vector_probado": "V5-D",
+        "resultado": "bloqueado" if mecanismo else "permitido_normal",
+        "mecanismo_que_bloqueo": mecanismo,
+        "tiempo_revision_humana_ms": tiempo_revision,
+    }
+
+
+def test_resumir_tiempo_revision_calcula_media_desviacion_y_rango() -> None:
+    df = _df(
+        [
+            _evento_c5(tiempo_revision="1000"),
+            _evento_c5(tiempo_revision="3000"),
+            _evento_c5(mecanismo="", tiempo_revision="5000"),
+            _evento_c5(),  # evento de encolado: no es una decision humana
+        ]
+    )
+
+    fila = resumir_tiempo_revision_humana(df).iloc[0]
+
+    assert fila["n"] == 3
+    assert fila["media_ms"] == 3000
+    assert fila["desv_estandar_ms"] == 2000  # muestral, ddof=1
+    assert (fila["min_ms"], fila["mediana_ms"], fila["max_ms"]) == (1000, 3000, 5000)
+
+
+def test_resumir_tiempo_revision_sin_decisiones_no_inventa_ceros() -> None:
+    fila = resumir_tiempo_revision_humana(_df([_evento_c5(), _evento_c5()])).iloc[0]
+
+    assert fila["n"] == 0
+    assert fila["media_ms"] is None
+    assert fila["max_ms"] is None
+
+
+def test_resumir_tiempo_revision_con_una_decision_no_tiene_desviacion() -> None:
+    fila = resumir_tiempo_revision_humana(
+        _df([_evento_c5(tiempo_revision="1500")])
+    ).iloc[0]
+
+    assert fila["n"] == 1
+    assert fila["media_ms"] == 1500
+    assert fila["desv_estandar_ms"] is None
+
+
+def test_resumir_tiempo_revision_sin_columna_equivale_a_cero_decisiones() -> None:
+    df = _df([_evento_c5()]).drop(columns=["tiempo_revision_humana_ms"])
+
+    assert resumir_tiempo_revision_humana(df).iloc[0]["n"] == 0
+
+
+def test_calcular_costo_operativo_solo_configuraciones_con_aprobacion_humana() -> None:
+    sin_mecanismo_5 = {
+        **_evento_c5(mecanismo=""),
+        "configuracion": "C0",
+        "mecanismos_activos": "",
+    }
+    df = _df(
+        [
+            _evento_c5(),
+            _evento_c5(),
+            _evento_c5(tiempo_revision="2000"),  # decision, no intercepcion
+            _evento_c5(mecanismo=""),
+            sin_mecanismo_5,
+        ]
+    )
+
+    tabla = calcular_costo_operativo(df)
+
+    assert tabla["Configuración"].tolist() == ["C5"]
+    fila = tabla.iloc[0]
+    assert fila["Intercepciones aprobación humana"] == 2
+    assert fila["Decisiones humanas registradas (n)"] == 1
+    assert fila["Tiempo revisión media (ms)"] == 2000
+    assert fila["Tiempo revisión desv. estándar (ms)"] is None
+
+
+def test_calcular_costo_operativo_sin_decisiones_deja_tiempos_vacios() -> None:
+    fila = calcular_costo_operativo(_df([_evento_c5()])).iloc[0]
+
+    assert fila["Decisiones humanas registradas (n)"] == 0
+    assert fila["Tiempo revisión media (ms)"] is None

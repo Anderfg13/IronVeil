@@ -25,6 +25,12 @@ lateral, escenario de 2 pasos), `calcular_tabla_v4()` /
 `calcular_metrica_binaria_v4()`. Las reutiliza, sin duplicar la logica de
 cruce, `analisis/comparar_v4_movimiento_lateral.py` -- mismo patron que
 `comparar_v3_c1_c2_c3.py` ya usa para su propio corte fino sobre V3.
+
+Desde 2026-09-24 exporta ademas `<nombre-base>_costo_operativo.{csv,md}`
+(`calcular_costo_operativo()`): intercepciones de aprobacion humana y
+estadistica de `tiempo_revision_humana_ms` por configuracion con el
+mecanismo 5 activo. `resumir_tiempo_revision_humana()` la reutiliza
+`analisis/tiempo_revision_humana.py` sobre todos los JSONL del proyecto.
 """
 
 from __future__ import annotations
@@ -50,6 +56,13 @@ RUTA_CSV_DEFECTO = (
     Path(__file__).resolve().parent.parent / "resultados" / "resultados_template.csv"
 )
 PATRON_VECTOR_BASE = re.compile(r"^V\d+")
+COLUMNA_TIEMPO_REVISION = "tiempo_revision_humana_ms"
+COLUMNAS_TIEMPO_COSTO = {
+    "media_ms": "Tiempo revisión media (ms)",
+    "desv_estandar_ms": "Tiempo revisión desv. estándar (ms)",
+    "min_ms": "Tiempo revisión mín. (ms)",
+    "max_ms": "Tiempo revisión máx. (ms)",
+}
 
 
 def cargar_resultados(ruta_csv: Path) -> pd.DataFrame:
@@ -353,6 +366,127 @@ def calcular_metrica_binaria_v4(tabla_v4: pd.DataFrame) -> pd.DataFrame:
     ]
 
 
+def _es_evento_de_decision_humana(df: pd.DataFrame) -> pd.Series:
+    """Mascara de filas que registran una decision humana sobre la cola.
+
+    Solo los endpoints `POST /revision/{id}/aprobar|rechazar` (proxy/main.py)
+    pueblan `tiempo_revision_humana_ms`; el evento de /chat que encola la
+    peticion nunca lo trae. Acepta la columna ausente (CSV/JSONL anteriores
+    a la interfaz de revision) como "ninguna decision registrada".
+    """
+    if COLUMNA_TIEMPO_REVISION not in df.columns:
+        return pd.Series(False, index=df.index)
+    valores = pd.to_numeric(df[COLUMNA_TIEMPO_REVISION], errors="coerce")
+    return valores.notna()
+
+
+def resumir_tiempo_revision_humana(
+    df: pd.DataFrame, agrupar_por: list[str] | None = None
+) -> pd.DataFrame:
+    """Estadistica descriptiva de `tiempo_revision_humana_ms` sobre eventos reales.
+
+    Recibe eventos del log (JSONL o filas del CSV) y usa solo los que traen
+    `tiempo_revision_humana_ms` (decisiones humanas registradas). Devuelve
+    n, media, desviacion estandar muestral (ddof=1), mediana, minimo y
+    maximo en ms -- el rango y la desviacion van siempre junto a la media
+    para no esconder la variabilidad entre revisores (docs/FUENTE_DE_VERDAD.md
+    seccion 7). Con `agrupar_por=None` devuelve una sola fila "Todas".
+    Con n=0 devuelve la fila igual, con las estadisticas vacias (NaN): un
+    cero seria un dato inventado. Con n=1 la desviacion queda vacia (None).
+    Todas las estadisticas en ms enteros.
+    """
+    decisiones = df[_es_evento_de_decision_humana(df)].copy()
+    decisiones["_t"] = pd.to_numeric(
+        decisiones.get(COLUMNA_TIEMPO_REVISION, pd.Series(dtype=float))
+    )
+
+    def _ms_entero(valor: float) -> int | None:
+        # Latencias en ms enteros (FUENTE_DE_VERDAD.md seccion 5); None, no
+        # NaN ni 0, cuando la estadistica no existe (n=0, o desv. con n=1).
+        return None if pd.isna(valor) else int(round(valor))
+
+    def _estadisticas(serie: pd.Series) -> dict[str, int | None]:
+        return {
+            "n": int(serie.size),
+            "media_ms": _ms_entero(serie.mean()),
+            "desv_estandar_ms": _ms_entero(serie.std(ddof=1)),
+            "mediana_ms": _ms_entero(serie.median()),
+            "min_ms": _ms_entero(serie.min()),
+            "max_ms": _ms_entero(serie.max()),
+        }
+
+    if not agrupar_por:
+        return pd.DataFrame([{"grupo": "Todas", **_estadisticas(decisiones["_t"])}])
+
+    filas = [
+        {
+            **dict(
+                zip(
+                    agrupar_por,
+                    clave if isinstance(clave, tuple) else (clave,),
+                    strict=True,
+                )
+            ),
+            **_estadisticas(grupo["_t"]),
+        }
+        for clave, grupo in decisiones.groupby(agrupar_por, sort=True)
+    ]
+    columnas = [
+        *agrupar_por,
+        "n",
+        "media_ms",
+        "desv_estandar_ms",
+        "mediana_ms",
+        "min_ms",
+        "max_ms",
+    ]
+    return pd.DataFrame(filas, columns=columnas)
+
+
+def calcular_costo_operativo(df: pd.DataFrame) -> pd.DataFrame:
+    """Columnas de costo operativo de aprobacion humana, por configuracion.
+
+    Solo incluye configuraciones con `aprobacion_humana` activa en al menos
+    una fila (C5, C6). Por cada una:
+    - intercepciones: eventos que el mecanismo 5 convirtio en 429 (encolado
+      o rechazado por cola llena -- el log no distingue ambos casos), es
+      decir, la carga que en principio recae sobre un revisor humano.
+    - decisiones humanas registradas y estadistica de su tiempo (ver
+      `resumir_tiempo_revision_humana`).
+    Los porcentajes y cifras se calculan, nunca se estiman: si no hay
+    decisiones registradas, las columnas de tiempo quedan vacias.
+    """
+    activos = df["mecanismos_activos"].fillna("").astype(str)
+    df = df[activos.str.contains("aprobacion_humana", regex=False)]
+    es_decision = _es_evento_de_decision_humana(df)
+    intercepciones = (
+        df[(df["mecanismo_que_bloqueo"] == "aprobacion_humana") & ~es_decision]
+        .groupby("configuracion")
+        .size()
+    )
+    tiempos = resumir_tiempo_revision_humana(df, ["configuracion"]).set_index(
+        "configuracion"
+    )
+
+    filas = []
+    for configuracion in sorted(df["configuracion"].unique()):
+        t = tiempos.loc[configuracion] if configuracion in tiempos.index else None
+        filas.append(
+            {
+                "Configuración": configuracion,
+                "Intercepciones aprobación humana": int(
+                    intercepciones.get(configuracion, 0)
+                ),
+                "Decisiones humanas registradas (n)": 0 if t is None else int(t["n"]),
+                **{
+                    columna: None if t is None or pd.isna(t[clave]) else int(t[clave])
+                    for clave, columna in COLUMNAS_TIEMPO_COSTO.items()
+                },
+            }
+        )
+    return pd.DataFrame(filas)
+
+
 def guardar_tabla(
     tabla: pd.DataFrame, directorio_salida: Path, nombre_base: str
 ) -> tuple[Path, Path]:
@@ -403,6 +537,13 @@ def main() -> None:
 
     logger.info("Tabla resumen escrita en %s y %s", ruta_csv, ruta_md)
     logger.info("\n%s", tabla.to_markdown(index=False))
+
+    costo = calcular_costo_operativo(df)
+    ruta_csv, ruta_md = guardar_tabla(
+        costo, args.output_dir, f"{args.nombre_base}_costo_operativo"
+    )
+    logger.info("Tabla de costo operativo escrita en %s y %s", ruta_csv, ruta_md)
+    logger.info("\n%s", costo.to_markdown(index=False))
 
 
 if __name__ == "__main__":

@@ -1,0 +1,4 @@
+| Configuración   |   Intercepciones aprobación humana |   Decisiones humanas registradas (n) | Tiempo revisión media (ms)   | Tiempo revisión desv. estándar (ms)   | Tiempo revisión mín. (ms)   | Tiempo revisión máx. (ms)   |
+|:----------------|-----------------------------------:|-------------------------------------:|:-----------------------------|:--------------------------------------|:----------------------------|:----------------------------|
+| C5              |                              18267 |                                    0 |                              |                                       |                             |                             |
+| C6              |                               1090 |                                    0 |                              |                                       |                             |                             |
