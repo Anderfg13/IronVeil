@@ -1124,8 +1124,10 @@ def test_revision_lista_una_peticion_pendiente(
     assert item["mensaje"] == MENSAJE_MALICIOSO
     assert item["vector_probado"] == "V3-A"
     assert item["motivo"] == "filtrado"
-    assert "id" in item and item["id"]
-    assert "encolado_en" in item and item["encolado_en"]  # timestamp de llegada
+    assert "id" in item
+    assert item["id"]
+    assert "encolado_en" in item
+    assert item["encolado_en"]  # timestamp de llegada
     assert cliente_falso.llamado is False
 
 

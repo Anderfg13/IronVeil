@@ -73,6 +73,25 @@ _DETALLE_EN_REVISION: str = (
 # revisar V1 contra OWASP (ver docs/FUENTE_DE_VERDAD.md, seccion 9).
 _DETALLE_ERROR_OLLAMA: str = "No se pudo procesar la solicitud."
 
+# Documenta en el esquema OpenAPI (Swagger /docs) los codigos de error que
+# cada endpoint puede devolver ademas del 200 por defecto (SonarCloud:
+# "Document this HTTPException ... in the 'responses' parameter"). Mismos
+# mensajes genericos que ya usa el cliente real -- no se agrega detalle
+# nuevo aqui, solo se declara el codigo para que la documentacion generada
+# no mienta por omision.
+_RESPUESTAS_CHAT: dict[int | str, dict[str, str]] = {
+    400: {"description": _DETALLE_BLOQUEO},
+    429: {"description": _DETALLE_EN_REVISION},
+    502: {"description": _DETALLE_ERROR_OLLAMA},
+}
+_RESPUESTAS_RECHAZAR_REVISION: dict[int | str, dict[str, str]] = {
+    404: {"description": "No hay ninguna peticion en revision con ese id."},
+}
+_RESPUESTAS_APROBAR_REVISION: dict[int | str, dict[str, str]] = {
+    404: {"description": "No hay ninguna peticion en revision con ese id."},
+    502: {"description": _DETALLE_ERROR_OLLAMA},
+}
+
 # Mecanismo 2 (delimitacion). Texto que el proxy coloca en el bloque
 # [INSTRUCCIONES DEL SISTEMA] del andamiaje de spotlighting.
 #
@@ -579,7 +598,7 @@ async def _completar_peticion(
     return respuesta, mecanismo_bloqueo
 
 
-@app.post("/chat")
+@app.post("/chat", responses=_RESPUESTAS_CHAT)
 async def chat(request: ChatRequest, http_request: Request) -> dict[str, Any]:
     inicio = time.perf_counter()
     config = mecanismos.cargar_config(mecanismos.CONFIG_PATH)
@@ -683,7 +702,7 @@ def listar_revision() -> list[dict[str, Any]]:
     return cola.cola_global.listar()
 
 
-@app.post("/revision/{id_peticion}/rechazar")
+@app.post("/revision/{id_peticion}/rechazar", responses=_RESPUESTAS_RECHAZAR_REVISION)
 def rechazar_revision(id_peticion: str) -> dict[str, Any]:
     """Mecanismo 5: descarta una peticion pendiente sin completarla.
 
@@ -724,7 +743,7 @@ def rechazar_revision(id_peticion: str) -> dict[str, Any]:
     }
 
 
-@app.post("/revision/{id_peticion}/aprobar")
+@app.post("/revision/{id_peticion}/aprobar", responses=_RESPUESTAS_APROBAR_REVISION)
 async def aprobar_revision(id_peticion: str) -> dict[str, Any]:
     """Mecanismo 5: completa una peticion pendiente y devuelve la respuesta real.
 

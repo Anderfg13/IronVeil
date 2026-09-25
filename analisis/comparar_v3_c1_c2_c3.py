@@ -43,6 +43,16 @@ MECANISMO_POR_CONFIGURACION = {
     "C3": "clasificacion",
 }
 
+# Encabezados de columna de la tabla final, en una sola constante (SonarCloud:
+# "Define a constant instead of duplicating this literal") para que un cambio
+# de redaccion no tenga que tocar el rename() y cada lectura por separado.
+COL_CONFIGURACION = "Configuración"
+COL_MECANISMO = "Mecanismo"
+COL_TIPO_VARIANTE = "Tipo de variante"
+COL_ASR_PCT = "ASR (%)"
+COL_TASA_BLOQUEO_PCT = "Tasa de bloqueo (%)"
+COL_NUMERO_INTENTOS = "Número de intentos"
+
 
 def filtrar_v3(df: pd.DataFrame) -> pd.DataFrame:
     """Filtra las filas de Vector 3 para C1, C2 y C3.
@@ -103,21 +113,21 @@ def calcular_comparacion(v3: pd.DataFrame) -> pd.DataFrame:
 
     return resumen.rename(
         columns={
-            "configuracion": "Configuración",
-            "mecanismo": "Mecanismo",
-            "tipo_variante": "Tipo de variante",
-            "asr_pct": "ASR (%)",
-            "tasa_bloqueo_pct": "Tasa de bloqueo (%)",
-            "numero_intentos": "Número de intentos",
+            "configuracion": COL_CONFIGURACION,
+            "mecanismo": COL_MECANISMO,
+            "tipo_variante": COL_TIPO_VARIANTE,
+            "asr_pct": COL_ASR_PCT,
+            "tasa_bloqueo_pct": COL_TASA_BLOQUEO_PCT,
+            "numero_intentos": COL_NUMERO_INTENTOS,
         }
     )[
         [
-            "Configuración",
-            "Mecanismo",
-            "Tipo de variante",
-            "ASR (%)",
-            "Tasa de bloqueo (%)",
-            "Número de intentos",
+            COL_CONFIGURACION,
+            COL_MECANISMO,
+            COL_TIPO_VARIANTE,
+            COL_ASR_PCT,
+            COL_TASA_BLOQUEO_PCT,
+            COL_NUMERO_INTENTOS,
         ]
     ]
 
@@ -145,13 +155,13 @@ def graficar_comparacion(tabla: pd.DataFrame, ruta_png: Path) -> Path:
     es_nueva = []
     intentos = []
     for _, fila in tabla.iterrows():
-        etiqueta = f"{fila['Configuración']}\n({fila['Mecanismo']})"
-        if fila["Tipo de variante"] == "nueva":
+        etiqueta = f"{fila[COL_CONFIGURACION]}\n({fila[COL_MECANISMO]})"
+        if fila[COL_TIPO_VARIANTE] == "nueva":
             etiqueta += "\nvariantes nuevas\n(evasión)"
         etiquetas.append(etiqueta)
-        valores.append(fila["ASR (%)"])
-        es_nueva.append(fila["Tipo de variante"] == "nueva")
-        intentos.append(fila["Número de intentos"])
+        valores.append(fila[COL_ASR_PCT])
+        es_nueva.append(fila[COL_TIPO_VARIANTE] == "nueva")
+        intentos.append(fila[COL_NUMERO_INTENTOS])
 
     colores = ["#c0392b" if nueva else "#2c6e91" for nueva in es_nueva]
     patrones = ["//" if nueva else None for nueva in es_nueva]
