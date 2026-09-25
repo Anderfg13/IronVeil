@@ -65,23 +65,29 @@ def test_validar_host_laboratorio_propio(
 
 def test_ejecutar_rafaga_rechaza_host_fuera_del_laboratorio_antes_de_la_red() -> None:
     """No debe llegar a abrir ningun socket: falla en la validacion, antes
-    de `async with httpx.AsyncClient()`."""
+    de `async with httpx.AsyncClient()`.
+
+    Arma la corrutina FUERA del `with pytest.raises(...)` (construirla nunca
+    lanza, solo la ejecucion con `asyncio.run()` puede hacerlo) para que el
+    bloque contenga una sola llamada que pueda fallar, no dos anidadas
+    (SonarCloud: "Refactor this exception test to have only one invocation
+    possibly throwing an exception").
+    """
+    corrutina = ejecutar_rafaga(
+        url="http://ataque.example.com:8000/chat",
+        modelo="soporte",
+        concurrencia=1,
+        duracion_s=1.0,
+        mecanismos_activos=[],
+        configuracion="C0",
+        vector="V5-D",
+        plantilla="hola {i} {nonce}",
+        timeout_peticion=1.0,
+        status_bloqueo=429,
+        salida=io.StringIO(),
+    )
     with pytest.raises(ValueError, match="laboratorio propio"):
-        asyncio.run(
-            ejecutar_rafaga(
-                url="http://ataque.example.com:8000/chat",
-                modelo="soporte",
-                concurrencia=1,
-                duracion_s=1.0,
-                mecanismos_activos=[],
-                configuracion="C0",
-                vector="V5-D",
-                plantilla="hola {i} {nonce}",
-                timeout_peticion=1.0,
-                status_bloqueo=429,
-                salida=io.StringIO(),
-            )
-        )
+        asyncio.run(corrutina)
 
 
 # --- validar_ruta_salida_segura() (CWE-22, path traversal) ---------------
