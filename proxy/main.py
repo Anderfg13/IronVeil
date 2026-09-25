@@ -355,6 +355,15 @@ def _registrar_evento(evento: dict[str, Any]) -> None:
 
     Protegida con `_registro_lock`: sin esto, peticiones concurrentes
     (V5) pueden pisarse la escritura entre si y perder eventos completos.
+
+    Punto de integracion futuro para SIEM (ver `proxy/siem.py`, patron
+    Adapter, todavia no cableado aqui): quien conecte un SIEM real
+    llamaria `siem.enviar_a_siem(evento, formateador, conector)` con este
+    mismo `evento`, ademas de (nunca en vez de) esta escritura -- el SIEM
+    es un consumidor adicional, no reemplaza el dataset del experimento.
+    Decision pendiente de esa integracion, no de esta funcion: si ese envio
+    va sincrono aqui mismo o desacoplado (cola, hilo aparte) para no sumarle
+    latencia de red a cada peticion.
     """
     fecha = datetime.now().astimezone().strftime("%Y-%m-%d")
     directorio = RESULTADOS_DIR / fecha

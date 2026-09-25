@@ -168,7 +168,9 @@ Campos adicionales acordados sobre la marcha (latencia propia del clasificador, 
 Esta es la estructura **objetivo**. Lo marcado `[ya existe]` está en el repo hoy; el resto es lo que se va creando a medida que avanzan las semanas — no asumas que ya está ahí sin comprobarlo.
 
 ```
-/proxy/                 main.py (FastAPI) [ya existe], mecanismos.py, cola.py
+/proxy/                 main.py (FastAPI) [ya existe], mecanismos.py, cola.py,
+                        siem.py (andamiaje Adapter para exportar a un SIEM
+                        futuro, aun no cableado a /chat — ver su docstring)
 /ollama/modelfiles/     Modelfile.soporte.template, Modelfile.rrhh.template [ya existen]
 /tests/                 pruebas unitarias y de integración
 /ataques/               variantes_ataque.md, vector4_*.py, vector5_*.py, promptfooconfig.yaml
