@@ -21,14 +21,26 @@ WORKDIR /app
 # -- si algun dia una dependencia nueva no trae wheel, el build fallara de
 # forma explicita en vez de ejecutar codigo de instalacion silenciosamente.
 #
+# --require-hashes: cada paquete (directo y transitivo) debe traer su
+# sha256 en el archivo de requisitos, o el build falla (SonarCloud: "Using
+# dependencies without locking resolved versions is security-sensitive").
+# requirements.txt / requirements-torch.txt son generados (no editar a
+# mano; ver su propia cabecera para el comando de regeneracion) a partir
+# de requirements.in / requirements-torch.in, que si son los pines
+# directos editables.
+#
 # torch CPU-only, aparte de requirements.txt: el indice por defecto de PyPI
 # trae la variante CUDA (varios GB), innecesaria sin GPU en el laboratorio.
 # Usado por transformers (mecanismo 3, direccion "entrada", Prompt Guard).
-RUN pip install --no-cache-dir --only-binary :all: \
-    torch==2.14.0 --index-url https://download.pytorch.org/whl/cpu
+# El --index-url va dentro de requirements-torch.txt (pip lo respeta ahi),
+# no como flag aca, para que ambos install queden con la misma forma.
+COPY proxy/requirements-torch.txt proxy/requirements-torch.txt
+RUN pip install --no-cache-dir --only-binary :all: --require-hashes \
+    -r proxy/requirements-torch.txt
 
 COPY proxy/requirements.txt proxy/requirements.txt
-RUN pip install --no-cache-dir --only-binary :all: -r proxy/requirements.txt
+RUN pip install --no-cache-dir --only-binary :all: --require-hashes \
+    -r proxy/requirements.txt
 
 COPY proxy/ proxy/
 
