@@ -1,0 +1,6 @@
+| Hardware                  | Configuración   | Primer nivel con timeout/5xx   | Primer nivel con p95 ≥ 2× nivel base   | Primer nivel con rate limit activo   |   Timeouts totales |   Peticiones totales |
+|:--------------------------|:----------------|:-------------------------------|:---------------------------------------|:-------------------------------------|-------------------:|---------------------:|
+| CPU local (Ryzen 5 3500U) | C0              | 4                              |                                        |                                      |                173 |                  180 |
+| CPU local (Ryzen 5 3500U) | C5              | 2                              |                                        | 50                                   |                 44 |                 1455 |
+| Colab GPU T4              | C0              | 50                             | 6                                      |                                      |                117 |                  204 |
+| Colab GPU T4              | C5              |                                |                                        | 6                                    |                  0 |                16874 |

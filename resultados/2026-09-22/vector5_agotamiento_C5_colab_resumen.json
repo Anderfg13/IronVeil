@@ -1,0 +1,83 @@
+{
+  "configuracion": "C5",
+  "mecanismos_activos": [
+    "aprobacion_humana"
+  ],
+  "modelo": "soporte",
+  "timestamp": "2026-09-22T22:29:28.300486+00:00",
+  "niveles": [
+    {
+      "nivel_carga": 2,
+      "total": 2,
+      "bloqueados": 0,
+      "exitosos_atacante": 0,
+      "permitidos": 2,
+      "p50_ms": 41652,
+      "p95_ms": 41652,
+      "max_ms": 41652
+    },
+    {
+      "nivel_carga": 4,
+      "total": 8,
+      "bloqueados": 0,
+      "exitosos_atacante": 0,
+      "permitidos": 8,
+      "p50_ms": 18220,
+      "p95_ms": 19196,
+      "max_ms": 19196
+    },
+    {
+      "nivel_carga": 6,
+      "total": 3518,
+      "bloqueados": 3516,
+      "exitosos_atacante": 0,
+      "permitidos": 2,
+      "p50_ms": 20,
+      "p95_ms": 72,
+      "max_ms": 9693
+    },
+    {
+      "nivel_carga": 8,
+      "total": 3648,
+      "bloqueados": 3648,
+      "exitosos_atacante": 0,
+      "permitidos": 0,
+      "p50_ms": 19,
+      "p95_ms": 131,
+      "max_ms": 714
+    },
+    {
+      "nivel_carga": 10,
+      "total": 3599,
+      "bloqueados": 3599,
+      "exitosos_atacante": 0,
+      "permitidos": 0,
+      "p50_ms": 29,
+      "p95_ms": 193,
+      "max_ms": 1415
+    },
+    {
+      "nivel_carga": 50,
+      "total": 3024,
+      "bloqueados": 3024,
+      "exitosos_atacante": 0,
+      "permitidos": 0,
+      "p50_ms": 364,
+      "p95_ms": 621,
+      "max_ms": 1634
+    },
+    {
+      "nivel_carga": 100,
+      "total": 3075,
+      "bloqueados": 3075,
+      "exitosos_atacante": 0,
+      "permitidos": 0,
+      "p50_ms": 736,
+      "p95_ms": 1283,
+      "max_ms": 3212
+    }
+  ],
+  "degradacion_detectada": false,
+  "explicacion_degradacion": "sin señal de degradacion en los niveles probados",
+  "nota_tiempo_revision_humana": "No medible con esta rafaga sincronica: enviar_a_revision() no espera a que un humano revise antes de responder, asi que el 429 llega casi de inmediato. El costo real para el usuario final (cuanto tarda alguien en revisar la cola) no queda capturado aqui -- ver docstring del modulo."
+}

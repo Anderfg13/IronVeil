@@ -1,0 +1,82 @@
+{
+  "configuracion": "C0",
+  "mecanismos_activos": [],
+  "modelo": "soporte",
+  "timestamp": "2026-09-22T07:18:58.741965-05:00",
+  "niveles": [
+    {
+      "nivel_carga": 2,
+      "total": 2,
+      "bloqueados": 0,
+      "exitosos_atacante": 0,
+      "permitidos": 2,
+      "p50_ms": 73133,
+      "p95_ms": 73133,
+      "max_ms": 73133
+    },
+    {
+      "nivel_carga": 4,
+      "total": 4,
+      "bloqueados": 0,
+      "exitosos_atacante": 2,
+      "permitidos": 2,
+      "p50_ms": 90277,
+      "p95_ms": 90279,
+      "max_ms": 90279
+    },
+    {
+      "nivel_carga": 6,
+      "total": 6,
+      "bloqueados": 0,
+      "exitosos_atacante": 5,
+      "permitidos": 1,
+      "p50_ms": 90300,
+      "p95_ms": 90302,
+      "max_ms": 90302
+    },
+    {
+      "nivel_carga": 8,
+      "total": 8,
+      "bloqueados": 0,
+      "exitosos_atacante": 8,
+      "permitidos": 0,
+      "p50_ms": 90600,
+      "p95_ms": 90607,
+      "max_ms": 90607
+    },
+    {
+      "nivel_carga": 10,
+      "total": 10,
+      "bloqueados": 0,
+      "exitosos_atacante": 9,
+      "permitidos": 1,
+      "p50_ms": 90612,
+      "p95_ms": 90663,
+      "max_ms": 90663
+    },
+    {
+      "nivel_carga": 50,
+      "total": 50,
+      "bloqueados": 0,
+      "exitosos_atacante": 49,
+      "permitidos": 1,
+      "p50_ms": 90919,
+      "p95_ms": 90939,
+      "max_ms": 90943
+    },
+    {
+      "nivel_carga": 100,
+      "total": 100,
+      "bloqueados": 0,
+      "exitosos_atacante": 100,
+      "permitidos": 0,
+      "p50_ms": 91163,
+      "p95_ms": 91256,
+      "max_ms": 91272
+    }
+  ],
+  "degradacion_detectada": true,
+  "explicacion_degradacion": "173 peticion(es) con timeout/5xx (exitoso_para_atacante) -- nivel 4: 2, nivel 6: 5, nivel 8: 8, nivel 10: 9, nivel 50: 49, nivel 100: 100",
+  "nota_tiempo_revision_humana": "No medible con esta rafaga sincronica: enviar_a_revision() no espera a que un humano revise antes de responder, asi que el 429 llega casi de inmediato. El costo real para el usuario final (cuanto tarda alguien en revisar la cola) no queda capturado aqui -- ver docstring del modulo.",
+  "nota_consolidacion": "Resumen combinado de dos corridas (2026-09-22): niveles 2/4/6/8 corridos despues de niveles 10/50/100, mismo dia, mismo hardware, modelo caliente en ambas. Cada nivel viene de su propio archivo JSONL crudo en este mismo directorio."
+}

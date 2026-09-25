@@ -17,6 +17,7 @@ import pytest
 import ataques.vector4_movimiento_lateral as vector4
 from ataques.vector4_movimiento_lateral import (
     CREDENCIAL_POR_MODELO,
+    STATUS_APROBACION_HUMANA,
     VARIANTES,
     ContextoEjecucion,
     EventoV4,
@@ -56,6 +57,18 @@ def test_resultado_paso2_error_de_red_es_permitido_normal() -> None:
     assert resultado == "permitido_normal"
     assert mecanismo is None
     assert exito is None
+
+
+def test_resultado_paso2_429_es_bloqueado_por_aprobacion_humana() -> None:
+    # Bug real encontrado el 2026-09-18 al correr C6 por primera vez: sin
+    # esta rama, un 429 caia en "cualquier otro caso" y se contaba como
+    # "exitoso_para_atacante" -- el peor de los dos falsos positivos
+    # posibles. Ver docs/FUENTE_DE_VERDAD.md, seccion 9.
+    resultado, mecanismo, exito, _obs = _resultado_paso2(STATUS_APROBACION_HUMANA, None)
+
+    assert resultado == "bloqueado"
+    assert mecanismo == "aprobacion_humana"
+    assert exito is False
 
 
 def test_resultado_paso2_200_es_exitoso_para_atacante() -> None:

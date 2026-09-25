@@ -1,16 +1,16 @@
 """Proxy FastAPI hacia la API de Ollama (/api/chat), con los mecanismos
 defensivos de IronVeil activables por config.yaml.
 
-Con las 5 banderas en false (C0) el comportamiento es passthrough puro,
-identico al de la semana anterior. Cadena de mecanismos, orden fijo:
-filtrado -> delimitacion -> clasificacion -> minimo_privilegio ->
-aprobacion_humana. Cada paso se ejecuta solo si su bandera esta activa;
-el primer bloqueo corta la cadena. Ver CLAUDE.md, seccion 3.
-
-Los mecanismos que pueden BLOQUEAR se recorren como una lista ordenada
-(_CADENA_MECANISMOS), no como if anidados: agregar aprobacion_humana la
-proxima semana es anadir una tupla, sin tocar el endpoint. La delimitacion
-no bloquea (reescribe el prompt) y se aplica aparte, en _preparar_prompt().
+Con las 5 banderas en false (C0) el comportamiento es passthrough puro.
+Los 5 mecanismos ya estan cableados. filtrado, clasificacion y
+minimo_privilegio se recorren como una lista ordenada
+(_CADENA_MECANISMOS), no como if anidados; el primer bloqueo corta la
+cadena. delimitacion no bloquea (reescribe el prompt) y se aplica aparte,
+en _preparar_prompt(). aprobacion_humana tampoco vive en esa lista: en vez
+de ser un paso mas, INTERCEPTA el resultado de la cadena de entrada (o el
+propio rate limit) y lo convierte en "encolar para revision" en vez de
+"rechazar con 400" -- ver _gestionar_aprobacion_humana() y el comentario
+junto a _CADENA_MECANISMOS. Ver CLAUDE.md, seccion 3.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -26,10 +27,12 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
+import proxy.cola as cola
 import proxy.mecanismos as mecanismos
 
 logger = logging.getLogger(__name__)
@@ -49,6 +52,26 @@ _CONTENIDO_RETENIDO: str = (
     "La respuesta del asistente fue retenida por los mecanismos de seguridad "
     "activos."
 )
+# Mecanismo 5. Cuando aprobacion_humana intercepta una peticion (rate limit
+# excedido, u otro mecanismo ya la habia marcado en entrada), responde 429
+# en vez del 400 generico -- status ya usado como placeholder por el script
+# de ataque de Sabogal (ataques/vector5_carga.py, --status-bloqueo) antes
+# de que este mecanismo existiera; se confirma aqui como definitivo (ver
+# docs/FUENTE_DE_VERDAD.md, seccion 4).
+_STATUS_EN_REVISION: int = 429
+_DETALLE_EN_REVISION: str = (
+    "Tu solicitud fue puesta en revision por los mecanismos de aprobacion "
+    "humana. Intentalo de nuevo mas tarde."
+)
+# OWASP Error Handling Cheat Sheet ("generic error responses... error
+# details logged server side, not returned to the user"): un error de
+# Ollama pasado tal cual al cliente revela detalles internos (p. ej. que el
+# backend es Ollama, o el nombre exacto del modelo probado, util para
+# enumeracion por contraste -- vector V1-D de ataques/variantes_ataque.md).
+# El detalle real siempre se loggea server-side en _llamar_ollama(); el
+# cliente solo ve este mensaje generico. Encontrado el 2026-09-19 al
+# revisar V1 contra OWASP (ver docs/FUENTE_DE_VERDAD.md, seccion 9).
+_DETALLE_ERROR_OLLAMA: str = "No se pudo procesar la solicitud."
 
 # Mecanismo 2 (delimitacion). Texto que el proxy coloca en el bloque
 # [INSTRUCCIONES DEL SISTEMA] del andamiaje de spotlighting.
@@ -181,10 +204,8 @@ async def _paso_minimo_privilegio(
 
 
 # Cadena de mecanismos que pueden BLOQUEAR, en el orden fijo del proyecto
-# (CLAUDE.md seccion 3). Se recorre como lista, no como if anidados: agregar
-# aprobacion_humana la proxima semana es anadir una tupla
-# (clave_de_config, funcion_paso) aqui, sin tocar el endpoint. La clave de
-# config es tambien el nombre que va a `mecanismo_que_bloqueo`.
+# (CLAUDE.md seccion 3). Se recorre como lista, no como if anidados. La
+# clave de config es tambien el nombre que va a `mecanismo_que_bloqueo`.
 #
 # Orden y justificacion:
 #   1. filtrado           - regex local en memoria, coste ~0. Primero, para
@@ -204,6 +225,16 @@ async def _paso_minimo_privilegio(
 # evaluar el texto ORIGINAL del usuario, no el ya envuelto en delimitadores
 # (CLAUDE.md seccion 3, y CONFLICTOS_RESUELTOS.md). Se aplica aparte, en
 # _preparar_prompt(), solo si la cadena de entrada no bloqueo.
+#
+# aprobacion_humana (mecanismo 5) TAMPOCO esta aqui, y a proposito -- pese
+# a lo que decia el comentario anterior de este archivo ("agregarla es
+# anadir una tupla"). No encaja en el patron PasoCadena: su trabajo es
+# INTERCEPTAR el resultado de esta misma cadena (convertir un bloqueo de
+# cualquiera de los 3 pasos de arriba en "encolar" en vez de "rechazar"),
+# y con "el primer bloqueo gana" un cuarto paso aqui nunca llegaria a
+# ejecutarse cuando otro ya bloqueo antes -- justo el caso que se supone
+# que debe manejar. Por eso se aplica aparte, envolviendo el resultado de
+# _ejecutar_cadena(): ver _gestionar_aprobacion_humana() mas abajo.
 _CADENA_MECANISMOS: tuple[tuple[str, PasoCadena], ...] = (
     ("filtrado", _paso_filtrado),
     ("clasificacion", _paso_clasificacion),
@@ -270,17 +301,35 @@ def _determinar_resultado(
     return "exitoso_para_atacante" if vector_probado else "permitido_normal"
 
 
+# Protege el open()+write() de _registrar_evento(): sin este lock, dos
+# peticiones concurrentes pueden intercalar sus escrituras (o perder una
+# linea completa) al abrir el mismo archivo en modo "a" al mismo tiempo.
+# Encontrado por el test de rafaga concurrente de aprobacion_humana
+# (mecanismo 5): con la cadena de mecanismos ya en cero-lock hasta ahora,
+# nunca antes habia habido un test que disparara peticiones realmente
+# simultaneas contra el mismo proceso. Es exactamente la clase de bug que
+# CLAUDE.md (seccion 7) advierte que el V5 hace real, no teorico -- y no
+# era exclusivo de aprobacion_humana: cualquier rafaga concurrente contra
+# /chat, con cualquier mecanismo activo, podia perder eventos del log.
+_registro_lock = threading.Lock()
+
+
 def _registrar_evento(evento: dict[str, Any]) -> None:
     """Agrega una linea a resultados/<fecha>/eventos.jsonl (JSON Lines).
 
     No pasa por el modulo logging: el evento es una fila del dataset del
     experimento, no un mensaje operativo, y el esquema de log del proyecto
     exige exactamente un objeto JSON por linea (ver skill esquema-log).
+
+    Protegida con `_registro_lock`: sin esto, peticiones concurrentes
+    (V5) pueden pisarse la escritura entre si y perder eventos completos.
     """
     fecha = datetime.now().astimezone().strftime("%Y-%m-%d")
     directorio = RESULTADOS_DIR / fecha
     directorio.mkdir(parents=True, exist_ok=True)
-    with (directorio / "eventos.jsonl").open("a", encoding="utf-8") as f:
+    with _registro_lock, (directorio / "eventos.jsonl").open(
+        "a", encoding="utf-8"
+    ) as f:
         f.write(json.dumps(evento, ensure_ascii=False) + "\n")
 
 
@@ -295,14 +344,121 @@ async def _llamar_ollama(modelo: str, mensaje: str) -> dict[str, Any]:
             response = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload)
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
+            logger.warning(
+                "Ollama devolvio %d para modelo=%r: %s",
+                exc.response.status_code,
+                modelo,
+                exc.response.text,
+            )
             raise HTTPException(
-                status_code=exc.response.status_code, detail=exc.response.text
+                status_code=exc.response.status_code, detail=_DETALLE_ERROR_OLLAMA
             ) from exc
         except httpx.RequestError as exc:
-            raise HTTPException(
-                status_code=502, detail=f"No se pudo contactar a Ollama: {exc}"
-            ) from exc
+            logger.warning("No se pudo contactar a Ollama (modelo=%r): %s", modelo, exc)
+            raise HTTPException(status_code=502, detail=_DETALLE_ERROR_OLLAMA) from exc
     return response.json()
+
+
+def _identificar_cliente(http_request: Request) -> str:
+    """Clave de rate limiting para mecanismo 5: IP del cliente que conecta.
+
+    "Por IP" es la opcion mas simple de las dos que menciona la tarea (IP
+    o sesion simulada): este proxy no tiene autenticacion de usuario, asi
+    que no hay una nocion de sesion mas confiable que construir sin
+    inventar un sistema aparte. "desconocido" solo puede pasar en un
+    cliente de pruebas sin socket real (p. ej. TestClient sin transporte
+    ASGI real); nunca en trafico HTTP genuino.
+    """
+    return http_request.client.host if http_request.client else "desconocido"
+
+
+def _verificar_limite_de_tasa(
+    request: ChatRequest, http_request: Request
+) -> str | None:
+    """Mecanismo 5, disparador 1: limite de tasa, por cliente y global.
+
+    Se llama ANTES de correr la cadena de entrada (que puede incluir la
+    llamada de red a Llama Guard), para no gastar computo en una peticion
+    que de todas formas se va a encolar -- justo lo que V5 (agotamiento de
+    recursos) busca explotar.
+
+    Dos limites independientes, evaluados siempre los dos (nunca en
+    cortocircuito, para que ambos contadores se actualicen aunque el
+    primero ya haya excedido):
+    - Por cliente (`cola.excede_limite`): un solo origen mandando demasiado.
+    - Global (`cola.excede_limite_global`): muchos clientes distintos, cada
+      uno por debajo de su propio limite, saturando el servicio entre
+      todos -- el caso que un limite solo por IP no puede frenar (ver
+      docs/FUENTE_DE_VERDAD.md).
+
+    Devuelve "aprobacion_humana" si cualquiera de los dos se excedio (y ya
+    encolo la peticion), None si ninguno.
+    """
+    cliente = _identificar_cliente(http_request)
+    excede_cliente = cola.cola_global.excede_limite(cliente)
+    excede_global = cola.cola_global.excede_limite_global()
+    if not (excede_cliente or excede_global):
+        return None
+    motivo = "limite_de_peticiones" if excede_cliente else "limite_global_de_peticiones"
+    mecanismos.enviar_a_revision(
+        {
+            "modelo": request.modelo,
+            "mensaje": request.mensaje,
+            "vector_probado": request.vector_probado,
+            "cliente": cliente,
+            "motivo": motivo,
+        }
+    )
+    return "aprobacion_humana"
+
+
+def _gestionar_aprobacion_humana(
+    request: ChatRequest,
+    http_request: Request,
+    mecanismo_bloqueo: str | None,
+) -> str | None:
+    """Mecanismo 5. Convierte un bloqueo (o exceso de tasa) en cola de revision.
+
+    Solo se llama si config["aprobacion_humana"] es true, DESPUES de que
+    ya se supo si el rate limit se excedio y de correr (o no) la cadena de
+    entrada. Dos disparadores posibles, ambos terminan igual -- encolar en
+    vez de rechazar de una:
+    - El cliente ya supero cola.LIMITE_PETICIONES_POR_MINUTO (V5): esto
+      se resuelve ANTES de llegar aqui (ver chat()), asi que si el llamador
+      ya sabe que se excedio, `mecanismo_bloqueo` ya llega como
+      "aprobacion_humana".
+    - `mecanismo_bloqueo` viene marcado por filtrado/clasificacion/
+      minimo_privilegio (la cadena de entrada ya corrio antes de esta
+      funcion): en vez de que ese bloqueo se traduzca en un 400 automatico,
+      se encola para que un humano decida.
+
+    Devuelve "aprobacion_humana" si intercepto la peticion -- encolada o
+    no: si la cola esta llena, se rechaza de todas formas (fail closed,
+    nunca se deja pasar solo porque la cola de revision se satura; eso
+    seria un bypass del propio rate limiting bajo V5). Devuelve
+    `mecanismo_bloqueo` sin cambios (None) si nada la marco.
+    """
+    if mecanismo_bloqueo is None:
+        return None
+
+    en_cola = mecanismos.enviar_a_revision(
+        {
+            "modelo": request.modelo,
+            "mensaje": request.mensaje,
+            "vector_probado": request.vector_probado,
+            "cliente": _identificar_cliente(http_request),
+            "motivo": mecanismo_bloqueo,
+        }
+    )
+    if not en_cola:
+        logger.warning(
+            "cola de revision llena (limite %d); rechazando en vez de "
+            "encolar (modelo=%s, motivo=%s)",
+            cola.MAX_TAMANO_COLA,
+            request.modelo,
+            mecanismo_bloqueo,
+        )
+    return "aprobacion_humana"
 
 
 @app.get("/health")
@@ -311,64 +467,140 @@ def health() -> dict[str, str]:
 
 
 def _construir_evento(
-    request: ChatRequest,
+    modelo: str,
+    vector_probado: str | None,
     activos: list[str],
     mecanismo_bloqueo: str | None,
     latencia_ms: int,
     metricas: _MetricasCadena,
     config: dict[str, bool],
+    *,
+    tiempo_revision_humana_ms: int | None = None,
 ) -> dict[str, Any]:
     """Arma el evento de log con los 8 campos base del esquema (skill esquema-log).
 
+    Recibe `modelo`/`vector_probado` sueltos (no un `ChatRequest`) porque lo
+    usan tanto `/chat` como los endpoints de `/revision`, donde no hay una
+    peticion HTTP entrante que envolver -- solo el item que ya estaba en la
+    cola de Garcia (`proxy/cola.py`).
+
     Agrega el campo extendido `latencia_clasificador_ms` siempre que el
     mecanismo 3 este activo (aunque haya bloqueado antes de llamarlo: en ese
-    caso vale 0). Los 8 campos base nunca se renombran ni se omiten.
+    caso vale 0). Agrega `tiempo_revision_humana_ms` solo si se pasa
+    explicitamente (peticion que paso por la cola de revision): es un
+    evento aparte del que ya escribio `/chat` al encolar, nunca lo
+    reemplaza (JSONL es append-only). Los 8 campos base nunca se renombran
+    ni se omiten.
     """
     evento: dict[str, Any] = {
         "timestamp": datetime.now().astimezone().isoformat(),
         "configuracion": determinar_configuracion(activos),
         "mecanismos_activos": activos,
-        "vector_probado": request.vector_probado,
-        "modelo_destino": request.modelo,
-        "resultado": _determinar_resultado(mecanismo_bloqueo, request.vector_probado),
+        "vector_probado": vector_probado,
+        "modelo_destino": modelo,
+        "resultado": _determinar_resultado(mecanismo_bloqueo, vector_probado),
         "mecanismo_que_bloqueo": mecanismo_bloqueo,
         "latencia_ms": latencia_ms,
     }
     if config["clasificacion"]:
         evento["latencia_clasificador_ms"] = metricas.latencia_clasificador_ms
+    if tiempo_revision_humana_ms is not None:
+        evento["tiempo_revision_humana_ms"] = tiempo_revision_humana_ms
     return evento
 
 
+def _ms_transcurridos_desde(marca_iso: str) -> int:
+    """Milisegundos entre `marca_iso` (ISO 8601 con offset) y ahora.
+
+    `marca_iso` es el `encolado_en` que `cola.ColaRevision.encolar()` le
+    asigna a cada peticion (`datetime.now().astimezone().isoformat()`, el
+    mismo formato que usa el resto del log). Es la base de
+    `tiempo_revision_humana_ms`: cuanto tiempo paso desde que la peticion
+    entro a la cola hasta que un humano decidio sobre ella (CLAUDE.md,
+    seccion 9: "encolar no es rechazar", es demora que se reporta como
+    costo).
+    """
+    encolado_en = datetime.fromisoformat(marca_iso)
+    return int((datetime.now().astimezone() - encolado_en).total_seconds() * 1000)
+
+
+async def _completar_peticion(
+    modelo: str, mensaje: str, config: dict[str, bool], metricas: _MetricasCadena
+) -> tuple[dict[str, Any], str | None]:
+    """Aplica delimitacion, llama a Ollama y corre la cadena de SALIDA.
+
+    Es el resto del pipeline despues de que la cadena de bloqueo de entrada
+    ya no interviene: lo comparten `/chat` (cuando esa cadena no bloqueo) y
+    `POST /revision/{id}/aprobar` (cuando un humano ya anulo un bloqueo de
+    entrada -- por eso esta funcion nunca vuelve a correr esa cadena. La
+    cadena de SALIDA si sigue actuando en ambos casos: protege la
+    respuesta independientemente de por que se puso en duda la entrada.
+    """
+    prompt_ollama = _preparar_prompt(mensaje, modelo, config)
+    respuesta = await _llamar_ollama(modelo, prompt_ollama)
+    contenido = respuesta.get("message", {}).get("content", "")
+    contenido, mecanismo_bloqueo = await _ejecutar_cadena(
+        contenido, "salida", modelo, config, metricas
+    )
+    if mecanismo_bloqueo is not None:
+        respuesta["message"]["content"] = contenido
+    return respuesta, mecanismo_bloqueo
+
+
 @app.post("/chat")
-async def chat(request: ChatRequest) -> dict[str, Any]:
+async def chat(request: ChatRequest, http_request: Request) -> dict[str, Any]:
     inicio = time.perf_counter()
     config = mecanismos.cargar_config(mecanismos.CONFIG_PATH)
     activos = _mecanismos_activos(config)
     metricas = _MetricasCadena()
 
-    mensaje, mecanismo_bloqueo = await _ejecutar_cadena(
-        request.mensaje, "entrada", request.modelo, config, metricas
-    )
+    mecanismo_bloqueo: str | None = None
+    mensaje = request.mensaje
+
+    if config["aprobacion_humana"]:
+        mecanismo_bloqueo = _verificar_limite_de_tasa(request, http_request)
+
+    if mecanismo_bloqueo is None:
+        mensaje, mecanismo_bloqueo = await _ejecutar_cadena(
+            request.mensaje, "entrada", request.modelo, config, metricas
+        )
+        # Mecanismo 5, disparador 2: la cadena de entrada ya marco un
+        # bloqueo. Con aprobacion_humana activo, ese bloqueo se convierte
+        # en cola en vez de rechazo automatico (ver
+        # _gestionar_aprobacion_humana()).
+        if config["aprobacion_humana"]:
+            mecanismo_bloqueo = _gestionar_aprobacion_humana(
+                request, http_request, mecanismo_bloqueo
+            )
+
     respuesta: dict[str, Any] | None = None
 
     if mecanismo_bloqueo is None:
-        prompt_ollama = _preparar_prompt(mensaje, request.modelo, config)
-        respuesta = await _llamar_ollama(request.modelo, prompt_ollama)
-        contenido = respuesta.get("message", {}).get("content", "")
-        contenido, mecanismo_bloqueo = await _ejecutar_cadena(
-            contenido, "salida", request.modelo, config, metricas
+        respuesta, mecanismo_bloqueo = await _completar_peticion(
+            request.modelo, mensaje, config, metricas
         )
-        if mecanismo_bloqueo is not None:
-            respuesta["message"]["content"] = contenido
 
     latencia_ms = int((time.perf_counter() - inicio) * 1000)
     _registrar_evento(
         _construir_evento(
-            request, activos, mecanismo_bloqueo, latencia_ms, metricas, config
+            request.modelo,
+            request.vector_probado,
+            activos,
+            mecanismo_bloqueo,
+            latencia_ms,
+            metricas,
+            config,
         )
     )
 
     if respuesta is None:
+        if mecanismo_bloqueo == "aprobacion_humana":
+            logger.warning(
+                "peticion puesta en revision humana (modelo=%s)", request.modelo
+            )
+            raise HTTPException(
+                status_code=_STATUS_EN_REVISION, detail=_DETALLE_EN_REVISION
+            )
         logger.warning(
             "peticion bloqueada en entrada por %s (modelo=%s)",
             mecanismo_bloqueo,
@@ -377,3 +609,194 @@ async def chat(request: ChatRequest) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=_DETALLE_BLOQUEO)
 
     return respuesta
+
+
+# --- Interfaz de revision humana (mecanismo 5) ----------------------------
+#
+# Backend de la cola en proxy/cola.py (Garcia): ColaRevision.encolar()/
+# listar()/retirar(). Estos endpoints son la capa HTTP encima de eso, para
+# que cualquiera del equipo pueda ver la cola y decidir sin depender de
+# leer resultados/*/eventos.jsonl a mano. El formato de una peticion
+# pendiente NO se redefine aqui: es tal cual lo arma encolar() (id,
+# encolado_en, modelo, mensaje, vector_probado, cliente, motivo) -- un solo
+# lugar en el codigo que sabe como luce ese diccionario.
+
+
+def _obtener_pendiente_o_404(id_peticion: str) -> dict[str, Any]:
+    """Retira de la cola la peticion con `id_peticion`.
+
+    404 explicito (no un 500 generico) si no existe: ya fue resuelta por
+    otro revisor, o el id no es valido -- buena practica pedida en la tarea
+    de esta semana, y ademas ColaRevision.retirar() ya lanza KeyError
+    exactamente para este caso.
+    """
+    try:
+        return cola.cola_global.retirar(id_peticion)
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No hay ninguna peticion en revision con id={id_peticion!r}.",
+        ) from exc
+
+
+@app.get("/revision")
+def listar_revision() -> list[dict[str, Any]]:
+    """Mecanismo 5: peticiones pendientes de revision humana ahora mismo.
+
+    En orden de llegada (la mas antigua primero, ver
+    ColaRevision.listar()); cada elemento trae su `encolado_en` (timestamp
+    de llegada a la cola).
+    """
+    return cola.cola_global.listar()
+
+
+@app.post("/revision/{id_peticion}/rechazar")
+def rechazar_revision(id_peticion: str) -> dict[str, Any]:
+    """Mecanismo 5: descarta una peticion pendiente sin completarla.
+
+    No vuelve a tocar Ollama ni la cadena de mecanismos: rechazar es
+    exactamente lo que ya hacia un bloqueo automatico (400) antes de que
+    aprobacion_humana existiera, solo que decidido por un humano en vez de
+    un mecanismo. Registra un evento propio con `tiempo_revision_humana_ms`
+    (cuanto tardo la decision desde que se encolo) -- no edita el evento
+    que /chat ya escribio al encolar la peticion (JSONL es append-only).
+    """
+    item = _obtener_pendiente_o_404(id_peticion)
+    tiempo_revision_humana_ms = _ms_transcurridos_desde(item["encolado_en"])
+
+    config = mecanismos.cargar_config(mecanismos.CONFIG_PATH)
+    activos = _mecanismos_activos(config)
+    _registrar_evento(
+        _construir_evento(
+            item["modelo"],
+            item.get("vector_probado"),
+            activos,
+            "aprobacion_humana",
+            tiempo_revision_humana_ms,
+            _MetricasCadena(),
+            config,
+            tiempo_revision_humana_ms=tiempo_revision_humana_ms,
+        )
+    )
+    logger.info(
+        "peticion id=%s rechazada tras %dms en revision humana (modelo=%s)",
+        id_peticion,
+        tiempo_revision_humana_ms,
+        item["modelo"],
+    )
+    return {
+        "id": id_peticion,
+        "estado": "rechazada",
+        "tiempo_revision_humana_ms": tiempo_revision_humana_ms,
+    }
+
+
+@app.post("/revision/{id_peticion}/aprobar")
+async def aprobar_revision(id_peticion: str) -> dict[str, Any]:
+    """Mecanismo 5: completa una peticion pendiente y devuelve la respuesta real.
+
+    NO vuelve a correr la cadena de bloqueo de ENTRADA (filtrado /
+    clasificacion / minimo_privilegio, o el rate limit): esa es justamente
+    la decision que un humano acaba de anular. La cadena de SALIDA si sigue
+    protegiendo la respuesta (ver _completar_peticion()).
+
+    `latencia_ms` del evento resultante es el tiempo TOTAL (desde que se
+    encolo hasta que se devuelve la respuesta, esquema-log invariante 5);
+    `tiempo_revision_humana_ms` es solo la parte de espera en cola, la
+    metrica de costo que Fiquitiva necesita reportar por separado.
+    """
+    item = _obtener_pendiente_o_404(id_peticion)
+    tiempo_revision_humana_ms = _ms_transcurridos_desde(item["encolado_en"])
+
+    config = mecanismos.cargar_config(mecanismos.CONFIG_PATH)
+    activos = _mecanismos_activos(config)
+    metricas = _MetricasCadena()
+
+    inicio_procesamiento = time.perf_counter()
+    respuesta, mecanismo_bloqueo = await _completar_peticion(
+        item["modelo"], item["mensaje"], config, metricas
+    )
+    latencia_procesamiento_ms = int((time.perf_counter() - inicio_procesamiento) * 1000)
+
+    _registrar_evento(
+        _construir_evento(
+            item["modelo"],
+            item.get("vector_probado"),
+            activos,
+            mecanismo_bloqueo,
+            tiempo_revision_humana_ms + latencia_procesamiento_ms,
+            metricas,
+            config,
+            tiempo_revision_humana_ms=tiempo_revision_humana_ms,
+        )
+    )
+    logger.info(
+        "peticion id=%s aprobada tras %dms en revision humana "
+        "(modelo=%s, mecanismo_salida=%s)",
+        id_peticion,
+        tiempo_revision_humana_ms,
+        item["modelo"],
+        mecanismo_bloqueo,
+    )
+    return respuesta
+
+
+# Pagina HTML minima, sin build step ni dependencias nuevas (ni siquiera
+# Jinja2: es una sola pagina estatica con JS vanilla) -- secundaria frente
+# a que los 3 endpoints de arriba funcionen bien (ver tarea de la semana).
+# Sirve para no depender de curl a mano durante las pruebas manuales del
+# equipo; no reemplaza los tests de integracion de los endpoints JSON.
+_PAGINA_REVISION_HTML = """<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>IronVeil - Revision humana</title>
+</head>
+<body>
+<h1>Cola de revision humana</h1>
+<button onclick="cargar()">Actualizar</button>
+<ul id="cola"></ul>
+<script>
+async function cargar() {
+  const resp = await fetch("/revision");
+  const items = await resp.json();
+  const ul = document.getElementById("cola");
+  ul.innerHTML = "";
+  if (items.length === 0) {
+    ul.innerHTML = "<li>(cola vacia)</li>";
+    return;
+  }
+  for (const item of items) {
+    const li = document.createElement("li");
+    li.textContent = `[${item.id}] ${item.modelo} (motivo: ${item.motivo}, `
+      + `encolado: ${item.encolado_en}) -- ${item.mensaje} `;
+    const aprobar = document.createElement("button");
+    aprobar.textContent = "Aprobar";
+    aprobar.onclick = () => decidir(item.id, "aprobar");
+    const rechazar = document.createElement("button");
+    rechazar.textContent = "Rechazar";
+    rechazar.onclick = () => decidir(item.id, "rechazar");
+    li.appendChild(aprobar);
+    li.appendChild(rechazar);
+    ul.appendChild(li);
+  }
+}
+async function decidir(id, accion) {
+  const resp = await fetch(`/revision/${id}/${accion}`, {method: "POST"});
+  const cuerpo = await resp.json();
+  alert(accion + ": " + JSON.stringify(cuerpo));
+  cargar();
+}
+cargar();
+</script>
+</body>
+</html>"""
+
+
+@app.get("/revision/ui", response_class=HTMLResponse)
+def interfaz_revision() -> str:
+    """Pagina HTML minima para aprobar/rechazar sin usar curl a mano.
+
+    Solo consume los 3 endpoints JSON de arriba; sin ellos no funciona.
+    """
+    return _PAGINA_REVISION_HTML

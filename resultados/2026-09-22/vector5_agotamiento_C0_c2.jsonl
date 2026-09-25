@@ -1,0 +1,2 @@
+{"timestamp": "2026-09-22T07:05:11.728300-05:00", "configuracion": "C0", "mecanismos_activos": [], "vector_probado": "V5-D", "modelo_destino": "soporte", "resultado": "permitido_normal", "mecanismo_que_bloqueo": null, "latencia_ms": 31143, "nivel_carga": 2}
+{"timestamp": "2026-09-22T07:05:53.766312-05:00", "configuracion": "C0", "mecanismos_activos": [], "vector_probado": "V5-D", "modelo_destino": "soporte", "resultado": "permitido_normal", "mecanismo_que_bloqueo": null, "latencia_ms": 73133, "nivel_carga": 2}
