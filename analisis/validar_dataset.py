@@ -480,11 +480,13 @@ def verificar_cobertura_campos_extendidos(df: pd.DataFrame) -> list[Hallazgo]:
                     severidad="info",
                     filas_afectadas=int(sin_latencia.sum()),
                     descripcion=(
-                        "'latencia_clasificador_ms' vacio con 'clasificacion' "
-                        "activa (de "
-                        f"{int(clasificacion_activa.sum())} filas con el "
-                        "mecanismo activo) -- ver hallazgo abierto en "
-                        "docs/LIMPIEZA_DATOS.md sobre el pipeline de ingesta."
+                        f"'latencia_clasificador_ms' vacio en "
+                        f"{int(sin_latencia.sum())} de "
+                        f"{int(clasificacion_activa.sum())} filas con "
+                        "'clasificacion' activa -- la mayoria son V5-D "
+                        "(irrecuperable, el proxy nunca midio esto durante "
+                        "las rafagas de carga); ver docs/LIMPIEZA_DATOS.md y "
+                        "analisis/fusionar_latencia_clasificador.py."
                     ),
                 )
             )

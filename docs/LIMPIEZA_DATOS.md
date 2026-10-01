@@ -101,24 +101,19 @@ python analisis/tabla_maestra.py
 
 ## 3. Hallazgos reales, pendientes de decisión (NO corregidos)
 
-### 3.1. `latencia_clasificador_ms` vacío en el 100% de las filas con `clasificacion` activa
+### 3.1. `latencia_clasificador_ms` — recuperado parcialmente con `analisis/fusionar_latencia_clasificador.py`
 
-**10 304 filas** (todo C3 + todo C6, es decir, cada fila donde
-`clasificacion` está activa) tienen `latencia_clasificador_ms` vacío —
-incluido C3, donde `clasificacion` es el único mecanismo y prácticamente
-siempre se ejecuta. Esto contradice lo documentado en
-`docs/FUENTE_DE_VERDAD.md` (entrada del 2026-09-06): el proxy sí mide y
-loggea este campo.
-
-**Causa real, verificada, no solo sospechada:** el dataset consolidado se
-construye con `analisis/agregar_resultados_desde_jsonl.py` a partir de los
-JSONL que escriben los **scripts de ataque** (`ataques/vectores_1_2_3.py`,
-`vector4_movimiento_lateral.py`, `vector5_carga.py`) — estos son
-clientes HTTP que solo pueden medir el tiempo de ida y vuelta de su propia
-petición (`latencia_ms`). El desglose interno `latencia_clasificador_ms`
-solo existe en el log que escribe **el proxio mismo**
-(`resultados/<fecha>/eventos.jsonl`, vía `_registrar_evento()`), que nunca
-se fusionó con el dataset consolidado. Verificado directamente:
+**Actualizado tras una segunda pasada** (el usuario pidió explícitamente
+ver si el dato se podía medir de verdad, en vez de dejarlo solo
+documentado). Como se sospechaba: el proxy **sí** mide y loggea este
+campo — solo nunca se había fusionado con el dataset consolidado, porque
+`resultados_template.csv` se construye con
+`analisis/agregar_resultados_desde_jsonl.py` a partir de los JSONL que
+escriben los **scripts de ataque** (clientes HTTP, que solo pueden medir
+el tiempo de ida y vuelta de su propia petición), mientras que el
+desglose interno `latencia_clasificador_ms` solo existe en el log que
+escribe **el proxy mismo** (`resultados/<fecha>/eventos.jsonl`, vía
+`_registrar_evento()`). Verificado directamente antes de tocar nada:
 
 ```bash
 grep -c "latencia_clasificador_ms" resultados/2026-09-07/eventos.jsonl
@@ -127,16 +122,37 @@ grep -c "latencia_clasificador_ms" resultados/2026-09-07/vectores_1_2_3_C3_19511
 # 0 — el script de ataque de esa misma sesión nunca lo tuvo
 ```
 
-**No se corrige esta semana.** Cruzar ambos streams de eventos (atacante
-y proxy) por timestamp más cercano + `configuracion`/`vector_probado` es
-una tarea con riesgo real de emparejar mal dos filas (dos peticiones
-con timestamps muy cercanos durante V5), y no es una decisión que
-corresponda tomar unilateralmente en una tarea de limpieza de datos. Se
-deja como hallazgo documentado; si el equipo decide que vale la pena,
-es una tarea aparte de ingeniería de datos (posiblemente de Fiquitiva,
-dueña de la consolidación), no una "corrección" de esta semana. No
-bloquea `analisis/tabla_maestra.py` (esa tabla nunca usó esta columna,
-solo `latencia_ms` total).
+**`analisis/fusionar_latencia_clasificador.py`** (nuevo, reproducible)
+cruza ambos logs por `(fecha UTC, configuracion, vector_probado,
+modelo_destino)`, empareja por orden de timestamp dentro de cada grupo, y
+**solo fusiona un grupo si el conteo coincide exacto Y
+`mecanismo_que_bloqueo` coincide en cada posición emparejada** — dos
+capas de verificación antes de confiar en el cruce, no solo una.
+Resultado real sobre el dataset completo:
+
+| Categoría | Filas |
+|---|---|
+| Fusionadas con éxito | **39** |
+| Sin evento del proxy para cruzar (semanas sin `eventos.jsonl` preservado, p. ej. 2026-09-18) | 153 |
+| Conteo de grupo no coincide (no se adivina) | 2 |
+| `mecanismo_que_bloqueo` no coincide — sospechoso, NO fusionado (ver 3.3) | 13 |
+
+**V5-D sigue irrecuperable, y no es un problema de cruce**: revisando
+`eventos.jsonl` directamente, el proxy **nunca** registró
+`latencia_clasificador_ms` en ningún evento de V5 (0 de miles) — la
+medición simplemente no se capturó del lado del servidor durante las
+ráfagas de carga concurrente. De las 10 304 filas con `clasificacion`
+activa, 10 265 siguen vacías (casi todas V5-D); no hay ningún dato oculto
+por recuperar ahí.
+
+Reproducible con:
+
+```bash
+python analisis/fusionar_latencia_clasificador.py
+```
+
+No bloquea `analisis/tabla_maestra.py` (esa tabla nunca usó esta columna,
+solo `latencia_ms` total) y no se regeneraron sus salidas por este cambio.
 
 ### 3.2. `paso_bloqueado` ambiguo en eventos de V4 "paso 2 omitido"
 
@@ -161,6 +177,51 @@ omitido", o un tercer valor explícito tipo `"omitido"` en vez de reusar
 `1`/`2`? Cualquiera de las dos es una decisión de esquema de log (afecta
 el contrato de 4 personas), no algo que se deba decidir en esta tarea de
 limpieza sin avisar al equipo (sección 8 de `CLAUDE.md`).
+
+### 3.3. `mecanismo_que_bloqueo` no coincide con el log del proxio para 13 filas de la semana del 2026-09-18/19
+
+**Hallazgo nuevo, descubierto al validar el cruce de la sección 3.1**, no
+una sospecha previa. Al comparar `mecanismo_que_bloqueo` entre
+`resultados_template.csv` y el `eventos.jsonl` del proxy para la misma
+petición física (mismo `vector_probado`/`configuracion`/`modelo_destino`,
+timestamps a menos de 1.5 segundos de distancia — confirmado que es la
+misma petición, no un cruce casual), **13 filas** (índices CSV `[97, 98,
+99, 101, 104, 106, 108, 109, 110, 111, 149, 152, 164]`, todas de la sesión
+del 2026-09-18 noche / 2026-09-19 madrugada UTC) muestran un desacuerdo:
+el CSV dice que nada bloqueó la petición (`resultado=permitido_normal`,
+`mecanismo_que_bloqueo` vacío) pero el log del proxio para esa misma
+petición dice `mecanismo_que_bloqueo="clasificacion"`.
+
+**No se corrigió.** `analisis/fusionar_latencia_clasificador.py` detecta
+este desacuerdo automáticamente y **se abstiene** de fusionar
+`latencia_clasificador_ms` en esas 13 filas (quedó documentado en la
+tabla de la sección 3.1) — exactamente el comportamiento diseñado: ante
+un desacuerdo en un campo que debería ser objetivo, no confiar en el
+cruce para ningún campo, ni siquiera para el que se estaba buscando.
+
+**Posible relación con un bug ya documentado y corregido, sin confirmar
+que sea la misma causa:** `docs/FUENTE_DE_VERDAD.md` (entrada
+2026-09-18, "Re-ejecución de V1-V5...") documenta que esa misma noche se
+encontró y corrigió un bug real en `ataques/vectores_1_2_3.py` y
+`vector4_movimiento_lateral.py`: no reconocían el status `429`
+(aprobación humana encolando) y lo contaban como `permitido_normal` por
+caer en la rama de "respuesta inesperada". Es plausible que una variante
+del mismo patrón de bug (una rama de "respuesta inesperada" que no
+reconocía correctamente el status de un bloqueo por `clasificacion`)
+afectara también a estas 13 peticiones — pero **esto no está confirmado,
+solo es una hipótesis razonable** basada en la cercanía temporal y el
+patrón de síntoma idéntico (el CSV subestima bloqueos como
+`permitido_normal`). Confirmarlo requeriría revisar el código de
+`ataques/vectores_1_2_3.py` tal como estaba esa noche específica (antes o
+después del fix documentado), que no es el alcance de esta tarea.
+
+**Pendiente de confirmar con Sabogal:** si la hipótesis de arriba es
+correcta, estas 13 filas de `resultados_template.csv` tendrían
+`resultado`/`mecanismo_que_bloqueo` incorrectos (no solo
+`latencia_clasificador_ms` faltante) y habría que decidir si se corrigen
+con el mismo criterio que la sección 2.1 (un único mecanismo activo que
+pudo haber bloqueado) o si se re-verifican contra `eventos.jsonl` una por
+una antes de tocarlas — no se tomó esa decisión unilateralmente aquí.
 
 ## 4. Esperado por diseño (no son errores)
 
@@ -206,3 +267,15 @@ Exit code `0` si no hay hallazgos de severidad `error` (los de severidad
 hacen fallar el comando — son decisiones pendientes del equipo, no bugs).
 Reutilizable sin cambios para la extensión del 17 de octubre: no asume
 qué configuraciones o cuántas filas trae el CSV.
+
+Si se agregan más `eventos.jsonl` nuevos (semanas futuras) y se quiere
+intentar recuperar más `latencia_clasificador_ms`, se puede volver a
+correr:
+
+```bash
+python analisis/fusionar_latencia_clasificador.py
+```
+
+Es seguro correrlo las veces que haga falta: solo toca filas con
+`latencia_clasificador_ms` vacío y nunca sobrescribe un valor que ya esté
+poblado.
