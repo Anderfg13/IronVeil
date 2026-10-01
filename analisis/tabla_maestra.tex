@@ -6,13 +6,13 @@
 \toprule
 Configuración & Filt. & Del. & Clas. & M.P. & A.H. & ASR promedio (\%) & Falsos positivos & Latencia mediana (ms) & Costo (líneas/horas) \\
 \midrule
-C0 & -- & -- & -- & -- & -- & 64.4 & N/A (baseline, sin mecanismos que puedan bloquear) & 1432.0 (baseline) & Pendiente (semana del 10 de octubre) \\
-C1 & \checkmark & -- & -- & -- & -- & 49.2 & 0/1 -- test\_chat\_filtrado\_no\_bloquea\_mensaje\_legitimo & 977.0 (-455.0 vs. C0) & Pendiente (semana del 10 de octubre) \\
-C2 & -- & \checkmark & -- & -- & -- & 60.0 & N/A -- delimitación nunca bloquea (no participa en la cadena de bloqueo) & 1650.0 (+218.0 vs. C0) & Pendiente (semana del 10 de octubre) \\
-C3 & -- & -- & \checkmark & -- & -- & 28.0 & 0/1 -- test\_chat\_clasificacion\_no\_bloquea\_entrada\_legitima & 12687.5 (+11255.5 vs. C0) & Pendiente (semana del 10 de octubre) \\
-C4 & -- & -- & -- & \checkmark & -- & 50.0 & 0/1 (a nivel de mecanismo) -- test\_validar\_privilegio\_no\_bloquea\_texto\_sin\_credenciales & 504.5 (-927.5 vs. C0) & Pendiente (semana del 10 de octubre) \\
-C5 & -- & -- & -- & -- & \checkmark & 23.7 & 0/1 -- test\_chat\_aprobacion\_humana\_no\_bloquea\_mensaje\_legitimo & 9548.5 (+8116.5 vs. C0) & Pendiente (semana del 10 de octubre) \\
-C6 & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & 8.4 & 0/1 -- test\_c6\_peticion\_legitima\_pasa\_limpia\_por\_los\_5\_mecanismos & 683.0 (-749.0 vs. C0) & Pendiente (semana del 10 de octubre) \\
+C0 & -- & -- & -- & -- & -- & 64.4 & N/A (baseline, sin mecanismos que puedan bloquear) & 1432.0 (baseline) & 0 líneas / 0h (baseline) \\
+C1 & \checkmark & -- & -- & -- & -- & 49.2 & 0/1 -- test\_chat\_filtrado\_no\_bloquea\_mensaje\_legitimo & 977.0 (-455.0 vs. C0) & 248 líneas / 21h \\
+C2 & -- & \checkmark & -- & -- & -- & 60.0 & N/A -- delimitación nunca bloquea (no participa en la cadena de bloqueo) & 1650.0 (+218.0 vs. C0) & 181 líneas / 15h \\
+C3 & -- & -- & \checkmark & -- & -- & 28.0 & 0/1 -- test\_chat\_clasificacion\_no\_bloquea\_entrada\_legitima & 12687.5 (+11255.5 vs. C0) & 309 líneas / 34h \\
+C4 & -- & -- & -- & \checkmark & -- & 50.0 & 0/1 (a nivel de mecanismo) -- test\_validar\_privilegio\_no\_bloquea\_texto\_sin\_credenciales & 504.5 (-927.5 vs. C0) & 167 líneas / 14h \\
+C5 & -- & -- & -- & -- & \checkmark & 23.7 & 0/1 -- test\_chat\_aprobacion\_humana\_no\_bloquea\_mensaje\_legitimo & 9548.5 (+8116.5 vs. C0) & 694 líneas / 69h \\
+C6 & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & 8.4 & 0/1 -- test\_c6\_peticion\_legitima\_pasa\_limpia\_por\_los\_5\_mecanismos & 683.0 (-749.0 vs. C0) & 1599 líneas / 153h \\
 \bottomrule
 \end{tabular}
 \caption{Tabla maestra de resultados: mecanismos activos, ASR promedio sin ponderar entre vectores, falsos positivos verificados puntualmente y latencia extra (ms) sobre passthrough puro, por configuración.}

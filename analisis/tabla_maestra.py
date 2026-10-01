@@ -39,9 +39,13 @@ ya calculados por vector, no sobre los conteos crudos).
   hardware distinto en semanas distintas (ver docstring de
   `latencia_extra_por_config()`), así que esta columna NO aísla limpiamente
   el costo de los mecanismos — también mezcla el costo del hardware.
-- `Costo (líneas/horas)`: pendiente -- no hay todavía una cifra de costo de
-  implementación por configuración acordada con el equipo (ver tarea de la
-  semana del 10 de octubre).
+- `Costo (líneas/horas)`: suma de `analisis/costo_mecanismos.py` (medición
+  retrospectiva, no acoplada a este módulo) sobre los mecanismos activos de
+  esa configuración -- C0 da "0 líneas / 0h" (baseline, ningún mecanismo),
+  C1..C5 dan el costo de su único mecanismo, C6 suma los 5. Ver
+  `analisis/metodologia_costo_mecanismos.md` para la metodología completa
+  (qué cuenta como línea de código, por qué esas horas son una estimación y
+  no una medición exacta).
 """
 
 from __future__ import annotations
@@ -63,6 +67,7 @@ from analisis.consolidar import (  # noqa: E402
     cargar_resultados,
     validar_ruta_salida_segura,
 )
+from analisis.costo_mecanismos import costo_por_configuracion  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -96,8 +101,6 @@ FALSOS_POSITIVOS_POR_CONFIG: dict[str, str] = {
     "C5": "0/1 — test_chat_aprobacion_humana_no_bloquea_mensaje_legitimo",
     "C6": "0/1 — test_c6_peticion_legitima_pasa_limpia_por_los_5_mecanismos",
 }
-
-COSTO_PENDIENTE = "Pendiente (semana del 10 de octubre)"
 
 
 def mecanismos_activos_por_config(df: pd.DataFrame) -> dict[str, set[str]]:
@@ -189,7 +192,12 @@ def calcular_tabla_maestra(df: pd.DataFrame) -> pd.DataFrame:
             fila["Latencia mediana (ms)"] = f"{latencia} (baseline)"
 
         fila["Falsos positivos"] = FALSOS_POSITIVOS_POR_CONFIG.get(config, "Sin dato")
-        fila["Costo (líneas/horas)"] = COSTO_PENDIENTE
+        lineas_costo, horas_costo = costo_por_configuracion(activos)
+        fila["Costo (líneas/horas)"] = (
+            f"{lineas_costo} líneas / {horas_costo}h"
+            if activos
+            else "0 líneas / 0h (baseline)"
+        )
         filas.append(fila)
 
     columnas = (
