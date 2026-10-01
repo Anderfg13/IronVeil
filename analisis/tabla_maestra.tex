@@ -6,7 +6,7 @@
 \toprule
 Configuración & Filt. & Del. & Clas. & M.P. & A.H. & ASR promedio (\%) & Falsos positivos & Latencia mediana (ms) & Costo (líneas/horas) \\
 \midrule
-C0 & -- & -- & -- & -- & -- & 64.4 & N/A (baseline, sin mecanismos que puedan bloquear) & 1432.0 (baseline) & 0 líneas / 0h (baseline) \\
+C0 & -- & -- & -- & -- & -- & 64.3 & N/A (baseline, sin mecanismos que puedan bloquear) & 1432.0 (baseline) & 0 líneas / 0h (baseline) \\
 C1 & \checkmark & -- & -- & -- & -- & 49.2 & 0/1 -- test\_chat\_filtrado\_no\_bloquea\_mensaje\_legitimo & 977.0 (-455.0 vs. C0) & 248 líneas / 21h \\
 C2 & -- & \checkmark & -- & -- & -- & 60.0 & N/A -- delimitación nunca bloquea (no participa en la cadena de bloqueo) & 1650.0 (+218.0 vs. C0) & 181 líneas / 15h \\
 C3 & -- & -- & \checkmark & -- & -- & 28.0 & 0/1 -- test\_chat\_clasificacion\_no\_bloquea\_entrada\_legitima & 12687.5 (+11255.5 vs. C0) & 309 líneas / 34h \\

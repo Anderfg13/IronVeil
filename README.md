@@ -28,6 +28,12 @@ mano durante las pruebas.
 conclusión ya están generados — ver `analisis/conclusion_borrador.md`
 (apunta a los archivos exactos, incluido el `.tex` listo para pegar).
 
+El dataset (`resultados/resultados_template.csv`) ya pasó una revisión de
+calidad completa — ver `docs/LIMPIEZA_DATOS.md` para qué se corrigió, qué
+sigue pendiente de confirmar con Sabogal, y cómo volver a correr
+`analisis/validar_dataset.py` cuando se agreguen los resultados de la
+extensión opcional del 17 de octubre.
+
 ## Estructura del proyecto
 
 ```

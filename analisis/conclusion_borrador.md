@@ -36,7 +36,7 @@
 
 | Configuración | Filt. | Del. | Clas. | M.P. | A.H. | ASR promedio (%) | Falsos positivos | Latencia mediana (ms) |
 |---|---|---|---|---|---|---|---|---|
-| C0 | — | — | — | — | — | 64.4 | N/A (baseline) | 1432.0 (baseline) |
+| C0 | — | — | — | — | — | 64.3 | N/A (baseline) | 1432.0 (baseline) |
 | C1 | ✓ | — | — | — | — | 49.2 | 0/1 verificado | 977.0 (-455.0 vs. C0) |
 | C2 | — | ✓ | — | — | — | 60.0 | N/A (no bloquea) | 1650.0 (+218.0 vs. C0) |
 | C3 | — | — | ✓ | — | — | 28.0 | 0/1 verificado | 12687.5 (+11255.5 vs. C0) |
@@ -49,7 +49,7 @@ configuración (cada vector pesa igual; V5, con miles de intentos, no ahoga a
 V1-V4 en el promedio — ver metodología en `analisis/tabla_maestra.py`).
 
 La tendencia general **confirma la hipótesis central del proyecto**: el ASR
-baja de C0 (64.4%) a C6 (8.4%), con C6 como la configuración de menor ASR
+baja de C0 (64.3%) a C6 (8.4%), con C6 como la configuración de menor ASR
 promedio de las 7. No es una caída monótona perfecta (C2 sube ligeramente
 sobre C0, C4 queda por encima de C1 y C5) — ver sección 2 para por qué, vector
 por vector.
@@ -88,7 +88,7 @@ falsos positivos** en el sentido estadístico.
 Con los datos medidos hasta el 2026-09-30:
 
 **C6 (los 5 mecanismos activos) ofrece la mejor protección medida** — el ASR
-promedio más bajo (8.4%, frente a 64.4% del baseline) y es la única
+promedio más bajo (8.4%, frente a 64.3% del baseline) y es la única
 configuración que combina defensa en profundidad real: un ataque que evade
 `filtrado` puede seguir siendo detenido por `clasificación`, y uno que evade
 ambos puede todavía ser detenido por `mínimo_privilegio` en el caso de uso
