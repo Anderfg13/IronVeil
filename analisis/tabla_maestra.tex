@@ -1,0 +1,20 @@
+% Generado por analisis/tabla_maestra.py -- no editar a mano.
+% Requiere \usepackage{booktabs} y \usepackage{amssymb} en el preambulo.
+\begin{table}[htbp]
+\centering
+\begin{tabular}{lccccccccc}
+\toprule
+Configuración & Filt. & Del. & Clas. & M.P. & A.H. & ASR promedio (\%) & Falsos positivos & Latencia mediana (ms) & Costo (líneas/horas) \\
+\midrule
+C0 & -- & -- & -- & -- & -- & 64.4 & N/A (baseline, sin mecanismos que puedan bloquear) & 1432.0 (baseline) & Pendiente (semana del 10 de octubre) \\
+C1 & \checkmark & -- & -- & -- & -- & 49.2 & 0/1 -- test\_chat\_filtrado\_no\_bloquea\_mensaje\_legitimo & 977.0 (-455.0 vs. C0) & Pendiente (semana del 10 de octubre) \\
+C2 & -- & \checkmark & -- & -- & -- & 60.0 & N/A -- delimitación nunca bloquea (no participa en la cadena de bloqueo) & 1650.0 (+218.0 vs. C0) & Pendiente (semana del 10 de octubre) \\
+C3 & -- & -- & \checkmark & -- & -- & 28.0 & 0/1 -- test\_chat\_clasificacion\_no\_bloquea\_entrada\_legitima & 12687.5 (+11255.5 vs. C0) & Pendiente (semana del 10 de octubre) \\
+C4 & -- & -- & -- & \checkmark & -- & 50.0 & 0/1 (a nivel de mecanismo) -- test\_validar\_privilegio\_no\_bloquea\_texto\_sin\_credenciales & 504.5 (-927.5 vs. C0) & Pendiente (semana del 10 de octubre) \\
+C5 & -- & -- & -- & -- & \checkmark & 23.7 & 0/1 -- test\_chat\_aprobacion\_humana\_no\_bloquea\_mensaje\_legitimo & 9548.5 (+8116.5 vs. C0) & Pendiente (semana del 10 de octubre) \\
+C6 & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & 8.4 & 0/1 -- test\_c6\_peticion\_legitima\_pasa\_limpia\_por\_los\_5\_mecanismos & 683.0 (-749.0 vs. C0) & Pendiente (semana del 10 de octubre) \\
+\bottomrule
+\end{tabular}
+\caption{Tabla maestra de resultados: mecanismos activos, ASR promedio sin ponderar entre vectores, falsos positivos verificados puntualmente y latencia extra (ms) sobre passthrough puro, por configuración.}
+\label{tab:tabla-maestra}
+\end{table}
