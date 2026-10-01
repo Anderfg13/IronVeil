@@ -1,5 +1,21 @@
 # Conclusión general del proyecto — BORRADOR
 
+> **@Fiquitiva — para la Sección 7.3 del informe LaTeX:** todo lo generado
+> esta semana (2026-09-30) está en estos archivos, listos para usar:
+> - **Tabla maestra para pegar directo:** `analisis/tabla_maestra.tex`
+>   (ya en `\begin{tabular}...\end{tabular}`, usa `\checkmark`/`--` en vez de
+>   Unicode crudo — solo necesita `\usepackage{booktabs}` y
+>   `\usepackage{amssymb}` en el preámbulo). Mismos datos en
+>   `analisis/tabla_maestra.{csv,md}` si prefieres regenerar la tabla tú
+>   misma.
+> - **Gráfica de tendencia ASR C0→C6:** `resultados/graficas/asr_tendencia_c0_c6.png`.
+> - **Este mismo documento** (`analisis/conclusion_borrador.md`) responde la
+>   pregunta de investigación y compara contra la Sección 6.5/7.2 — es
+>   insumo directo para la sección de conclusiones, no solo para 7.3.
+> - Para regenerar cualquiera de los tres si el dataset cambia:
+>   `python analisis/tabla_maestra.py` (lee `resultados/resultados_template.csv`,
+>   no hace falta nada más).
+>
 > **⚠️ Este es un PRIMER BORRADOR, no la versión final.** Falta agregar el
 > costo de implementación completo por configuración (columna "Costo" de la
 > tabla maestra, tarea de la semana del 2026-10-10) y, con eso, revisar si la

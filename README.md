@@ -23,6 +23,11 @@ peticion contra Ollama y devuelve la respuesta real, `POST
 HTML minima sobre esos mismos 3 endpoints para no depender de `curl` a
 mano durante las pruebas.
 
+**Para quien escribe el informe LaTeX:** la tabla maestra de resultados
+(Sección 7.3), la gráfica de tendencia de ASR y el primer borrador de la
+conclusión ya están generados — ver `analisis/conclusion_borrador.md`
+(apunta a los archivos exactos, incluido el `.tex` listo para pegar).
+
 ## Estructura del proyecto
 
 ```
