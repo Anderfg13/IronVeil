@@ -39,6 +39,13 @@ propuesta) y el ASR real medido por mecanismo ya está hecha, celda por
 celda, con hipótesis explicativa para cada discrepancia — ver
 `analisis/matriz_real_vs_hipotesis.md`.
 
+**Material final para el informe y la sustentación (semana del 24 de
+octubre):** tabla maestra completa (sin columnas pendientes), las 3
+gráficas finales en alta resolución (`resultados/graficas_finales/`) y la
+respuesta final y defendible a la pregunta de investigación, ya con el
+costo de implementación incluido — todo en
+`analisis/resultados_finales.md` (supersede a `conclusion_borrador.md`).
+
 ## Estructura del proyecto
 
 ```

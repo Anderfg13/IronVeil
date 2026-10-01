@@ -1,4 +1,14 @@
-# Conclusión general del proyecto — BORRADOR
+# Conclusión general del proyecto — BORRADOR (superseded)
+
+> **SUPERSEDED — ver `analisis/resultados_finales.md`.** Este documento
+> quedó congelado en el 2026-09-30 con el costo de implementación
+> explícitamente pendiente (ver advertencia original más abajo). El
+> costo ya se midió esa misma semana (`analisis/costo_mecanismos.md`) y
+> la respuesta final a la pregunta de investigación, ya con las 3
+> columnas completas de la tabla maestra, vive en
+> `analisis/resultados_finales.md`. Este archivo se conserva como
+> registro histórico de la primera pasada, no se debe citar en el informe
+> final.
 
 > **@Fiquitiva — para la Sección 7.3 del informe LaTeX:** todo lo generado
 > esta semana (2026-09-30) está en estos archivos, listos para usar:

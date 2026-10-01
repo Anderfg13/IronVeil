@@ -290,8 +290,13 @@ def _escapar_latex(texto: str) -> str:
     )
 
 
-def graficar_tendencia_asr(tabla: pd.DataFrame, ruta_png: Path) -> Path:
-    """Gráfica de barras del ASR promedio por configuración, C0 a C6."""
+def graficar_tendencia_asr(tabla: pd.DataFrame, ruta_png: Path, dpi: int = 300) -> Path:
+    """Gráfica de barras del ASR promedio por configuración, C0 a C6.
+
+    `dpi=300` por defecto: esta gráfica se usa tanto en el informe LaTeX
+    final como en las diapositivas de la sustentación (ver
+    `analisis/graficas_finales.py`), no solo como vista previa en pantalla.
+    """
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(figsize=(8, 5))
@@ -308,7 +313,7 @@ def graficar_tendencia_asr(tabla: pd.DataFrame, ruta_png: Path) -> Path:
             fontsize=9,
         )
     ax.set_xlabel(COL_CONFIGURACION)
-    ax.set_ylabel("ASR promedio (%) — media sin ponderar entre vectores")
+    ax.set_ylabel("ASR promedio (%)\n(media sin ponderar entre vectores)")
     ax.set_ylim(0, max(valores + [10]) * 1.2)
     ax.set_title("Tendencia de ASR promedio por configuración (C0 → C6)")
     ax.text(
@@ -326,7 +331,7 @@ def graficar_tendencia_asr(tabla: pd.DataFrame, ruta_png: Path) -> Path:
     )
     fig.tight_layout()
     ruta_png.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(ruta_png, dpi=150)
+    fig.savefig(ruta_png, dpi=dpi)
     plt.close(fig)
     return ruta_png
 
@@ -366,13 +371,17 @@ def main() -> None:
     ruta_png = _REPO_ROOT / "resultados" / "graficas" / "asr_tendencia_c0_c6.png"
 
     tabla.to_csv(ruta_csv, index=False)
-    ruta_md.write_text(tabla.to_markdown(index=False), encoding="utf-8")
+    # floatfmt=".1f": to_markdown() recorta el ".0" final de un float
+    # (60.0 -> "60"), lo que dejaba el ASR con un numero de decimales
+    # inconsistente entre filas de la misma columna (mismo bug ya conocido
+    # y corregido en consolidar.guardar_tabla()).
+    ruta_md.write_text(tabla.to_markdown(index=False, floatfmt=".1f"), encoding="utf-8")
     ruta_tex.write_text(generar_latex(tabla), encoding="utf-8")
     graficar_tendencia_asr(tabla, ruta_png)
 
     logger.info("Tabla maestra escrita en %s, %s y %s", ruta_csv, ruta_md, ruta_tex)
     logger.info("Grafica de tendencia escrita en %s", ruta_png)
-    logger.info("\n%s", tabla.to_markdown(index=False))
+    logger.info("\n%s", tabla.to_markdown(index=False, floatfmt=".1f"))
 
 
 if __name__ == "__main__":
