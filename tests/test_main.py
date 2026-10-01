@@ -236,6 +236,8 @@ def test_chat_filtrado_apagado_es_passthrough(
 
     assert respuesta.status_code == 200
     assert cliente_falso.llamado is True
+    assert cliente_falso.ultimo_payload is not None
+    assert cliente_falso.ultimo_payload["keep_alive"] == main.KEEP_ALIVE_OLLAMA
     eventos = _leer_eventos(resultados_dir)
     assert eventos[0]["configuracion"] == "C0"
     assert eventos[0]["resultado"] == "permitido_normal"

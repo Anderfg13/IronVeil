@@ -159,6 +159,7 @@ def test_clasificar_envia_rol_assistant_en_salida(
     assert cliente_falso.ultimo_payload is not None
     assert cliente_falso.ultimo_payload["messages"][0]["role"] == "assistant"
     assert cliente_falso.ultimo_payload["model"] == mecanismos.MODELO_CLASIFICADOR
+    assert cliente_falso.ultimo_payload["keep_alive"] == mecanismos.KEEP_ALIVE_OLLAMA
 
 
 # --- Fail closed ante error/excepcion, por direccion -------------------------

@@ -46,6 +46,13 @@ os.environ['RRHH_SECRET'] = getpass.getpass('RRHH_SECRET: ')
 os.environ['BASE_MODEL'] = 'llama3.2:1b'
 os.environ['MODELO_CLASIFICADOR'] = 'llama-guard3:1b'
 os.environ['MODELO_PROMPT_GUARD_ID'] = 'meta-llama/Llama-Prompt-Guard-2-86M'
+# Nuevo (2026-09-30): evita que Ollama descargue un modelo de memoria
+# entre peticiones espaciadas de la bateria -- mismo fix que se aplico al
+# proxy para la demo, pero aqui importa tambien para la MEDICION: una
+# recarga en frio a mitad de bateria es la causa mas probable de los
+# outliers de latencia ya vistos (ej. C3 real: maximo 170.5s vs. mediana
+# 12.7s).
+os.environ['OLLAMA_KEEP_ALIVE'] = '30m'
 ```
 
 ```python

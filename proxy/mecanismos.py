@@ -363,6 +363,15 @@ MODELO_CLASIFICADOR: str = os.getenv("MODELO_CLASIFICADOR", "llama-guard3:1b")
 # generoso para un modelo de 1B en CPU y deja margen frente al
 # REQUEST_TIMEOUT (120s) del proxy para el resto de la peticion.
 TIMEOUT_CLASIFICADOR_S: float = float(os.getenv("TIMEOUT_CLASIFICADOR_S", "10"))
+# Cuanto tiempo mantiene Ollama el modelo cargado en memoria tras la
+# ULTIMA peticion antes de descargarlo (parametro nativo de su API, no
+# inventado aqui). Por defecto Ollama usa 5m; subirlo evita que una pausa
+# entre peticiones (ritmo real de un ataque por turnos, o un hueco durante
+# una demo en vivo) fuerce una recarga en frio del modelo en la siguiente
+# peticion -- la misma causa raiz, medida, detras de los outliers de
+# latencia del clasificador (docs/FUENTE_DE_VERDAD.md, seccion 5: C3 real,
+# maximo 170.5s frente a una mediana de 12.7s).
+KEEP_ALIVE_OLLAMA: str = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
 
 # Llama Guard 3 distingue si esta evaluando lo que dijo el usuario o lo que
 # respondio el modelo (plantilla oficial, ver docstring de clasificar()).
@@ -476,6 +485,7 @@ def _clasificar_salida_llama_guard(texto: str, direccion: str) -> bool:
         "model": MODELO_CLASIFICADOR,
         "messages": [{"role": _ROL_LLAMA_GUARD[direccion], "content": texto}],
         "stream": False,
+        "keep_alive": KEEP_ALIVE_OLLAMA,
     }
     try:
         with httpx.Client(timeout=TIMEOUT_CLASIFICADOR_S) as client:

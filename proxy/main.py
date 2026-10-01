@@ -15,12 +15,14 @@ junto a _CADENA_MECANISMOS. Ver CLAUDE.md, seccion 3.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
 import threading
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -38,6 +40,13 @@ import proxy.mecanismos as mecanismos
 logger = logging.getLogger(__name__)
 
 OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
+# Mismo valor y misma justificacion que mecanismos.KEEP_ALIVE_OLLAMA
+# (repetido aqui, no importado, por la misma razon ya documentada ahi: que
+# cada modulo siga siendo independiente). Se manda en cada llamada a
+# Ollama (soporte/rrhh y el calentamiento) para que el modelo no se
+# descargue de memoria entre peticiones espaciadas -- ej. una demo en
+# vivo con pausas.
+KEEP_ALIVE_OLLAMA: str = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
 REQUEST_TIMEOUT: float = float(os.getenv("PROXY_REQUEST_TIMEOUT", "120"))
 RESULTADOS_DIR: Path = Path(__file__).resolve().parent.parent / "resultados"
 
@@ -134,7 +143,81 @@ _CONFIGURACIONES_CANONICAS: dict[frozenset[str], str] = {
     frozenset(mecanismos.FLAGS_REQUERIDAS): "C6",
 }
 
-app = FastAPI(title="IronVeil Proxy", version="0.1.0")
+# Mensaje minimo usado solo para forzar la carga de un modelo en memoria al
+# arrancar (ver _calentar_modelos()). Nunca se registra como un evento del
+# experimento -- no pasa por /chat, no tiene vector_probado ni config real
+# asociada, es puro "ping" de infraestructura.
+_MENSAJE_CALENTAMIENTO: str = "hola"
+
+
+async def _calentar_modelo_ollama(modelo: str) -> None:
+    """Dispara una peticion minima a Ollama para `modelo`, solo para que lo
+    cargue en memoria ahora en vez de en la primera peticion real. Deja que
+    cualquier excepcion se propague -- quien llama (`_calentar_modelos()`)
+    la atrapa con `asyncio.gather(..., return_exceptions=True)`.
+    """
+    payload = {
+        "model": modelo,
+        "messages": [{"role": "user", "content": _MENSAJE_CALENTAMIENTO}],
+        "stream": False,
+        "keep_alive": KEEP_ALIVE_OLLAMA,
+    }
+    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+        respuesta = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload)
+        respuesta.raise_for_status()
+
+
+async def _calentar_clasificador() -> None:
+    """Fuerza la carga de los dos modelos del mecanismo 3: Prompt Guard
+    (entrada, transformers/Hugging Face) y Llama Guard (salida, Ollama).
+    Mismo motivo que `_calentar_modelo_ollama()`: pagar el costo de carga
+    ahora, no en la primera clasificacion real.
+    """
+    await run_in_threadpool(mecanismos.clasificar, _MENSAJE_CALENTAMIENTO, "entrada")
+    await run_in_threadpool(mecanismos.clasificar, _MENSAJE_CALENTAMIENTO, "salida")
+
+
+async def _calentar_modelos() -> None:
+    """Calienta, en paralelo, todos los modelos que esta instancia del proxy
+    podria necesitar: los dos modelos de chat (siempre) y el clasificador
+    (solo si 'clasificacion' esta activa en config.yaml en este momento).
+
+    Pensado para la demo en vivo (grabacion de la sustentacion): sin esto,
+    la primera peticion real pagaria el costo de arranque en frio -- hasta
+    varios minutos para Prompt Guard sin cache (docs/FUENTE_DE_VERDAD.md,
+    seccion 4). **Nunca bloquea el arranque del proxy ni hace fallar el
+    health check**: cada calentamiento que falle (Ollama todavia
+    iniciando, HF_TOKEN ausente, modelo no descargado, red no disponible)
+    se registra como advertencia, no como error -- es una optimizacion de
+    latencia, no un requisito para operar. El proxy funciona correctamente
+    sin haber calentado nada, solo mas lento en la primera peticion real de
+    cada modelo.
+    """
+    config = mecanismos.cargar_config(mecanismos.CONFIG_PATH)
+    tareas: dict[str, Awaitable[None]] = {
+        "modelo soporte": _calentar_modelo_ollama("soporte"),
+        "modelo rrhh": _calentar_modelo_ollama("rrhh"),
+    }
+    if config["clasificacion"]:
+        tareas["clasificador"] = _calentar_clasificador()
+
+    resultados = await asyncio.gather(*tareas.values(), return_exceptions=True)
+    for nombre, resultado in zip(tareas.keys(), resultados, strict=True):
+        if isinstance(resultado, BaseException):
+            logger.warning(
+                "Calentamiento de %s fallo (no bloqueante): %s", nombre, resultado
+            )
+        else:
+            logger.info("Calentamiento de %s completo.", nombre)
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    await _calentar_modelos()
+    yield
+
+
+app = FastAPI(title="IronVeil Proxy", version="0.1.0", lifespan=_lifespan)
 
 
 class ChatRequest(BaseModel):
@@ -394,6 +477,7 @@ async def _llamar_ollama(modelo: str, mensaje: str) -> dict[str, Any]:
         "model": modelo,
         "messages": [{"role": "user", "content": mensaje}],
         "stream": False,
+        "keep_alive": KEEP_ALIVE_OLLAMA,
     }
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
         try:

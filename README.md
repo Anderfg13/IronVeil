@@ -21,7 +21,10 @@ proxy es un passthrough puro hacia Ollama (C0). La cola de revision humana
 peticion contra Ollama y devuelve la respuesta real, `POST
 /revision/{id}/rechazar` la descarta; `GET /revision/ui` sirve una pagina
 HTML minima sobre esos mismos 3 endpoints para no depender de `curl` a
-mano durante las pruebas.
+mano durante las pruebas. El proxy calienta los modelos de Ollama (y el
+clasificador, si está activo) al arrancar, y mantiene cada modelo cargado
+en memoria `OLLAMA_KEEP_ALIVE` (default 30m) entre peticiones — pensado
+para que la demo en vivo no pague el costo de arranque en frío.
 
 **Para quien escribe el informe LaTeX:** la tabla maestra de resultados
 (Sección 7.3), la gráfica de tendencia de ASR y el primer borrador de la

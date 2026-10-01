@@ -51,6 +51,11 @@ services:
       # (unsafe) en cada peticion -- ver docs/FUENTE_DE_VERDAD.md, seccion 4.
       MODELO_PROMPT_GUARD_ID: ${MODELO_PROMPT_GUARD_ID:-meta-llama/Llama-Prompt-Guard-2-86M}
       HF_TOKEN: ${HF_TOKEN}
+      # Cuanto tiempo mantiene Ollama un modelo cargado en memoria tras la
+      # ultima peticion (nativo de su API). 30m por defecto, mas que el 5m
+      # de Ollama, para que una pausa entre peticiones (demo en vivo,
+      # bateria de ataques con huecos) no fuerce una recarga en frio.
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
     volumes:
       # Monta config.yaml (no se copia en la imagen) para poder cambiar de
       # configuracion (C0..C6) con solo editar el archivo y reiniciar el
