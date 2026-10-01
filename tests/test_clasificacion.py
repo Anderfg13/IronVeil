@@ -61,7 +61,9 @@ def _mockear_llama_guard(
     excepcion: Exception | None = None,
 ) -> _ClienteLlamaGuardFalso:
     cliente_falso = _ClienteLlamaGuardFalso(contenido, excepcion)
-    monkeypatch.setattr(mecanismos.httpx, "Client", lambda *a, **k: cliente_falso)
+    monkeypatch.setattr(
+        mecanismos, "_obtener_cliente_http_llama_guard", lambda: cliente_falso
+    )
     return cliente_falso
 
 
@@ -143,7 +145,9 @@ def test_clasificar_entrada_no_llama_a_llama_guard(
     def _fallar_si_se_llama(*a: object, **k: object) -> None:
         raise AssertionError("clasificar() en entrada no deberia llamar a httpx.Client")
 
-    monkeypatch.setattr(mecanismos.httpx, "Client", _fallar_si_se_llama)
+    monkeypatch.setattr(
+        mecanismos, "_obtener_cliente_http_llama_guard", _fallar_si_se_llama
+    )
     _mockear_prompt_guard(monkeypatch, etiqueta="LABEL_0")
 
     clasificar("texto de entrada", "entrada")
@@ -160,6 +164,20 @@ def test_clasificar_envia_rol_assistant_en_salida(
     assert cliente_falso.ultimo_payload["messages"][0]["role"] == "assistant"
     assert cliente_falso.ultimo_payload["model"] == mecanismos.MODELO_CLASIFICADOR
     assert cliente_falso.ultimo_payload["keep_alive"] == mecanismos.KEEP_ALIVE_OLLAMA
+
+
+def test_obtener_cliente_http_llama_guard_reutiliza_la_misma_instancia(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Conexion HTTP compartida hacia Ollama (optimizacion de latencia):
+    no se abre una conexion nueva en cada clasificacion.
+    """
+    monkeypatch.setattr(mecanismos, "_cliente_http_llama_guard", None)
+
+    primero = mecanismos._obtener_cliente_http_llama_guard()
+    segundo = mecanismos._obtener_cliente_http_llama_guard()
+
+    assert primero is segundo
 
 
 # --- Fail closed ante error/excepcion, por direccion -------------------------

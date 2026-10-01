@@ -72,7 +72,7 @@ def test_calentar_modelo_ollama_llama_con_el_modelo_correcto(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     cliente_falso = _ClienteOllamaFalso()
-    monkeypatch.setattr(main.httpx, "AsyncClient", lambda *a, **k: cliente_falso)
+    monkeypatch.setattr(main, "_obtener_cliente_http", lambda: cliente_falso)
 
     asyncio.run(main._calentar_modelo_ollama("soporte"))
 
@@ -103,7 +103,7 @@ def test_calentar_modelos_siempre_calienta_soporte_y_rrhh(
 ) -> None:
     _escribir_config(tmp_path, monkeypatch, clasificacion=False)
     cliente_falso = _ClienteOllamaFalso()
-    monkeypatch.setattr(main.httpx, "AsyncClient", lambda *a, **k: cliente_falso)
+    monkeypatch.setattr(main, "_obtener_cliente_http", lambda: cliente_falso)
 
     def _clasificar_no_deberia_llamarse(*args: object, **kwargs: object) -> bool:
         raise AssertionError("clasificar() no deberia llamarse con clasificacion=false")
@@ -120,7 +120,7 @@ def test_calentar_modelos_calienta_clasificador_si_esta_activo(
 ) -> None:
     _escribir_config(tmp_path, monkeypatch, clasificacion=True)
     cliente_falso = _ClienteOllamaFalso()
-    monkeypatch.setattr(main.httpx, "AsyncClient", lambda *a, **k: cliente_falso)
+    monkeypatch.setattr(main, "_obtener_cliente_http", lambda: cliente_falso)
 
     llamadas: list[str] = []
     monkeypatch.setattr(
@@ -139,7 +139,7 @@ def test_calentar_modelos_no_propaga_excepcion_si_un_calentamiento_falla(
 ) -> None:
     _escribir_config(tmp_path, monkeypatch, clasificacion=True)
     cliente_falso = _ClienteOllamaFalso(falla=True)
-    monkeypatch.setattr(main.httpx, "AsyncClient", lambda *a, **k: cliente_falso)
+    monkeypatch.setattr(main, "_obtener_cliente_http", lambda: cliente_falso)
 
     def _clasificador_falla(*args: object, **kwargs: object) -> bool:
         raise RuntimeError("HF_TOKEN ausente (simulado)")

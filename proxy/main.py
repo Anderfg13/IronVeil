@@ -149,6 +149,33 @@ _CONFIGURACIONES_CANONICAS: dict[frozenset[str], str] = {
 # asociada, es puro "ping" de infraestructura.
 _MENSAJE_CALENTAMIENTO: str = "hola"
 
+# Cliente httpx compartido hacia Ollama: una sola conexion/pool TCP
+# reutilizada entre peticiones, en vez de abrir una conexion nueva (con su
+# propio handshake) en cada llamada a _llamar_ollama()/_calentar_modelo_
+# ollama(). Optimizacion pura de latencia, sin cambiar ningun
+# comportamiento observable -- a diferencia de otras formas de bajar
+# latencia consideradas (cachear clasificaciones, cuantizar modelos),
+# esta no tiene ninguna contrapartida de precision ni de validez de la
+# medicion.
+_cliente_http_ollama: httpx.AsyncClient | None = None
+
+
+def _obtener_cliente_http() -> httpx.AsyncClient:
+    """Crea el cliente compartido la primera vez que se necesita.
+
+    Seguro sin lock: _llamar_ollama()/_calentar_modelo_ollama() siempre
+    corren en el event loop principal de asyncio (nunca via
+    run_in_threadpool), y el constructor de AsyncClient no hace ningun
+    `await` -- no hay forma de que dos corrutinas se intercalen entre la
+    comprobacion y la asignacion. Contraste con
+    mecanismos._obtener_cliente_http_llama_guard(), que si necesita lock
+    porque corre en hilos reales del threadpool.
+    """
+    global _cliente_http_ollama
+    if _cliente_http_ollama is None:
+        _cliente_http_ollama = httpx.AsyncClient(timeout=REQUEST_TIMEOUT)
+    return _cliente_http_ollama
+
 
 async def _calentar_modelo_ollama(modelo: str) -> None:
     """Dispara una peticion minima a Ollama para `modelo`, solo para que lo
@@ -162,9 +189,9 @@ async def _calentar_modelo_ollama(modelo: str) -> None:
         "stream": False,
         "keep_alive": KEEP_ALIVE_OLLAMA,
     }
-    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-        respuesta = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload)
-        respuesta.raise_for_status()
+    client = _obtener_cliente_http()
+    respuesta = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload)
+    respuesta.raise_for_status()
 
 
 async def _calentar_clasificador() -> None:
@@ -479,27 +506,27 @@ async def _llamar_ollama(modelo: str, mensaje: str) -> dict[str, Any]:
         "stream": False,
         "keep_alive": KEEP_ALIVE_OLLAMA,
     }
-    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-        try:
-            response = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload)
-            response.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            logger.warning(
-                "Ollama devolvio %d para modelo=%r: %s",
-                exc.response.status_code,
-                _sanear_para_log(modelo),
-                exc.response.text,
-            )
-            raise HTTPException(
-                status_code=exc.response.status_code, detail=_DETALLE_ERROR_OLLAMA
-            ) from exc
-        except httpx.RequestError as exc:
-            logger.warning(
-                "No se pudo contactar a Ollama (modelo=%r): %s",
-                _sanear_para_log(modelo),
-                exc,
-            )
-            raise HTTPException(status_code=502, detail=_DETALLE_ERROR_OLLAMA) from exc
+    client = _obtener_cliente_http()
+    try:
+        response = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload)
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        logger.warning(
+            "Ollama devolvio %d para modelo=%r: %s",
+            exc.response.status_code,
+            _sanear_para_log(modelo),
+            exc.response.text,
+        )
+        raise HTTPException(
+            status_code=exc.response.status_code, detail=_DETALLE_ERROR_OLLAMA
+        ) from exc
+    except httpx.RequestError as exc:
+        logger.warning(
+            "No se pudo contactar a Ollama (modelo=%r): %s",
+            _sanear_para_log(modelo),
+            exc,
+        )
+        raise HTTPException(status_code=502, detail=_DETALLE_ERROR_OLLAMA) from exc
     return response.json()
 
 

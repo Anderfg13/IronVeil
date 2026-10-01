@@ -464,6 +464,28 @@ def clasificar(texto: str, direccion: str) -> bool:
     return _clasificar_salida_llama_guard(texto, direccion)
 
 
+# Cliente httpx compartido hacia Ollama para Llama Guard (mecanismo 3,
+# salida): una sola conexion/pool TCP reutilizada entre peticiones, en vez
+# de abrir una conexion nueva en cada llamada. Carga perezosa protegida
+# con lock, mismo patron que _pipeline_prompt_guard/_obtener_pipeline_
+# prompt_guard() mas abajo y por la misma razon: _clasificar_salida_
+# llama_guard() corre via run_in_threadpool, en hilos reales del
+# threadpool, no en el event loop -- varias peticiones concurrentes si
+# podrian competir por crearlo a la vez.
+_cliente_http_llama_guard: httpx.Client | None = None
+_lock_cliente_http_llama_guard = threading.Lock()
+
+
+def _obtener_cliente_http_llama_guard() -> httpx.Client:
+    global _cliente_http_llama_guard
+    if _cliente_http_llama_guard is not None:
+        return _cliente_http_llama_guard
+    with _lock_cliente_http_llama_guard:
+        if _cliente_http_llama_guard is None:
+            _cliente_http_llama_guard = httpx.Client(timeout=TIMEOUT_CLASIFICADOR_S)
+    return _cliente_http_llama_guard
+
+
 def _clasificar_salida_llama_guard(texto: str, direccion: str) -> bool:
     """Mecanismo 3, direccion "salida": Llama Guard 3 via Ollama.
 
@@ -488,9 +510,9 @@ def _clasificar_salida_llama_guard(texto: str, direccion: str) -> bool:
         "keep_alive": KEEP_ALIVE_OLLAMA,
     }
     try:
-        with httpx.Client(timeout=TIMEOUT_CLASIFICADOR_S) as client:
-            respuesta = client.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload)
-            respuesta.raise_for_status()
+        client = _obtener_cliente_http_llama_guard()
+        respuesta = client.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload)
+        respuesta.raise_for_status()
     except httpx.TimeoutException:
         logger.error(
             "clasificar(): timeout de %.1fs esperando a %s; fail closed (unsafe).",

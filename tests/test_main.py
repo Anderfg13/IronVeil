@@ -97,7 +97,7 @@ def _preparar_entorno(
         "message": {"role": "assistant", "content": contenido_respuesta_ollama}
     }
     cliente_falso = _ClienteOllamaFalso(payload_ollama)
-    monkeypatch.setattr(main.httpx, "AsyncClient", lambda *a, **k: cliente_falso)
+    monkeypatch.setattr(main, "_obtener_cliente_http", lambda: cliente_falso)
 
     return cliente_falso, resultados_dir
 
@@ -116,6 +116,24 @@ class _ClienteOllamaConError:
 
     async def post(self, *args: object, **kwargs: object) -> Any:
         raise self._excepcion
+
+
+# --- _obtener_cliente_http(): conexion HTTP reutilizada hacia Ollama ------
+#
+# Optimizacion de latencia (evita abrir una conexion TCP nueva en cada
+# llamada): un cliente compartido, creado perezosamente, en vez de uno por
+# peticion.
+
+
+def test_obtener_cliente_http_reutiliza_la_misma_instancia(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(main, "_cliente_http_ollama", None)
+
+    primero = main._obtener_cliente_http()
+    segundo = main._obtener_cliente_http()
+
+    assert primero is segundo
 
 
 # --- _sanear_para_log() (CWE-117, log injection) --------------------------
@@ -163,7 +181,7 @@ def test_chat_error_http_de_ollama_no_revela_detalle_crudo(
         "404 Not Found", request=peticion_ollama, response=respuesta_ollama
     )
     monkeypatch.setattr(
-        main.httpx, "AsyncClient", lambda *a, **k: _ClienteOllamaConError(excepcion)
+        main, "_obtener_cliente_http", lambda: _ClienteOllamaConError(excepcion)
     )
 
     respuesta = client.post("/chat", json={"modelo": "noexiste", "mensaje": "hola"})
@@ -182,7 +200,7 @@ def test_chat_error_de_conexion_a_ollama_no_revela_detalle_crudo(
 
     excepcion = httpx.ConnectError("Connection refused a ironveil-ollama.internal")
     monkeypatch.setattr(
-        main.httpx, "AsyncClient", lambda *a, **k: _ClienteOllamaConError(excepcion)
+        main, "_obtener_cliente_http", lambda: _ClienteOllamaConError(excepcion)
     )
 
     respuesta = client.post("/chat", json={"modelo": "soporte", "mensaje": "hola"})
