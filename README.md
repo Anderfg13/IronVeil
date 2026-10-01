@@ -34,6 +34,11 @@ sigue pendiente de confirmar con Sabogal, y cómo volver a correr
 `analisis/validar_dataset.py` cuando se agreguen los resultados de la
 extensión opcional del 17 de octubre.
 
+La comparación entre la matriz de hipótesis (Sección 6.5 del documento de
+propuesta) y el ASR real medido por mecanismo ya está hecha, celda por
+celda, con hipótesis explicativa para cada discrepancia — ver
+`analisis/matriz_real_vs_hipotesis.md`.
+
 ## Estructura del proyecto
 
 ```
