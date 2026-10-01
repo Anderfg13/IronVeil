@@ -38,6 +38,7 @@ from __future__ import annotations
 import argparse
 import glob
 import json
+import sys
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -45,8 +46,13 @@ from pathlib import Path
 import pandas as pd
 
 RAIZ = Path(__file__).resolve().parent.parent
+if str(RAIZ) not in sys.path:
+    sys.path.insert(0, str(RAIZ))
+
+from analisis.consolidar import validar_ruta_salida_segura  # noqa: E402
+
 RUTA_CSV_DEFECTO = RAIZ / "resultados" / "resultados_template.csv"
-PATRON_EVENTOS_DEFECTO = str(RAIZ / "resultados" / "*" / "eventos.jsonl")
+RESULTADOS_DIR_DEFECTO = RAIZ / "resultados"
 
 VECTOR_SIN_LATENCIA_CLASIFICADOR = "V5-D"
 CLAVES_PARTICION = ("fecha", "configuracion", "vector_probado", "modelo_destino")
@@ -75,10 +81,21 @@ def _fecha_utc(timestamp: str) -> str:
     return datetime.fromisoformat(timestamp).astimezone(UTC).date().isoformat()
 
 
-def cargar_eventos_proxy(patron_glob: str = PATRON_EVENTOS_DEFECTO) -> pd.DataFrame:
-    """Lee todos los resultados/<fecha>/eventos.jsonl del repo. Excluye
+def cargar_eventos_proxy(resultados_dir: Path = RESULTADOS_DIR_DEFECTO) -> pd.DataFrame:
+    """Lee todos los <resultados_dir>/<fecha>/eventos.jsonl del repo. Excluye
     'V5-D' (ver docstring del modulo) y filas sin 'latencia_clasificador_ms'.
+
+    `resultados_dir` se valida con `validar_ruta_salida_segura()` (CWE-22,
+    path traversal via un argumento de linea de comandos mal formado) antes
+    de construir el patron de busqueda -- a diferencia de
+    `agregar_resultados_desde_jsonl.py`, que si necesita aceptar rutas
+    arbitrarias fuera del repo (recibe evidencia de donde sea que viva),
+    este script solo tiene un uso previsto: la carpeta resultados/ de este
+    mismo repositorio.
     """
+    resultados_dir = validar_ruta_salida_segura(resultados_dir)
+    patron_glob = str(resultados_dir / "*" / "eventos.jsonl")
+
     eventos: list[dict[str, object]] = []
     for ruta in sorted(glob.glob(patron_glob)):
         with open(ruta, encoding="utf-8") as f:
@@ -182,14 +199,14 @@ def fusionar_latencia_clasificador(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--csv", type=Path, default=RUTA_CSV_DEFECTO)
-    parser.add_argument("--patron-eventos", default=PATRON_EVENTOS_DEFECTO)
+    parser.add_argument("--resultados-dir", type=Path, default=RESULTADOS_DIR_DEFECTO)
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     df = pd.read_csv(args.csv, dtype=str, keep_default_na=False)
-    eventos = cargar_eventos_proxy(args.patron_eventos)
+    eventos = cargar_eventos_proxy(args.resultados_dir)
 
     df_fusionado, resumen = fusionar_latencia_clasificador(df, eventos)
     df_fusionado.to_csv(args.csv, index=False)

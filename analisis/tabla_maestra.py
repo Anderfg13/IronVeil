@@ -62,6 +62,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from analisis.consolidar import (  # noqa: E402
+    COL_CONFIGURACION,
     RUTA_CSV_DEFECTO,
     calcular_asr,
     cargar_resultados,
@@ -72,6 +73,15 @@ from analisis.costo_mecanismos import costo_por_configuracion  # noqa: E402
 logger = logging.getLogger(__name__)
 
 ORDEN_CONFIGURACIONES = ["C0", "C1", "C2", "C3", "C4", "C5", "C6"]
+
+# Encabezados de columna reutilizados varias veces en este modulo (armado
+# de filas, seleccion de columnas, grafica) -- una sola definicion para que
+# un cambio de redaccion no tenga que buscarse en cada sitio por separado
+# (SonarCloud: "Define a constant instead of duplicating this literal").
+COL_ASR_PROMEDIO = "ASR promedio (%)"
+COL_LATENCIA_MEDIANA = "Latencia mediana (ms)"
+COL_FALSOS_POSITIVOS = "Falsos positivos"
+COL_COSTO = "Costo (líneas/horas)"
 
 # Nombre canonico de mecanismo -> abreviatura de columna, mismo orden que
 # CLAUDE.md seccion 1.
@@ -127,7 +137,7 @@ def asr_promedio_por_config(tabla_asr: pd.DataFrame) -> dict[str, float]:
     """Media SIN PONDERAR de 'ASR (%)' por configuracion, sobre los
     porcentajes ya calculados por vector (ver docstring del modulo).
     """
-    return tabla_asr.groupby("Configuración")["ASR (%)"].mean().round(1).to_dict()
+    return tabla_asr.groupby(COL_CONFIGURACION)["ASR (%)"].mean().round(1).to_dict()
 
 
 def latencia_extra_por_config(df: pd.DataFrame) -> dict[str, float | None]:
@@ -163,6 +173,49 @@ def latencia_extra_por_config(df: pd.DataFrame) -> dict[str, float | None]:
     return resultado
 
 
+def _formatear_latencia_mediana(
+    config: str, latencia: float | None, latencia_c0: float | None
+) -> str | None:
+    """Formatea la mediana de latencia de una configuracion, con su delta
+    contra C0 (baseline) cuando aplica. Ver docstring del modulo para la
+    limitacion metodologica de mezclar hardware entre configuraciones.
+    """
+    if latencia is None:
+        return None
+    if config == "C0" or latencia_c0 is None:
+        return f"{latencia} (baseline)"
+    delta = round(latencia - latencia_c0, 1)
+    signo = "+" if delta >= 0 else ""
+    return f"{latencia} ({signo}{delta} vs. C0)"
+
+
+def _construir_fila(
+    config: str,
+    activos: set[str],
+    asr_prom: dict[str, float],
+    latencias: dict[str, float | None],
+    latencia_c0: float | None,
+) -> dict[str, object]:
+    """Arma una fila de la tabla maestra para una sola configuracion."""
+    fila: dict[str, object] = {COL_CONFIGURACION: config}
+    for nombre, columna in MECANISMOS_COLUMNAS:
+        fila[columna] = "✓" if nombre in activos else "—"
+
+    fila[COL_ASR_PROMEDIO] = asr_prom.get(config)
+    fila[COL_LATENCIA_MEDIANA] = _formatear_latencia_mediana(
+        config, latencias.get(config), latencia_c0
+    )
+    fila[COL_FALSOS_POSITIVOS] = FALSOS_POSITIVOS_POR_CONFIG.get(config, "Sin dato")
+
+    lineas_costo, horas_costo = costo_por_configuracion(activos)
+    fila[COL_COSTO] = (
+        f"{lineas_costo} líneas / {horas_costo}h"
+        if activos
+        else "0 líneas / 0h (baseline)"
+    )
+    return fila
+
+
 def calcular_tabla_maestra(df: pd.DataFrame) -> pd.DataFrame:
     """Arma la tabla maestra de 1 fila por configuracion presente en `df`."""
     tabla_asr = calcular_asr(df)
@@ -171,44 +224,16 @@ def calcular_tabla_maestra(df: pd.DataFrame) -> pd.DataFrame:
     latencias = latencia_extra_por_config(df)
     latencia_c0 = latencias.get("C0")
 
-    filas = []
-    for config in ORDEN_CONFIGURACIONES:
-        if config not in mecanismos:
-            continue
-        activos = mecanismos[config]
-        fila: dict[str, object] = {"Configuración": config}
-        for nombre, columna in MECANISMOS_COLUMNAS:
-            fila[columna] = "✓" if nombre in activos else "—"
-        fila["ASR promedio (%)"] = asr_prom.get(config)
-
-        latencia = latencias.get(config)
-        if latencia is None:
-            fila["Latencia mediana (ms)"] = None
-        elif latencia_c0 is not None and config != "C0":
-            delta = round(latencia - latencia_c0, 1)
-            signo = "+" if delta >= 0 else ""
-            fila["Latencia mediana (ms)"] = f"{latencia} ({signo}{delta} vs. C0)"
-        else:
-            fila["Latencia mediana (ms)"] = f"{latencia} (baseline)"
-
-        fila["Falsos positivos"] = FALSOS_POSITIVOS_POR_CONFIG.get(config, "Sin dato")
-        lineas_costo, horas_costo = costo_por_configuracion(activos)
-        fila["Costo (líneas/horas)"] = (
-            f"{lineas_costo} líneas / {horas_costo}h"
-            if activos
-            else "0 líneas / 0h (baseline)"
-        )
-        filas.append(fila)
+    filas = [
+        _construir_fila(config, mecanismos[config], asr_prom, latencias, latencia_c0)
+        for config in ORDEN_CONFIGURACIONES
+        if config in mecanismos
+    ]
 
     columnas = (
-        ["Configuración"]
+        [COL_CONFIGURACION]
         + [col for _, col in MECANISMOS_COLUMNAS]
-        + [
-            "ASR promedio (%)",
-            "Falsos positivos",
-            "Latencia mediana (ms)",
-            "Costo (líneas/horas)",
-        ]
+        + [COL_ASR_PROMEDIO, COL_FALSOS_POSITIVOS, COL_LATENCIA_MEDIANA, COL_COSTO]
     )
     return pd.DataFrame(filas)[columnas]
 
@@ -231,21 +256,22 @@ def generar_latex(tabla: pd.DataFrame) -> str:
         "\\toprule",
     ]
     encabezado = " & ".join(_escapar_latex(c) for c in tabla.columns) + r" \\"
-    lineas.append(encabezado)
-    lineas.append("\\midrule")
+    lineas.extend([encabezado, "\\midrule"])
     for _, fila in tabla.iterrows():
         celdas = ["" if pd.isna(v) else _escapar_latex(str(v)) for v in fila]
         lineas.append(" & ".join(celdas) + r" \\")
-    lineas.append("\\bottomrule")
-    lineas.append("\\end{tabular}")
-    lineas.append(
-        "\\caption{Tabla maestra de resultados: mecanismos activos, ASR "
-        "promedio sin ponderar entre vectores, falsos positivos verificados "
-        "puntualmente y latencia extra (ms) sobre passthrough puro, por "
-        "configuración.}"
+    lineas.extend(
+        [
+            "\\bottomrule",
+            "\\end{tabular}",
+            "\\caption{Tabla maestra de resultados: mecanismos activos, ASR "
+            "promedio sin ponderar entre vectores, falsos positivos "
+            "verificados puntualmente y latencia extra (ms) sobre "
+            "passthrough puro, por configuración.}",
+            "\\label{tab:tabla-maestra}",
+            "\\end{table}",
+        ]
     )
-    lineas.append("\\label{tab:tabla-maestra}")
-    lineas.append("\\end{table}")
     return "\n".join(lineas) + "\n"
 
 
@@ -269,8 +295,8 @@ def graficar_tendencia_asr(tabla: pd.DataFrame, ruta_png: Path) -> Path:
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(figsize=(8, 5))
-    configs = tabla["Configuración"].tolist()
-    valores = tabla["ASR promedio (%)"].tolist()
+    configs = tabla[COL_CONFIGURACION].tolist()
+    valores = tabla[COL_ASR_PROMEDIO].tolist()
     barras = ax.bar(configs, valores, color="#2c6e91")
     for barra, valor in zip(barras, valores, strict=True):
         ax.text(
@@ -281,7 +307,7 @@ def graficar_tendencia_asr(tabla: pd.DataFrame, ruta_png: Path) -> Path:
             va="bottom",
             fontsize=9,
         )
-    ax.set_xlabel("Configuración")
+    ax.set_xlabel(COL_CONFIGURACION)
     ax.set_ylabel("ASR promedio (%) — media sin ponderar entre vectores")
     ax.set_ylim(0, max(valores + [10]) * 1.2)
     ax.set_title("Tendencia de ASR promedio por configuración (C0 → C6)")

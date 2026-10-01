@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
+import pytest
 
 from analisis.fusionar_latencia_clasificador import (
+    RAIZ,
+    cargar_eventos_proxy,
     fusionar_latencia_clasificador,
 )
 
@@ -186,3 +191,18 @@ def test_empareja_por_posicion_ordenando_por_timestamp() -> None:
     fila_tardia = fusionado[fusionado["timestamp"].str.startswith("2026-09-07T19:52")]
     assert fila_temprana.iloc[0]["latencia_clasificador_ms"] == "111"
     assert fila_tardia.iloc[0]["latencia_clasificador_ms"] == "222"
+
+
+def test_cargar_eventos_proxy_rechaza_directorio_fuera_del_repo(tmp_path: Path) -> None:
+    fuera_del_repo = tmp_path / "en-otro-lado"
+    fuera_del_repo.mkdir()
+
+    with pytest.raises(ValueError, match="fuera de"):
+        cargar_eventos_proxy(fuera_del_repo)
+
+
+def test_cargar_eventos_proxy_acepta_directorio_dentro_del_repo() -> None:
+    edf = cargar_eventos_proxy(RAIZ / "resultados")
+
+    assert "latencia_clasificador_ms" in edf.columns
+    assert "fecha" in edf.columns
