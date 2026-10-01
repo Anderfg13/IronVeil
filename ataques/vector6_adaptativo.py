@@ -74,12 +74,6 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from ataques.vector5_carga import (  # noqa: E402
-    CONFIGURACIONES_VALIDAS,
-    validar_configuracion_consistente,
-    validar_host_laboratorio_propio,
-    validar_ruta_salida_segura,
-)
 from ataques.vectores_1_2_3 import (  # noqa: E402
     RRHH_SECRET,
     SPT_SECRET,
@@ -87,8 +81,9 @@ from ataques.vectores_1_2_3 import (  # noqa: E402
     TEXTO_REDACTADO,
     ContextoEjecucion,
     _chat,
+    construir_parser_estandar,
+    preparar_ejecucion,
 )
-from proxy.mecanismos import CONFIG_PATH, FLAGS_REQUERIDAS, cargar_config  # noqa: E402
 
 LOGGER = logging.getLogger("ataques.vector6_adaptativo")
 
@@ -536,44 +531,11 @@ def _ruta_salida_defecto(configuracion: str) -> Path:
 
 
 def _parsear_argumentos(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description=(
-            "V6: 3 variantes adaptativas disenadas para explotar la cadena "
-            "completa de 5 mecanismos en conjunto, no uno individual."
-        )
+    parser = construir_parser_estandar(
+        "V6: 3 variantes adaptativas disenadas para explotar la cadena "
+        "completa de 5 mecanismos en conjunto, no uno individual.",
+        "resultados/<fecha>/vector6_adaptativo_<config>_<hora>.jsonl",
     )
-    parser.add_argument(
-        "--configuracion",
-        required=True,
-        choices=CONFIGURACIONES_VALIDAS,
-        help="Configuracion (C0..C6) bajo la que se corre esta ejecucion.",
-    )
-    parser.add_argument(
-        "--url-proxy",
-        default="http://localhost:8000",
-        help="Base URL del proxy (default: %(default)s).",
-    )
-    parser.add_argument(
-        "--config-path",
-        type=Path,
-        default=CONFIG_PATH,
-        help="Ruta a config.yaml a leer (default: la raiz del repo).",
-    )
-    parser.add_argument(
-        "--salida",
-        type=Path,
-        default=None,
-        help=(
-            "Ruta del JSONL de salida (default: "
-            "resultados/<fecha>/vector6_adaptativo_<config>_<hora>.jsonl)."
-        ),
-    )
-    parser.add_argument(
-        "--permitir-host-remoto",
-        action="store_true",
-        help="Permite un host fuera de localhost/Docker (usar con extremo cuidado).",
-    )
-    parser.add_argument("--verbose", action="store_true", help="Logging a nivel DEBUG.")
     return parser.parse_args(argv)
 
 
@@ -584,25 +546,17 @@ def main(argv: list[str] | None = None) -> None:
         format="%(asctime)s %(levelname)s %(message)s",
     )
 
-    validar_host_laboratorio_propio(args.url_proxy, args.permitir_host_remoto)
-
-    config = cargar_config(args.config_path)
-    mecanismos_activos = [nombre for nombre in FLAGS_REQUERIDAS if config[nombre]]
-    validar_configuracion_consistente(args.configuracion, mecanismos_activos)
-
-    ctx = ContextoEjecucion(
-        args.url_proxy, args.url_proxy, args.configuracion, mecanismos_activos
+    # V6 nunca usa Ollama directo (no hay variante tipo V1-C/V2-A aqui);
+    # preparar_ejecucion repite --url-proxy como placeholder valido.
+    ctx, salida_path = preparar_ejecucion(
+        args, _ruta_salida_defecto(args.configuracion)
     )
-    salida_path = validar_ruta_salida_segura(
-        args.salida or _ruta_salida_defecto(args.configuracion)
-    )
-    salida_path.parent.mkdir(parents=True, exist_ok=True)
 
     LOGGER.info(
         "Iniciando V6 (3 variantes adaptativas) configuracion=%s "
         "mecanismos_activos=%s -> %s",
         args.configuracion,
-        mecanismos_activos,
+        ctx.mecanismos_activos,
         salida_path,
     )
 

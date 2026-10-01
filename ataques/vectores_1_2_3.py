@@ -667,10 +667,18 @@ def _ruta_salida_defecto(configuracion: str) -> Path:
     )
 
 
-def _parsear_argumentos(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Ejecuta V1, V2 y V3 de variantes_ataque.md contra el stack propio."
-    )
+def construir_parser_estandar(
+    descripcion: str, nombre_salida_defecto: str
+) -> argparse.ArgumentParser:
+    """Arma el parser de argumentos comun a los scripts de `ataques/`
+    (`--configuracion`, `--url-proxy`, `--config-path`, `--salida`,
+    `--permitir-host-remoto`, `--verbose`) -- identico en este archivo,
+    `vector4_movimiento_lateral.py` y `vector6_adaptativo.py` hasta que
+    SonarCloud lo marco como codigo duplicado. Cada script sigue agregando
+    despues los argumentos que sean exclusivamente suyos (p. ej.
+    `--url-ollama-directo`, mas abajo).
+    """
+    parser = argparse.ArgumentParser(description=descripcion)
     parser.add_argument(
         "--configuracion",
         required=True,
@@ -683,16 +691,6 @@ def _parsear_argumentos(argv: list[str] | None = None) -> argparse.Namespace:
         help="Base URL del proxy (default: %(default)s).",
     )
     parser.add_argument(
-        "--url-ollama-directo",
-        default="http://localhost:11434",
-        help=(
-            "Base URL para probar acceso directo a Ollama, sin pasar por el "
-            "proxy (V1-C, V2-A). Debe seguir representando lo que ve un "
-            "atacante externo, no la red interna de Docker (default: "
-            "%(default)s)."
-        ),
-    )
-    parser.add_argument(
         "--config-path",
         type=Path,
         default=CONFIG_PATH,
@@ -702,10 +700,7 @@ def _parsear_argumentos(argv: list[str] | None = None) -> argparse.Namespace:
         "--salida",
         type=Path,
         default=None,
-        help=(
-            "Ruta del JSONL de salida (default: "
-            "resultados/<fecha>/vectores_1_2_3_<config>_<hora>.jsonl)."
-        ),
+        help=f"Ruta del JSONL de salida (default: {nombre_salida_defecto}).",
     )
     parser.add_argument(
         "--permitir-host-remoto",
@@ -713,6 +708,51 @@ def _parsear_argumentos(argv: list[str] | None = None) -> argparse.Namespace:
         help="Permite un host fuera de localhost/Docker (usar con extremo cuidado).",
     )
     parser.add_argument("--verbose", action="store_true", help="Logging a nivel DEBUG.")
+    return parser
+
+
+def preparar_ejecucion(
+    args: argparse.Namespace,
+    ruta_defecto: Path,
+    url_ollama_directo: str | None = None,
+) -> tuple[ContextoEjecucion, Path]:
+    """Prologo comun de `main()`: valida host y coherencia de configuracion,
+    arma `ContextoEjecucion` y resuelve+crea la ruta de salida. El llamador
+    sigue siendo responsable de su propio `logging.basicConfig()` (antes de
+    invocar esto) y del bucle que ejecuta sus variantes (despues).
+    """
+    validar_host_laboratorio_propio(args.url_proxy, args.permitir_host_remoto)
+
+    config = cargar_config(args.config_path)
+    mecanismos_activos = [nombre for nombre in FLAGS_REQUERIDAS if config[nombre]]
+    validar_configuracion_consistente(args.configuracion, mecanismos_activos)
+
+    ctx = ContextoEjecucion(
+        args.url_proxy,
+        url_ollama_directo or args.url_proxy,
+        args.configuracion,
+        mecanismos_activos,
+    )
+    salida_path = validar_ruta_salida_segura(args.salida or ruta_defecto)
+    salida_path.parent.mkdir(parents=True, exist_ok=True)
+    return ctx, salida_path
+
+
+def _parsear_argumentos(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = construir_parser_estandar(
+        "Ejecuta V1, V2 y V3 de variantes_ataque.md contra el stack propio.",
+        "resultados/<fecha>/vectores_1_2_3_<config>_<hora>.jsonl",
+    )
+    parser.add_argument(
+        "--url-ollama-directo",
+        default="http://localhost:11434",
+        help=(
+            "Base URL para probar acceso directo a Ollama, sin pasar por el "
+            "proxy (V1-C, V2-A). Debe seguir representando lo que ve un "
+            "atacante externo, no la red interna de Docker (default: "
+            "%(default)s)."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -723,24 +763,14 @@ def main(argv: list[str] | None = None) -> None:
         format="%(asctime)s %(levelname)s %(message)s",
     )
 
-    validar_host_laboratorio_propio(args.url_proxy, args.permitir_host_remoto)
-
-    config = cargar_config(args.config_path)
-    mecanismos_activos = [nombre for nombre in FLAGS_REQUERIDAS if config[nombre]]
-    validar_configuracion_consistente(args.configuracion, mecanismos_activos)
-
-    ctx = ContextoEjecucion(
-        args.url_proxy, args.url_ollama_directo, args.configuracion, mecanismos_activos
+    ctx, salida_path = preparar_ejecucion(
+        args, _ruta_salida_defecto(args.configuracion), args.url_ollama_directo
     )
-    salida_path = validar_ruta_salida_segura(
-        args.salida or _ruta_salida_defecto(args.configuracion)
-    )
-    salida_path.parent.mkdir(parents=True, exist_ok=True)
 
     LOGGER.info(
         "Iniciando V1+V2+V3 configuracion=%s mecanismos_activos=%s -> %s",
         args.configuracion,
-        mecanismos_activos,
+        ctx.mecanismos_activos,
         salida_path,
     )
 
