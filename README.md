@@ -26,6 +26,13 @@ clasificador, si está activo) al arrancar, y mantiene cada modelo cargado
 en memoria `OLLAMA_KEEP_ALIVE` (default 30m) entre peticiones — pensado
 para que la demo en vivo no pague el costo de arranque en frío.
 
+**Extensiones opcionales** (apagadas por defecto): herramientas **simuladas**
+para un modelo `rrhh-agente` (Excessive Agency; nada se ejecuta sin pasar por
+la cola de revisión humana) y notificaciones por webhook / Slack / correo /
+WhatsApp cuando una petición queda en esa cola. Se activan con las variables
+de `.env.example`; ver `ataques/variantes_ataque.md` (Vector 7) y
+`docs/arquitectura.md` sección 6.
+
 **Para quien escribe el informe LaTeX:** la tabla maestra de resultados
 (Sección 7.3), la gráfica de tendencia de ASR y el primer borrador de la
 conclusión ya están generados — ver `analisis/conclusion_borrador.md`

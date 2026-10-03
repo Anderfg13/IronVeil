@@ -56,6 +56,20 @@ services:
       # de Ollama, para que una pausa entre peticiones (demo en vivo,
       # bateria de ataques con huecos) no fuerce una recarga en frio.
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
+      # Extensiones opcionales (vacias = apagadas). Ver .env.example.
+      MODELOS_CON_HERRAMIENTAS: ${MODELOS_CON_HERRAMIENTAS:-}
+      NOTIFICAR_WEBHOOK_URL: ${NOTIFICAR_WEBHOOK_URL:-}
+      NOTIFICAR_SLACK_WEBHOOK_URL: ${NOTIFICAR_SLACK_WEBHOOK_URL:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USUARIO: ${SMTP_USUARIO:-}
+      SMTP_CLAVE: ${SMTP_CLAVE:-}
+      SMTP_REMITENTE: ${SMTP_REMITENTE:-}
+      NOTIFICAR_CORREO_DESTINO: ${NOTIFICAR_CORREO_DESTINO:-}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_WHATSAPP_ORIGEN: ${TWILIO_WHATSAPP_ORIGEN:-}
+      NOTIFICAR_WHATSAPP_DESTINO: ${NOTIFICAR_WHATSAPP_DESTINO:-}
     volumes:
       # Monta config.yaml (no se copia en la imagen) para poder cambiar de
       # configuracion (C0..C6) con solo editar el archivo y reiniciar el

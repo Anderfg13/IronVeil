@@ -171,7 +171,12 @@ Esta es la estructura **objetivo**. Lo marcado `[ya existe]` está en el repo ho
 /proxy/                 main.py (FastAPI) [ya existe], mecanismos.py, cola.py,
                         siem.py (andamiaje Adapter para exportar a un SIEM
                         futuro, aun no cableado a /chat — ver su docstring)
-/ollama/modelfiles/     Modelfile.soporte.template, Modelfile.rrhh.template [ya existen]
+                        herramientas.py + notificaciones.py (EXTENSIONES opcionales:
+                        herramientas SIMULADAS de rrhh-agente y avisos por webhook/
+                        Slack/correo/WhatsApp cuando aprobacion humana encola;
+                        apagadas por defecto, ver .env.example)
+/ollama/modelfiles/     Modelfile.soporte.template, Modelfile.rrhh.template [ya existen],
+                        Modelfile.rrhh_agente.template (extension, herramientas simuladas)
 /tests/                 pruebas unitarias y de integración
 /ataques/               variantes_ataque.md, vector4_*.py, vector5_*.py, promptfooconfig.yaml
 /resultados/            resultados_template.csv, /YYYY-MM-DD/ logs crudos, /graficas/

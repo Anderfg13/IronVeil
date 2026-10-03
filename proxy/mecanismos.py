@@ -659,6 +659,9 @@ def _interpretar_respuesta_llama_guard(contenido: str) -> bool:
 PREFIJOS_POR_MODELO: dict[str, str] = {
     "soporte": "SPT",
     "rrhh": "RRHH",
+    # Extension (Excessive Agency): variante de rrhh con herramientas
+    # simuladas; misma credencial propia.
+    "rrhh-agente": "RRHH",
 }
 
 # PATRON_CREDENCIAL_GENERICO (definido arriba, junto a las constantes de

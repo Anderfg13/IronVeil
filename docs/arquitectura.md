@@ -298,6 +298,28 @@ con `json.dumps(evento, ensure_ascii=False)` + salto de línea.
     ráfaga contra `/chat`, con cualquier mecanismo activo, corría el mismo
     riesgo). Corregido con un `threading.Lock` (`_registro_lock`) alrededor
     de la escritura — ver `docs/FUENTE_DE_VERDAD.md`, sección 9.
+- **Extensiones opcionales (apagadas por defecto, no tocan el núcleo):**
+  - `proxy/herramientas.py` + modelo `rrhh-agente`
+    (`ollama/modelfiles/Modelfile.rrhh_agente.template`): function calling
+    nativo de Ollama con dos herramientas **SIMULADAS** (`enviar_correo`,
+    `consultar_base_datos`: solo escriben en el log, ningún efecto real).
+    Solo se activan para los modelos listados en `MODELOS_CON_HERRAMIENTAS`.
+    El modelo únicamente *solicita* una herramienta;
+    `_gestionar_llamadas_a_herramientas()` (llamada desde
+    `_completar_peticion()`) la encola en la cola de revisión humana si
+    `aprobacion_humana` está activa y la deniega si no — nunca se ejecuta
+    sin pasar por la cola. `POST /revision/{id}/aprobar` ejecuta entonces la
+    versión simulada (`_aprobar_herramienta()`). Es un modelo distinto de
+    `rrhh` a propósito: cambiar el system prompt de `rrhh` invalidaría la
+    comparación entre las 7 configuraciones ya medidas.
+  - `proxy/notificaciones.py`: cada vez que aprobación humana coloca una
+    petición en la cola (límite de tasa, bloqueo de otro mecanismo o
+    solicitud de herramienta), `_notificar_en_revision()` avisa por los
+    canales configurados por variables de entorno (webhook genérico, Slack,
+    correo SMTP, WhatsApp vía Twilio). **No bloqueante**: hilo daemon, un
+    `try/except` y un timeout por canal; un fallo solo pierde la
+    notificación. El mensaje lleva mecanismo/motivo, vector, configuración y
+    timestamp, nunca el texto de la petición.
 - `proxy/mecanismos.py`: las 5 funciones tienen lógica real. `filtrar()`
   bloquea en entrada por patrones de prompt injection y redacta
   credenciales canario en salida. `delimitar()` envuelve la entrada del
