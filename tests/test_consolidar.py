@@ -564,3 +564,40 @@ def test_calcular_costo_operativo_sin_decisiones_deja_tiempos_vacios() -> None:
 
     assert fila["Decisiones humanas registradas (n)"] == 0
     assert fila["Tiempo revisión media (ms)"] is None
+
+
+# --- cargar_resultados(): las extensiones opcionales no entran al nucleo ---
+
+
+def _csv_con_extension(tmp_path: Path) -> Path:
+    columnas = (
+        "timestamp,configuracion,mecanismos_activos,vector_probado,"
+        "modelo_destino,resultado,mecanismo_que_bloqueo,latencia_ms,es_extension"
+    )
+    filas = [
+        "2026-10-01T10:00:00-05:00,C0,,V3-A,soporte,exitoso_para_atacante,,10,",
+        "2026-10-02T10:00:00-05:00,C0,,V7-A,rrhh-agente," "permitido_normal,,20,True",
+    ]
+    ruta = tmp_path / "resultados.csv"
+    ruta.write_text("\n".join([columnas, *filas]) + "\n", encoding="utf-8")
+    return ruta
+
+
+def test_cargar_resultados_excluye_las_filas_de_extension_por_defecto(
+    tmp_path: Path,
+) -> None:
+    from analisis.consolidar import cargar_resultados
+
+    df = cargar_resultados(_csv_con_extension(tmp_path))
+
+    assert list(df["vector_probado"]) == ["V3-A"]
+
+
+def test_cargar_resultados_puede_incluir_la_extension_si_se_pide(
+    tmp_path: Path,
+) -> None:
+    from analisis.consolidar import cargar_resultados
+
+    df = cargar_resultados(_csv_con_extension(tmp_path), incluir_extension=True)
+
+    assert list(df["vector_probado"]) == ["V3-A", "V7-A"]

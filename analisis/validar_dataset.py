@@ -81,6 +81,9 @@ CAMPOS_BASE = (
 # deliberadamente un nombre inexistente ("noexiste"). Documentado en
 # docs/LIMPIEZA_DATOS.md -- no es un hallazgo para esos vectores.
 MODELOS_VALIDOS = frozenset({"soporte", "rrhh"})
+# Las filas de la extension opcional (es_extension == "True") pueden apuntar
+# ademas al modelo con herramientas simuladas.
+MODELOS_VALIDOS_EXTENSION = frozenset({"rrhh-agente"})
 PATRON_VECTOR_V1 = re.compile(r"^V1-")
 
 PATRON_CONFIGURACION_CANONICA = re.compile(r"^C[0-6]$")
@@ -427,7 +430,15 @@ def verificar_modelo_destino_dominio(df: pd.DataFrame) -> list[Hallazgo]:
     diseno (ver docs/LIMPIEZA_DATOS.md).
     """
     es_v1 = df["vector_probado"].str.match(PATRON_VECTOR_V1)
-    invalido = ~df["modelo_destino"].isin(MODELOS_VALIDOS) & ~es_v1
+    es_extension = (
+        df["es_extension"].str.lower().eq("true")
+        if "es_extension" in df.columns
+        else pd.Series(False, index=df.index)
+    )
+    valido_extension = es_extension & df["modelo_destino"].isin(
+        MODELOS_VALIDOS_EXTENSION
+    )
+    invalido = ~df["modelo_destino"].isin(MODELOS_VALIDOS) & ~es_v1 & ~valido_extension
     if not invalido.any():
         return []
     valores = sorted(df.loc[invalido, "modelo_destino"].unique())

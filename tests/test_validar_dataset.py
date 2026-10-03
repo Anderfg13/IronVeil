@@ -242,3 +242,19 @@ def test_filas_duplicadas_exactas_se_reportan() -> None:
 
     assert len(hallazgos) == 1
     assert hallazgos[0].filas_afectadas == 2
+
+
+def test_rrhh_agente_es_valido_solo_en_filas_de_extension() -> None:
+    en_extension = _df(
+        [
+            _fila(
+                vector_probado="V7-A",
+                modelo_destino="rrhh-agente",
+                es_extension="True",
+            )
+        ]
+    )
+    en_el_nucleo = _df([_fila(vector_probado="V3-A", modelo_destino="rrhh-agente")])
+
+    assert verificar_modelo_destino_dominio(en_extension) == []
+    assert len(verificar_modelo_destino_dominio(en_el_nucleo)) == 1

@@ -183,6 +183,9 @@ Esta es la estructura **objetivo**. Lo marcado `[ya existe]` está en el repo ho
 /ataques/               variantes_ataque.md, vector4_*.py, vector5_*.py, promptfooconfig.yaml
 /resultados/            resultados_template.csv, /YYYY-MM-DD/ logs crudos, /graficas/
 /analisis/              consolidar.py, validar_dataset.py, análisis en Markdown
+                        (extension_agencia_excesiva.py: resumen de la extensión V7; sus
+                        filas del CSV llevan es_extension=True y cargar_resultados() las
+                        excluye del núcleo)
 /docs/                  arquitectura.md [ya existe], FUENTE_DE_VERDAD.md [ya existe, por rellenar],
                         CONFLICTOS_RESUELTOS.md, LIMPIEZA_DATOS.md, CHECKLIST_ENTREGA.md
 /informe/               main.tex, PDF compilado

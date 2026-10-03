@@ -73,11 +73,20 @@ COLUMNAS_TIEMPO_COSTO = {
 }
 
 
-def cargar_resultados(ruta_csv: Path) -> pd.DataFrame:
+def cargar_resultados(
+    ruta_csv: Path, *, incluir_extension: bool = False
+) -> pd.DataFrame:
     """Lee resultados_template.csv y valida que tenga las columnas minimas.
 
     No modifica el archivo. Falla ruidosamente si faltan columnas del
     esquema de 8 campos base (ver docs/arquitectura.md, seccion 5).
+
+    Por defecto EXCLUYE las filas de extensiones opcionales
+    (`es_extension == "True"`, p. ej. Excessive Agency, V7): son una seccion
+    aparte del CSV y no pertenecen a las 7 configuraciones del nucleo que
+    responden la pregunta de investigacion. Todas las tablas, matrices y
+    graficas del nucleo pasan por aqui, asi que ninguna las mezcla.
+    `incluir_extension=True` solo para quien analiza la extension.
     """
     if not ruta_csv.exists():
         raise FileNotFoundError(f"No existe el CSV de resultados: {ruta_csv}")
@@ -87,6 +96,9 @@ def cargar_resultados(ruta_csv: Path) -> pd.DataFrame:
     faltantes = [c for c in COLUMNAS_REQUERIDAS if c not in df.columns]
     if faltantes:
         raise ValueError(f"Faltan columnas requeridas en {ruta_csv}: {faltantes}")
+
+    if not incluir_extension and "es_extension" in df.columns:
+        df = df[df["es_extension"].str.lower() != "true"].reset_index(drop=True)
 
     return df
 

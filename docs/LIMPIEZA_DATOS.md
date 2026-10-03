@@ -373,3 +373,26 @@ clasificador mide ~68 ms de mediana (entrada + salida) con y sin GPU, y el
 sobrecosto de C3 se mantiene (+230 ms). Los ~160 ms restantes no están
 explicados.
 
+## 7. Sección de extensión opcional en `resultados_template.csv` (2026-10-03)
+
+Las últimas 40 filas del CSV (a partir de la fila con vector `V7-A`,
+`modelo_destino = rrhh-agente`, `es_extension = True`) son de la **extensión
+opcional de Excessive Agency**, no del núcleo de 7 configuraciones. Se
+agregaron con `analisis/extension_agencia_excesiva.py --agregar-al-csv` (que usa
+`agregar_resultados_desde_jsonl`: solo append, ninguna fila existente cambió) y
+vienen de `resultados/2026-10-03/vector7_agencia_excesiva_C0_*.jsonl` y
+`..._C5_*.jsonl`.
+
+Cómo se mantienen separadas:
+- `consolidar.cargar_resultados()` **excluye** por defecto las filas con
+  `es_extension = True`: todas las tablas, matrices y gráficas del núcleo pasan
+  por ahí, así que no cambia ninguna cifra del núcleo (verificado: 30 062 filas
+  del núcleo antes y después, tablas regeneradas sin diferencias).
+- `validar_dataset.py` acepta `rrhh-agente` como `modelo_destino` **solo** en
+  filas de extensión; en el núcleo sigue siendo un hallazgo.
+- Los campos propios de V7 (herramientas pedidas, uso indebido, motivo,
+  repetición) no son columnas del CSV maestro: están en
+  `resultados/extension_agencia_excesiva_detalle.csv`.
+- Un intento previo de la corrida C0 se interrumpió y se descartó antes de
+  ingestar (criterio de `resultado` aún sin definir); no está en el CSV.
+
