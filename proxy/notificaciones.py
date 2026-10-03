@@ -133,6 +133,23 @@ def _contexto_tls() -> ssl.SSLContext:
     return contexto
 
 
+def _abrir_smtp(host: str, puerto: int) -> smtplib.SMTP:
+    """Conexion SMTP cifrada: SMTPS (`SMTP_SSL=1`, p. ej. 465) o, por defecto,
+    conexion en claro que se eleva de inmediato con STARTTLS (p. ej. 587), antes
+    de enviar credenciales o mensaje. Nunca se devuelve una sesion sin TLS."""
+    if os.getenv("SMTP_SSL") == "1":
+        return smtplib.SMTP_SSL(
+            host, puerto, timeout=TIMEOUT_NOTIFICACION_S, context=_contexto_tls()
+        )
+    servidor = smtplib.SMTP(host, puerto, timeout=TIMEOUT_NOTIFICACION_S)
+    try:
+        servidor.starttls(context=_contexto_tls())
+    except Exception:
+        servidor.close()
+        raise
+    return servidor
+
+
 def _enviar_correo(evento: dict[str, Any]) -> None:
     host = os.environ["SMTP_HOST"]
     puerto = int(os.getenv("SMTP_PORT", "587"))
@@ -144,18 +161,7 @@ def _enviar_correo(evento: dict[str, Any]) -> None:
     mensaje["To"] = os.environ["NOTIFICAR_CORREO_DESTINO"]
     mensaje.set_content(formatear_texto(evento))
 
-    if os.getenv("SMTP_SSL") == "1":
-        servidor: smtplib.SMTP = smtplib.SMTP_SSL(
-            host,
-            puerto,
-            timeout=TIMEOUT_NOTIFICACION_S,
-            context=_contexto_tls(),
-        )
-    else:
-        servidor = smtplib.SMTP(host, puerto, timeout=TIMEOUT_NOTIFICACION_S)
-    with servidor:
-        if os.getenv("SMTP_SSL") != "1":
-            servidor.starttls(context=_contexto_tls())
+    with _abrir_smtp(host, puerto) as servidor:
         if usuario:
             servidor.login(usuario, clave)
         servidor.send_message(mensaje)

@@ -42,7 +42,9 @@ def main() -> None:
     servidor = HTTPServer(("127.0.0.1", PUERTO), Receptor)
     sys.stdout.write(f"Esperando avisos en 127.0.0.1:{PUERTO} ...\n")
     sys.stdout.flush()
-    servidor.serve_forever()
+    # HTTP en claro A PROPOSITO: receptor de la demo, solo en 127.0.0.1 (no sale
+    # de la maquina) y sin datos sensibles; los avisos reales van por HTTPS.
+    servidor.serve_forever()  # NOSONAR
 
 
 if __name__ == "__main__":

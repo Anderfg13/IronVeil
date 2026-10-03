@@ -8,6 +8,7 @@ webhook que dispara el proxy. Slack, correo y WhatsApp se prueban con dobles
 from __future__ import annotations
 
 import json
+import smtplib
 import ssl
 import threading
 import time
@@ -389,3 +390,52 @@ def test_una_peticion_normal_no_dispara_notificacion(
 )
 def test_url_del_webhook_exige_https_salvo_laboratorio(url: str, valida: bool) -> None:
     assert notificaciones._url_http_valida(url) is valida
+
+
+# --- SMTP: STARTTLS inmediato, cierre si falla y SMTPS con contexto verificado ---
+
+
+def test_si_starttls_falla_se_cierra_la_conexion_y_no_se_envia_nada(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SMTP_HOST", "smtp.ejemplo.test")
+    monkeypatch.setenv("NOTIFICAR_CORREO_DESTINO", "yo@ejemplo.test")
+    monkeypatch.delenv("SMTP_SSL", raising=False)
+    eventos: list[str] = []
+
+    class _SMTPSinTLS:
+        def __init__(self, host: str, puerto: int, timeout: float) -> None:
+            eventos.append("conectar")
+
+        def starttls(self, *, context: ssl.SSLContext) -> None:
+            raise smtplib.SMTPNotSupportedError("sin STARTTLS")
+
+        def close(self) -> None:
+            eventos.append("cerrar")
+
+        def send_message(self, mensaje: Any) -> None:
+            eventos.append("enviar")
+
+    monkeypatch.setattr(notificaciones.smtplib, "SMTP", _SMTPSinTLS)
+
+    assert notificaciones.enviar_notificaciones(_evento()) == {"correo": False}
+    assert eventos == ["conectar", "cerrar"]
+
+
+def test_smtps_usa_un_contexto_que_verifica_certificado(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SMTP_SSL", "1")
+    recibido: dict[str, Any] = {}
+
+    def _smtp_ssl_falso(host: str, puerto: int, **kwargs: Any) -> str:
+        recibido.update(kwargs)
+        return "conexion"
+
+    monkeypatch.setattr(notificaciones.smtplib, "SMTP_SSL", _smtp_ssl_falso)
+
+    assert notificaciones._abrir_smtp("smtp.ejemplo.test", 465) == "conexion"
+    contexto = recibido["context"]
+    assert contexto.verify_mode == ssl.CERT_REQUIRED
+    assert contexto.check_hostname is True
+    assert contexto.minimum_version >= ssl.TLSVersion.TLSv1_2
