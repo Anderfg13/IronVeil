@@ -320,6 +320,16 @@ con `json.dumps(evento, ensure_ascii=False)` + salto de línea.
     `try/except` y un timeout por canal; un fallo solo pierde la
     notificación. El mensaje lleva mecanismo/motivo, vector, configuración y
     timestamp, nunca el texto de la petición.
+  - `proxy/siem.py` — `exportar_a_siem(evento, formato="json"|"cef") -> str`:
+    función **pura** (sin red ni disco; aún NO cableada a `/chat`, el
+    punto de integración sigue siendo `_registrar_evento()`) que convierte un
+    evento del log interno a JSON de una línea para el `log_format json` de
+    Wazuh (campos con su nombre original, listas aplanadas a cadena, `null`
+    omitido porque Wazuh lo vuelve la cadena `"null"`, marca
+    `integration: "ironveil"`) o a CEF:0. Falla con `ValueError` si falta
+    alguno de los 8 campos base. Reglas de Wazuh en
+    `docs/siem/wazuh/ironveil_rules.xml` (IDs 100100-100103 por resultado,
+    100104 por ráfaga) y lote por lotes en `analisis/exportar_lote_siem.py`.
 - `proxy/mecanismos.py`: las 5 funciones tienen lógica real. `filtrar()`
   bloquea en entrada por patrones de prompt injection y redacta
   credenciales canario en salida. `delimitar()` envuelve la entrada del

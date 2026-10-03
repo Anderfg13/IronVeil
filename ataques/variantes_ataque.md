@@ -247,7 +247,7 @@ evento puntual.
 
 ---
 
-## Vector 7 — Excessive Agency (EXTENSIÓN OPCIONAL, herramientas simuladas)
+## Extensión: Excessive Agency (Vector 7, herramientas simuladas)
 
 **No es parte de los 5 vectores del núcleo ni de la matriz de hipótesis de la
 Sección 6.5**: se reporta aparte (`es_extension = true`). Se ejecuta contra el

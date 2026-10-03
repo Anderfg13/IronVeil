@@ -30,7 +30,7 @@ para que la demo en vivo no pague el costo de arranque en frío.
 para un modelo `rrhh-agente` (Excessive Agency; nada se ejecuta sin pasar por
 la cola de revisión humana) y notificaciones por webhook / Slack / correo /
 WhatsApp cuando una petición queda en esa cola. Se activan con las variables
-de `.env.example`; ver `ataques/variantes_ataque.md` (Vector 7) y
+de `.env.example`; ver `ataques/variantes_ataque.md` (Extensión: Excessive Agency, V7) y
 `docs/arquitectura.md` sección 6.
 
 **Para quien escribe el informe LaTeX:** la tabla maestra de resultados
@@ -158,6 +158,22 @@ repositorio):
 | `BASE_MODEL`  | Modelo base de Ollama usado por `soporte` y `rrhh`.        |
 | `SPT_SECRET`  | Credencial ficticia (canario) del modelo `soporte`.        |
 | `RRHH_SECRET` | Credencial ficticia (canario) del modelo `rrhh`.            |
+
+## Wazuh / SIEM (extensión opcional, **pesada**)
+
+`proxy/siem.py` → `exportar_a_siem(evento)` convierte un evento del log a JSON
+para Wazuh (o a CEF con `formato="cef"`). Para probar la ingesta hay un Wazuh
+en Docker **aparte** de este `docker-compose.yml`; no se levanta con el resto
+del proyecto. **Antes de intentarlo en tu máquina:**
+
+| Recurso | Requisito |
+|---|---|
+| RAM | **8 GB libres para Docker** como mínimo (documentación oficial); en reposo usa ≈ 2,2 GiB, pero el arranque es mucho mayor. No lo levantes junto a Ollama con 8 GB de RAM totales. |
+| CPU | 4 núcleos o más |
+| Disco | ≈ 8 GB solo de imágenes (50 GB recomendados por Wazuh) |
+| Kernel | `vm.max_map_count=262144` (si no, el indexer no arranca) |
+
+Pasos, reglas y qué se verificó: `docs/siem/wazuh/LEEME.md`.
 
 ## Apagar el entorno
 

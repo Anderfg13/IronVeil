@@ -170,7 +170,9 @@ Esta es la estructura **objetivo**. Lo marcado `[ya existe]` está en el repo ho
 ```
 /proxy/                 main.py (FastAPI) [ya existe], mecanismos.py, cola.py,
                         siem.py (andamiaje Adapter para exportar a un SIEM
-                        futuro, aun no cableado a /chat — ver su docstring)
+                        futuro, aun no cableado a /chat — ver su docstring;
+                        incluye exportar_a_siem(evento, "json"|"cef"), funcion pura,
+                        y docs/siem/wazuh/ con reglas y guia de despliegue)
                         herramientas.py + notificaciones.py (EXTENSIONES opcionales:
                         herramientas SIMULADAS de rrhh-agente y avisos por webhook/
                         Slack/correo/WhatsApp cuando aprobacion humana encola;
