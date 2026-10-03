@@ -151,3 +151,41 @@ def test_agrega_sin_borrar_descartados_previos(
     assert len(en_descartados) == 2
     razones = {f["configuracion"]: f["razon_descarte"] for f in en_descartados}
     assert razones == {"C3": "primera razon", "C6": "segunda razon"}
+
+
+def test_vectores_base_limita_el_descarte_dentro_de_la_configuracion(
+    _redirigir_rutas: tuple[Path, Path],
+) -> None:
+    resultados, descartados = _redirigir_rutas
+    _escribir_csv(
+        resultados,
+        [
+            {
+                "timestamp": "t1",
+                "configuracion": "C0",
+                "vector_probado": "V4-A-paso1",
+                "resultado": "r",
+            },
+            {
+                "timestamp": "t2",
+                "configuracion": "C0",
+                "vector_probado": "V5-D",
+                "resultado": "r",
+            },
+            {
+                "timestamp": "t3",
+                "configuracion": "C1",
+                "vector_probado": "V4-A-paso2",
+                "resultado": "r",
+            },
+        ],
+    )
+
+    movidas = mover_a_descartados(["C0"], "razon de prueba", ["V1", "V4"])
+
+    assert movidas == 1
+    assert [f["vector_probado"] for f in _leer_csv(resultados)] == [
+        "V5-D",
+        "V4-A-paso2",
+    ]
+    assert [f["vector_probado"] for f in _leer_csv(descartados)] == ["V4-A-paso1"]

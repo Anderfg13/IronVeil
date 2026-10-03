@@ -1,0 +1,8 @@
+  <!-- IronVeil: un objeto JSON por linea (ver proxy/siem.py).
+       Pegar dentro de <ossec_config> en
+       single-node/config/wazuh_cluster/wazuh_manager.conf, ANTES de levantar
+       el stack. -->
+  <localfile>
+    <log_format>json</log_format>
+    <location>/var/log/ironveil/ironveil.json</location>
+  </localfile>

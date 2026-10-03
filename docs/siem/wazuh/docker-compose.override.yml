@@ -1,0 +1,11 @@
+# Override para el single-node oficial de wazuh-docker (v4.14.8).
+# Copiar junto a su docker-compose.yml: Compose lo fusiona automaticamente.
+# Monta las reglas de IronVeil y una carpeta donde se dejan los eventos
+# exportados (el manager la lee con el localfile de localfile_ironveil.xml).
+services:
+  wazuh.manager:
+    volumes:
+      - ./ironveil_rules.xml:/var/ossec/etc/rules/ironveil_rules.xml:ro
+      # IRONVEIL_SIEM_DIR = ruta absoluta de <IronVeil>/docs/siem/exportados, la
+      # misma carpeta donde escribe el proxy (SIEM_ARCHIVO_WAZUH).
+      - ${IRONVEIL_SIEM_DIR:-./ironveil_logs}:/var/log/ironveil

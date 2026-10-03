@@ -3,3 +3,6 @@ __pycache__/
 *.pyc
 .venv/
 *.log
+
+# Salida derivada/sintetica de analisis/exportar_lote_siem.py (no es evidencia)
+docs/siem/exportados/

@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 
 from analisis.consolidar import (
+    RAIZ,
     calcular_asr,
     calcular_costo_operativo,
     calcular_metrica_binaria_v4,
@@ -16,11 +17,38 @@ from analisis.consolidar import (
     extraer_vector_base,
     resumir_tiempo_revision_humana,
     unir_con_verificacion,
+    validar_ruta_salida_segura,
 )
 
 
 def _df(filas: list[dict[str, str]]) -> pd.DataFrame:
     return pd.DataFrame(filas)
+
+
+# --- validar_ruta_salida_segura() (CWE-22, path traversal) ---------------
+
+
+def test_validar_ruta_salida_segura_acepta_ruta_dentro_del_repo() -> None:
+    ruta = RAIZ / "analisis" / "salida_prueba.csv"
+
+    resuelta = validar_ruta_salida_segura(ruta)
+
+    assert resuelta == ruta.resolve()
+
+
+def test_validar_ruta_salida_segura_rechaza_ruta_fuera_del_repo() -> None:
+    ruta_fuera = RAIZ / ".." / "fuera_del_repo"
+
+    with pytest.raises(ValueError, match="fuera de"):
+        validar_ruta_salida_segura(ruta_fuera)
+
+
+def test_validar_ruta_salida_segura_respeta_base_custom(tmp_path: Path) -> None:
+    dentro = tmp_path / "sub"
+
+    resuelta = validar_ruta_salida_segura(dentro, base=tmp_path)
+
+    assert resuelta == dentro.resolve()
 
 
 def test_calcular_asr_dos_de_cuatro_da_50_por_ciento() -> None:
@@ -536,3 +564,40 @@ def test_calcular_costo_operativo_sin_decisiones_deja_tiempos_vacios() -> None:
 
     assert fila["Decisiones humanas registradas (n)"] == 0
     assert fila["Tiempo revisión media (ms)"] is None
+
+
+# --- cargar_resultados(): las extensiones opcionales no entran al nucleo ---
+
+
+def _csv_con_extension(tmp_path: Path) -> Path:
+    columnas = (
+        "timestamp,configuracion,mecanismos_activos,vector_probado,"
+        "modelo_destino,resultado,mecanismo_que_bloqueo,latencia_ms,es_extension"
+    )
+    filas = [
+        "2026-10-01T10:00:00-05:00,C0,,V3-A,soporte,exitoso_para_atacante,,10,",
+        "2026-10-02T10:00:00-05:00,C0,,V7-A,rrhh-agente," "permitido_normal,,20,True",
+    ]
+    ruta = tmp_path / "resultados.csv"
+    ruta.write_text("\n".join([columnas, *filas]) + "\n", encoding="utf-8")
+    return ruta
+
+
+def test_cargar_resultados_excluye_las_filas_de_extension_por_defecto(
+    tmp_path: Path,
+) -> None:
+    from analisis.consolidar import cargar_resultados
+
+    df = cargar_resultados(_csv_con_extension(tmp_path))
+
+    assert list(df["vector_probado"]) == ["V3-A"]
+
+
+def test_cargar_resultados_puede_incluir_la_extension_si_se_pide(
+    tmp_path: Path,
+) -> None:
+    from analisis.consolidar import cargar_resultados
+
+    df = cargar_resultados(_csv_con_extension(tmp_path), incluir_extension=True)
+
+    assert list(df["vector_probado"]) == ["V3-A", "V7-A"]

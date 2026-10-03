@@ -61,7 +61,23 @@ def _fila_desde_evento(evento: dict[str, object]) -> dict[str, str]:
 
 
 def agregar_desde_jsonl(rutas_jsonl: list[Path]) -> int:
-    """Agrega (append) al final de resultados_template.csv. Devuelve cuantas."""
+    """Agrega (append) al final de resultados_template.csv. Devuelve cuantas.
+
+    Nota de seguridad (SonarCloud marca esto como posible path traversal,
+    CWE-22, "faulty LLM-supplied CLI arguments"): a diferencia de las
+    rutas de SALIDA de ataques/*.py y analisis/consolidar.py (que si se
+    restringen a la raiz del repo con validar_ruta_salida_segura()), aqui
+    NO se restringe `rutas_jsonl` a ningun directorio -- es el diseno
+    explicito de la herramienta (ver docstring del modulo y su uso tipico):
+    recibe evidencia cruda de donde sea que viva (otra carpeta de
+    resultados/, un JSONL copiado de otra maquina, etc.), la fusiona en
+    resultados_template.csv, y nunca escribe fuera de ahi. Quien ejecuta
+    este script en su propia maquina ya tiene acceso de lectura a
+    cualquier archivo que pueda pasarle por CLI -- no cruza un limite de
+    privilegios. Revisado y marcado como "won't fix" en SonarCloud con
+    esta misma justificacion, en vez de restringir en silencio una
+    funcionalidad que el script necesita.
+    """
     filas: list[dict[str, str]] = []
     for ruta in rutas_jsonl:
         with ruta.open("r", encoding="utf-8") as f:

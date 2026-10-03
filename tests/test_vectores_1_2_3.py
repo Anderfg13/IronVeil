@@ -6,6 +6,8 @@ V1/V2/V3 contra el stack del equipo se corre manualmente, no en esta suite.
 
 from __future__ import annotations
 
+import pytest
+
 from ataques.vectores_1_2_3 import (
     RRHH_SECRET,
     SPT_SECRET,
@@ -93,3 +95,48 @@ def test_resultado_desde_chat_rechazo_propio_del_modelo_es_permitido_normal() ->
     assert resultado == "permitido_normal"
     assert mecanismo is None
     assert fuga is False
+
+
+def test_chat_respeta_la_pausa_entre_peticiones(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ataques import vectores_1_2_3 as modulo
+    from ataques.vectores_1_2_3 import ContextoEjecucion, _chat
+
+    pausas: list[float] = []
+
+    class _RespuestaFalsa:
+        status_code = 200
+
+        def json(self) -> dict[str, object]:
+            return {"respuesta": "ok"}
+
+    monkeypatch.setattr(modulo.time, "sleep", pausas.append)
+    monkeypatch.setattr(modulo.httpx, "post", lambda *a, **k: _RespuestaFalsa())
+    ctx = ContextoEjecucion(
+        "http://localhost:8000", "http://localhost:11434", "C5", [], 7.0
+    )
+
+    _chat(ctx, "soporte", "hola", "V2-A")
+
+    assert pausas == [7.0]
+
+
+def test_chat_sin_pausa_no_duerme(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ataques import vectores_1_2_3 as modulo
+    from ataques.vectores_1_2_3 import ContextoEjecucion, _chat
+
+    def _no_deberia_dormir(segundos: float) -> None:
+        raise AssertionError("no deberia dormir con pausa 0")
+
+    class _RespuestaFalsa:
+        status_code = 200
+
+        def json(self) -> dict[str, object]:
+            return {}
+
+    monkeypatch.setattr(modulo.time, "sleep", _no_deberia_dormir)
+    monkeypatch.setattr(modulo.httpx, "post", lambda *a, **k: _RespuestaFalsa())
+    ctx = ContextoEjecucion("http://localhost:8000", "http://localhost:11434", "C0", [])
+
+    _chat(ctx, "soporte", "hola", "V2-A")

@@ -15,12 +15,14 @@ junto a _CADENA_MECANISMOS. Ver CLAUDE.md, seccion 3.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
 import threading
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -33,11 +35,21 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 import proxy.cola as cola
+import proxy.herramientas as herramientas
 import proxy.mecanismos as mecanismos
+import proxy.notificaciones as notificaciones
+import proxy.siem as siem
 
 logger = logging.getLogger(__name__)
 
 OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
+# Mismo valor y misma justificacion que mecanismos.KEEP_ALIVE_OLLAMA
+# (repetido aqui, no importado, por la misma razon ya documentada ahi: que
+# cada modulo siga siendo independiente). Se manda en cada llamada a
+# Ollama (soporte/rrhh y el calentamiento) para que el modelo no se
+# descargue de memoria entre peticiones espaciadas -- ej. una demo en
+# vivo con pausas.
+KEEP_ALIVE_OLLAMA: str = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
 REQUEST_TIMEOUT: float = float(os.getenv("PROXY_REQUEST_TIMEOUT", "120"))
 RESULTADOS_DIR: Path = Path(__file__).resolve().parent.parent / "resultados"
 
@@ -73,6 +85,26 @@ _DETALLE_EN_REVISION: str = (
 # revisar V1 contra OWASP (ver docs/FUENTE_DE_VERDAD.md, seccion 9).
 _DETALLE_ERROR_OLLAMA: str = "No se pudo procesar la solicitud."
 
+# Documenta en el esquema OpenAPI (Swagger /docs) los codigos de error que
+# cada endpoint puede devolver ademas del 200 por defecto (SonarCloud:
+# "Document this HTTPException ... in the 'responses' parameter"). Mismos
+# mensajes genericos que ya usa el cliente real -- no se agrega detalle
+# nuevo aqui, solo se declara el codigo para que la documentacion generada
+# no mienta por omision.
+_RESPUESTAS_CHAT: dict[int | str, dict[str, str]] = {
+    400: {"description": _DETALLE_BLOQUEO},
+    429: {"description": _DETALLE_EN_REVISION},
+    502: {"description": _DETALLE_ERROR_OLLAMA},
+}
+_RESPUESTAS_RECHAZAR_REVISION: dict[int | str, dict[str, str]] = {
+    404: {"description": "No hay ninguna peticion en revision con ese id."},
+}
+_RESPUESTAS_APROBAR_REVISION: dict[int | str, dict[str, str]] = {
+    404: {"description": "No hay ninguna peticion en revision con ese id."},
+    422: {"description": "La herramienta solicitada no se pudo ejecutar."},
+    502: {"description": _DETALLE_ERROR_OLLAMA},
+}
+
 # Mecanismo 2 (delimitacion). Texto que el proxy coloca en el bloque
 # [INSTRUCCIONES DEL SISTEMA] del andamiaje de spotlighting.
 #
@@ -99,6 +131,12 @@ INSTRUCCIONES_CONFIABLES: dict[str, str] = {
         "Eres un asistente de Recursos Humanos. Ayudas con consultas sobre "
         f"nomina, vacaciones y politicas internas. {_REGLA_CONFIABLE_COMUN}"
     ),
+    # Extension (Excessive Agency): mismo rol que rrhh, con herramientas
+    # SIMULADAS (proxy/herramientas.py).
+    "rrhh-agente": (
+        "Eres un asistente de Recursos Humanos. Ayudas con consultas sobre "
+        f"nomina, vacaciones y politicas internas. {_REGLA_CONFIABLE_COMUN}"
+    ),
 }
 
 # Traduce la lista de mecanismos activos al nombre de configuracion oficial
@@ -115,7 +153,108 @@ _CONFIGURACIONES_CANONICAS: dict[frozenset[str], str] = {
     frozenset(mecanismos.FLAGS_REQUERIDAS): "C6",
 }
 
-app = FastAPI(title="IronVeil Proxy", version="0.1.0")
+# Mensaje minimo usado solo para forzar la carga de un modelo en memoria al
+# arrancar (ver _calentar_modelos()). Nunca se registra como un evento del
+# experimento -- no pasa por /chat, no tiene vector_probado ni config real
+# asociada, es puro "ping" de infraestructura.
+_MENSAJE_CALENTAMIENTO: str = "hola"
+
+# Cliente httpx compartido hacia Ollama: una sola conexion/pool TCP
+# reutilizada entre peticiones, en vez de abrir una conexion nueva (con su
+# propio handshake) en cada llamada a _llamar_ollama()/_calentar_modelo_
+# ollama(). Optimizacion pura de latencia, sin cambiar ningun
+# comportamiento observable -- a diferencia de otras formas de bajar
+# latencia consideradas (cachear clasificaciones, cuantizar modelos),
+# esta no tiene ninguna contrapartida de precision ni de validez de la
+# medicion.
+_cliente_http_ollama: httpx.AsyncClient | None = None
+
+
+def _obtener_cliente_http() -> httpx.AsyncClient:
+    """Crea el cliente compartido la primera vez que se necesita.
+
+    Seguro sin lock: _llamar_ollama()/_calentar_modelo_ollama() siempre
+    corren en el event loop principal de asyncio (nunca via
+    run_in_threadpool), y el constructor de AsyncClient no hace ningun
+    `await` -- no hay forma de que dos corrutinas se intercalen entre la
+    comprobacion y la asignacion. Contraste con
+    mecanismos._obtener_cliente_http_llama_guard(), que si necesita lock
+    porque corre en hilos reales del threadpool.
+    """
+    global _cliente_http_ollama
+    if _cliente_http_ollama is None:
+        _cliente_http_ollama = httpx.AsyncClient(timeout=REQUEST_TIMEOUT)
+    return _cliente_http_ollama
+
+
+async def _calentar_modelo_ollama(modelo: str) -> None:
+    """Dispara una peticion minima a Ollama para `modelo`, solo para que lo
+    cargue en memoria ahora en vez de en la primera peticion real. Deja que
+    cualquier excepcion se propague -- quien llama (`_calentar_modelos()`)
+    la atrapa con `asyncio.gather(..., return_exceptions=True)`.
+    """
+    payload = {
+        "model": modelo,
+        "messages": [{"role": "user", "content": _MENSAJE_CALENTAMIENTO}],
+        "stream": False,
+        "keep_alive": KEEP_ALIVE_OLLAMA,
+    }
+    client = _obtener_cliente_http()
+    respuesta = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload)
+    respuesta.raise_for_status()
+
+
+async def _calentar_clasificador() -> None:
+    """Fuerza la carga de los dos modelos del mecanismo 3: Prompt Guard
+    (entrada, transformers/Hugging Face) y Llama Guard (salida, Ollama).
+    Mismo motivo que `_calentar_modelo_ollama()`: pagar el costo de carga
+    ahora, no en la primera clasificacion real.
+    """
+    await run_in_threadpool(mecanismos.clasificar, _MENSAJE_CALENTAMIENTO, "entrada")
+    await run_in_threadpool(mecanismos.clasificar, _MENSAJE_CALENTAMIENTO, "salida")
+
+
+async def _calentar_modelos() -> None:
+    """Calienta, en paralelo, todos los modelos que esta instancia del proxy
+    podria necesitar: los dos modelos de chat (siempre) y el clasificador
+    (solo si 'clasificacion' esta activa en config.yaml en este momento).
+
+    Pensado para la demo en vivo (grabacion de la sustentacion): sin esto,
+    la primera peticion real pagaria el costo de arranque en frio -- hasta
+    varios minutos para Prompt Guard sin cache (docs/FUENTE_DE_VERDAD.md,
+    seccion 4). **Nunca bloquea el arranque del proxy ni hace fallar el
+    health check**: cada calentamiento que falle (Ollama todavia
+    iniciando, HF_TOKEN ausente, modelo no descargado, red no disponible)
+    se registra como advertencia, no como error -- es una optimizacion de
+    latencia, no un requisito para operar. El proxy funciona correctamente
+    sin haber calentado nada, solo mas lento en la primera peticion real de
+    cada modelo.
+    """
+    config = mecanismos.cargar_config(mecanismos.CONFIG_PATH)
+    tareas: dict[str, Awaitable[None]] = {
+        "modelo soporte": _calentar_modelo_ollama("soporte"),
+        "modelo rrhh": _calentar_modelo_ollama("rrhh"),
+    }
+    if config["clasificacion"]:
+        tareas["clasificador"] = _calentar_clasificador()
+
+    resultados = await asyncio.gather(*tareas.values(), return_exceptions=True)
+    for nombre, resultado in zip(tareas.keys(), resultados, strict=True):
+        if isinstance(resultado, BaseException):
+            logger.warning(
+                "Calentamiento de %s fallo (no bloqueante): %s", nombre, resultado
+            )
+        else:
+            logger.info("Calentamiento de %s completo.", nombre)
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    await _calentar_modelos()
+    yield
+
+
+app = FastAPI(title="IronVeil Proxy", version="0.1.0", lifespan=_lifespan)
 
 
 class ChatRequest(BaseModel):
@@ -164,7 +303,16 @@ PasoCadena = Callable[[str, str, str, _MetricasCadena], Awaitable[tuple[str, boo
 async def _paso_filtrado(
     texto: str, direccion: str, modelo: str, metricas: _MetricasCadena
 ) -> tuple[str, bool]:
-    """Mecanismo 1. En entrada bloquea por patron; en salida redacta la credencial."""
+    """Mecanismo 1. En entrada bloquea por patron; en salida redacta la credencial.
+
+    SonarCloud sugiere quitar `async` (esta funcion no usa `await`
+    internamente) -- falso positivo revisado y descartado: la firma tiene
+    que respetar `PasoCadena` (`Awaitable[tuple[str, bool]]`), el tipo
+    comun de `_CADENA_MECANISMOS`, porque `_ejecutar_cadena()` hace
+    `await paso(...)` de forma uniforme sobre los 3 pasos sin distinguir
+    cual de ellos si necesita red (`_paso_clasificacion`). Quitar `async`
+    aqui rompe esa lista polimorfica.
+    """
     return mecanismos.filtrar(texto, direccion)
 
 
@@ -197,6 +345,10 @@ async def _paso_minimo_privilegio(
     mecanismo (mecanismos.validar_privilegio() no toma `direccion`, ver su
     docstring). En "salida" nunca bloquea, para que la cadena de salida
     (filtrado/clasificacion) siga funcionando igual que hoy.
+
+    Mismo caso que `_paso_filtrado()`: SonarCloud sugiere quitar `async`
+    (no usa `await`); revisado y descartado por la misma razon -- el tipo
+    `PasoCadena` de `_CADENA_MECANISMOS` lo exige.
     """
     if direccion != "entrada":
         return texto, False
@@ -323,6 +475,10 @@ def _registrar_evento(evento: dict[str, Any]) -> None:
 
     Protegida con `_registro_lock`: sin esto, peticiones concurrentes
     (V5) pueden pisarse la escritura entre si y perder eventos completos.
+
+    Despues de la escritura del dataset (nunca en vez de ella) llama a
+    `_exportar_a_siem()`, que solo hace algo si `SIEM_ARCHIVO_WAZUH` esta
+    definida. El SIEM es un consumidor adicional: no reemplaza el dataset.
     """
     fecha = datetime.now().astimezone().strftime("%Y-%m-%d")
     directorio = RESULTADOS_DIR / fecha
@@ -331,6 +487,60 @@ def _registrar_evento(evento: dict[str, Any]) -> None:
         "a", encoding="utf-8"
     ) as f:
         f.write(json.dumps(evento, ensure_ascii=False) + "\n")
+    _exportar_a_siem(evento)
+
+
+# Variable de entorno con la ruta del archivo JSON Lines que vigila Wazuh
+# (`<localfile>` con `log_format json`). Vacia/ausente = exportacion apagada,
+# el proxy se comporta exactamente como antes. Se lee en cada llamada (no al
+# importar) para poder cambiarla sin reiniciar pruebas ni recargar modulos.
+SIEM_ARCHIVO_ENV = "SIEM_ARCHIVO_WAZUH"
+
+# Lock propio, distinto de `_registro_lock`: el SIEM es otro destino y no
+# debe competir por el mismo lock que protege el dataset del experimento.
+_siem_lock = threading.Lock()
+
+
+def _exportar_a_siem(evento: dict[str, Any]) -> None:
+    """Agrega `evento` en formato Wazuh JSON al archivo de `SIEM_ARCHIVO_WAZUH`.
+
+    **Sincrono a proposito**: el transporte es un append de UNA linea a un
+    archivo local (microsegundos, sin red); Wazuh es quien lo lee despues.
+    Un hilo aparte solo agregaria concurrencia y riesgo de perder eventos al
+    cerrar el proceso. Si el transporte fuese de red habria que desacoplarlo.
+
+    **Nunca rompe la peticion**: cualquier fallo (disco lleno, ruta
+    invalida, evento incompleto) se loggea con el tipo de excepcion y se
+    descarta -- la peticion y el dataset del experimento ya quedaron
+    registrados. Sin la variable definida no hace nada.
+    """
+    ruta = os.environ.get(SIEM_ARCHIVO_ENV, "").strip()
+    if not ruta:
+        return
+    try:
+        with _siem_lock:
+            siem.enviar_a_siem(
+                evento,
+                siem.FormateadorWazuhJSON(),
+                siem.ConectorArchivoLocal(Path(ruta)),
+            )
+    except Exception:  # noqa: BLE001 - el SIEM no debe tumbar /chat
+        logger.exception("exportacion a SIEM fallida (el evento quedo en el dataset)")
+
+
+def _sanear_para_log(valor: str) -> str:
+    """Escapa saltos de linea y retornos de carro antes de loggear un valor
+    que viene de la peticion del cliente (`modelo`, principalmente).
+
+    CWE-117 (Log Injection): sin esto, un `modelo` con un '\\n' incrustado
+    podria fabricar una linea de log falsa (p. ej. simulando otro nivel u
+    otro mensaje) o romper herramientas que parseen los logs linea por
+    linea. `%r` ya escapaba esto de forma implicita en algunos de estos
+    logs, pero SonarCloud no lo reconoce como saneo explicito -- se
+    reemplaza por esta funcion en todos los logs con datos de entrada, para
+    que la proteccion sea explicita y facil de verificar en un solo lugar.
+    """
+    return valor.replace("\r", "\\r").replace("\n", "\\n")
 
 
 async def _llamar_ollama(modelo: str, mensaje: str) -> dict[str, Any]:
@@ -338,25 +548,42 @@ async def _llamar_ollama(modelo: str, mensaje: str) -> dict[str, Any]:
         "model": modelo,
         "messages": [{"role": "user", "content": mensaje}],
         "stream": False,
+        "keep_alive": KEEP_ALIVE_OLLAMA,
     }
-    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-        try:
-            response = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload)
-            response.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            logger.warning(
-                "Ollama devolvio %d para modelo=%r: %s",
-                exc.response.status_code,
-                modelo,
-                exc.response.text,
-            )
-            raise HTTPException(
-                status_code=exc.response.status_code, detail=_DETALLE_ERROR_OLLAMA
-            ) from exc
-        except httpx.RequestError as exc:
-            logger.warning("No se pudo contactar a Ollama (modelo=%r): %s", modelo, exc)
-            raise HTTPException(status_code=502, detail=_DETALLE_ERROR_OLLAMA) from exc
+    if _modelo_con_herramientas(modelo):
+        payload["tools"] = herramientas.HERRAMIENTAS_RRHH
+    client = _obtener_cliente_http()
+    try:
+        response = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload)
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        logger.warning(
+            "Ollama devolvio %d para modelo=%r: %s",
+            exc.response.status_code,
+            _sanear_para_log(modelo),
+            exc.response.text,
+        )
+        raise HTTPException(
+            status_code=exc.response.status_code, detail=_DETALLE_ERROR_OLLAMA
+        ) from exc
+    except httpx.RequestError as exc:
+        logger.warning(
+            "No se pudo contactar a Ollama (modelo=%r): %s",
+            _sanear_para_log(modelo),
+            exc,
+        )
+        raise HTTPException(status_code=502, detail=_DETALLE_ERROR_OLLAMA) from exc
     return response.json()
+
+
+def _modelo_con_herramientas(modelo: str) -> bool:
+    """Extension (Excessive Agency): el modelo recibe herramientas SIMULADAS
+    solo si esta en `MODELOS_CON_HERRAMIENTAS` (lista separada por comas,
+    vacia por defecto). Apagado por defecto para no alterar los 5 mecanismos
+    ya evaluados ni los datos del nucleo del proyecto.
+    """
+    habilitados = os.getenv("MODELOS_CON_HERRAMIENTAS", "")
+    return modelo in {m.strip() for m in habilitados.split(",") if m.strip()}
 
 
 def _identificar_cliente(http_request: Request) -> str:
@@ -370,6 +597,38 @@ def _identificar_cliente(http_request: Request) -> str:
     ASGI real); nunca en trafico HTTP genuino.
     """
     return http_request.client.host if http_request.client else "desconocido"
+
+
+def _notificar_en_revision(
+    motivo: str,
+    modelo: str,
+    vector_probado: str | None,
+    herramienta: str | None = None,
+) -> None:
+    """Parte B: avisa por los canales configurados (webhook/Slack/correo/
+    WhatsApp, ver proxy/notificaciones.py) que una peticion quedo en la cola.
+
+    No bloqueante y a prueba de fallos: `notificar_en_segundo_plano()` lanza
+    un hilo y nunca lanza; el `try/except` de aqui cubre ademas cualquier
+    error al armar el evento. Perder la notificacion no puede afectar a la
+    peticion que la disparo. El mensaje no incluye el texto de la peticion.
+    """
+    try:
+        config = mecanismos.cargar_config(mecanismos.CONFIG_PATH)
+        notificaciones.notificar_en_segundo_plano(
+            notificaciones.construir_evento_notificacion(
+                motivo=motivo,
+                configuracion=determinar_configuracion(_mecanismos_activos(config)),
+                modelo=modelo,
+                vector_probado=vector_probado,
+                tipo=(
+                    "herramienta_en_revision" if herramienta else "peticion_en_revision"
+                ),
+                herramienta=herramienta,
+            )
+        )
+    except Exception as exc:  # noqa: BLE001 -- una notificacion nunca rompe /chat
+        logger.warning("no se pudo notificar la revision (%s)", type(exc).__name__)
 
 
 def _verificar_limite_de_tasa(
@@ -409,6 +668,7 @@ def _verificar_limite_de_tasa(
             "motivo": motivo,
         }
     )
+    _notificar_en_revision(motivo, request.modelo, request.vector_probado)
     return "aprobacion_humana"
 
 
@@ -455,9 +715,10 @@ def _gestionar_aprobacion_humana(
             "cola de revision llena (limite %d); rechazando en vez de "
             "encolar (modelo=%s, motivo=%s)",
             cola.MAX_TAMANO_COLA,
-            request.modelo,
+            _sanear_para_log(request.modelo),
             mecanismo_bloqueo,
         )
+    _notificar_en_revision(mecanismo_bloqueo, request.modelo, request.vector_probado)
     return "aprobacion_humana"
 
 
@@ -476,6 +737,7 @@ def _construir_evento(
     config: dict[str, bool],
     *,
     tiempo_revision_humana_ms: int | None = None,
+    es_extension: bool = False,
 ) -> dict[str, Any]:
     """Arma el evento de log con los 8 campos base del esquema (skill esquema-log).
 
@@ -506,6 +768,10 @@ def _construir_evento(
         evento["latencia_clasificador_ms"] = metricas.latencia_clasificador_ms
     if tiempo_revision_humana_ms is not None:
         evento["tiempo_revision_humana_ms"] = tiempo_revision_humana_ms
+    if es_extension:
+        # Campo extendido ya acordado (skill esquema-log): resultados fuera
+        # del nucleo de 7 configuraciones (aqui, el modelo con herramientas).
+        evento["es_extension"] = True
     return evento
 
 
@@ -524,8 +790,98 @@ def _ms_transcurridos_desde(marca_iso: str) -> int:
     return int((datetime.now().astimezone() - encolado_en).total_seconds() * 1000)
 
 
+_AVISO_HERRAMIENTA_EN_REVISION: str = (
+    "La accion solicitada fue puesta en revision humana antes de ejecutarse."
+)
+_AVISO_HERRAMIENTA_DENEGADA: str = (
+    "La accion solicitada no se ejecuto: requiere aprobacion humana, que no "
+    "esta activa."
+)
+
+
+def _gestionar_llamadas_a_herramientas(
+    modelo: str,
+    respuesta: dict[str, Any],
+    config: dict[str, bool],
+    cliente: str,
+    vector_probado: str | None,
+) -> str | None:
+    """Parte A: el modelo solo SOLICITA herramientas SIMULADAS; el proxy
+    nunca las ejecuta por su cuenta.
+
+    - Con `aprobacion_humana` activa: cada solicitud se encola y solo se
+      "ejecuta" (simulada) si un humano la aprueba via
+      `POST /revision/{id}/aprobar`. Devuelve "aprobacion_humana". Si la cola
+      esta llena igual se retiene (fail closed).
+    - Sin `aprobacion_humana`: se deniegan y se registran; nada se ejecuta.
+      Devuelve None (la respuesta lleva `herramientas.estado = "denegadas"`).
+
+    En ambos casos `message.tool_calls` se quita de la respuesta y los
+    argumentos que se devuelven pasan por `filtrar(..., "salida")` si
+    filtrado esta activo, para no abrir un canal de fuga por fuera de la
+    cadena de salida. Devuelve None sin tocar nada si el modelo no pidio
+    ninguna herramienta.
+    """
+    llamadas = herramientas.extraer_llamadas(respuesta)
+    if not llamadas:
+        return None
+
+    mensaje = respuesta.setdefault("message", {})
+    mensaje.pop("tool_calls", None)
+
+    solicitadas = []
+    for llamada in llamadas:
+        argumentos_texto = json.dumps(llamada["argumentos"], ensure_ascii=False)
+        if config["filtrado"]:
+            argumentos_texto, _ = mecanismos.filtrar(argumentos_texto, "salida")
+        solicitadas.append(
+            {"nombre": llamada["nombre"], "argumentos": argumentos_texto}
+        )
+
+    if not config["aprobacion_humana"]:
+        logger.warning(
+            "herramientas pedidas por %s DENEGADAS (aprobacion humana inactiva): %s",
+            _sanear_para_log(modelo),
+            [s["nombre"] for s in solicitadas],
+        )
+        mensaje["content"] = (
+            mensaje.get("content") or ""
+        ) + _AVISO_HERRAMIENTA_DENEGADA
+        respuesta["herramientas"] = {"estado": "denegadas", "solicitadas": solicitadas}
+        return None
+
+    for llamada, visible in zip(llamadas, solicitadas, strict=True):
+        encolada = mecanismos.enviar_a_revision(
+            {
+                "tipo": "herramienta",
+                "modelo": modelo,
+                "mensaje": (
+                    f"[HERRAMIENTA SIMULADA] {llamada['nombre']}"
+                    f"({visible['argumentos'][:300]})"
+                ),
+                "herramienta": llamada["nombre"],
+                "argumentos": llamada["argumentos"],
+                "vector_probado": vector_probado,
+                "cliente": cliente,
+                "motivo": "herramienta",
+            }
+        )
+        if not encolada:
+            logger.warning("cola de revision llena; solicitud de herramienta retenida")
+        _notificar_en_revision("herramienta", modelo, vector_probado, llamada["nombre"])
+    mensaje["content"] = _AVISO_HERRAMIENTA_EN_REVISION
+    respuesta["herramientas"] = {"estado": "en_revision", "solicitadas": solicitadas}
+    return "aprobacion_humana"
+
+
 async def _completar_peticion(
-    modelo: str, mensaje: str, config: dict[str, bool], metricas: _MetricasCadena
+    modelo: str,
+    mensaje: str,
+    config: dict[str, bool],
+    metricas: _MetricasCadena,
+    *,
+    cliente: str = "desconocido",
+    vector_probado: str | None = None,
 ) -> tuple[dict[str, Any], str | None]:
     """Aplica delimitacion, llama a Ollama y corre la cadena de SALIDA.
 
@@ -538,6 +894,11 @@ async def _completar_peticion(
     """
     prompt_ollama = _preparar_prompt(mensaje, modelo, config)
     respuesta = await _llamar_ollama(modelo, prompt_ollama)
+    mecanismo_herramienta = _gestionar_llamadas_a_herramientas(
+        modelo, respuesta, config, cliente, vector_probado
+    )
+    if mecanismo_herramienta is not None:
+        return respuesta, mecanismo_herramienta
     contenido = respuesta.get("message", {}).get("content", "")
     contenido, mecanismo_bloqueo = await _ejecutar_cadena(
         contenido, "salida", modelo, config, metricas
@@ -547,7 +908,7 @@ async def _completar_peticion(
     return respuesta, mecanismo_bloqueo
 
 
-@app.post("/chat")
+@app.post("/chat", responses=_RESPUESTAS_CHAT)
 async def chat(request: ChatRequest, http_request: Request) -> dict[str, Any]:
     inicio = time.perf_counter()
     config = mecanismos.cargar_config(mecanismos.CONFIG_PATH)
@@ -577,7 +938,12 @@ async def chat(request: ChatRequest, http_request: Request) -> dict[str, Any]:
 
     if mecanismo_bloqueo is None:
         respuesta, mecanismo_bloqueo = await _completar_peticion(
-            request.modelo, mensaje, config, metricas
+            request.modelo,
+            mensaje,
+            config,
+            metricas,
+            cliente=_identificar_cliente(http_request),
+            vector_probado=request.vector_probado,
         )
 
     latencia_ms = int((time.perf_counter() - inicio) * 1000)
@@ -590,13 +956,15 @@ async def chat(request: ChatRequest, http_request: Request) -> dict[str, Any]:
             latencia_ms,
             metricas,
             config,
+            es_extension=_modelo_con_herramientas(request.modelo),
         )
     )
 
     if respuesta is None:
         if mecanismo_bloqueo == "aprobacion_humana":
             logger.warning(
-                "peticion puesta en revision humana (modelo=%s)", request.modelo
+                "peticion puesta en revision humana (modelo=%s)",
+                _sanear_para_log(request.modelo),
             )
             raise HTTPException(
                 status_code=_STATUS_EN_REVISION, detail=_DETALLE_EN_REVISION
@@ -604,7 +972,7 @@ async def chat(request: ChatRequest, http_request: Request) -> dict[str, Any]:
         logger.warning(
             "peticion bloqueada en entrada por %s (modelo=%s)",
             mecanismo_bloqueo,
-            request.modelo,
+            _sanear_para_log(request.modelo),
         )
         raise HTTPException(status_code=400, detail=_DETALLE_BLOQUEO)
 
@@ -650,7 +1018,7 @@ def listar_revision() -> list[dict[str, Any]]:
     return cola.cola_global.listar()
 
 
-@app.post("/revision/{id_peticion}/rechazar")
+@app.post("/revision/{id_peticion}/rechazar", responses=_RESPUESTAS_RECHAZAR_REVISION)
 def rechazar_revision(id_peticion: str) -> dict[str, Any]:
     """Mecanismo 5: descarta una peticion pendiente sin completarla.
 
@@ -682,7 +1050,7 @@ def rechazar_revision(id_peticion: str) -> dict[str, Any]:
         "peticion id=%s rechazada tras %dms en revision humana (modelo=%s)",
         id_peticion,
         tiempo_revision_humana_ms,
-        item["modelo"],
+        _sanear_para_log(item["modelo"]),
     )
     return {
         "id": id_peticion,
@@ -691,7 +1059,55 @@ def rechazar_revision(id_peticion: str) -> dict[str, Any]:
     }
 
 
-@app.post("/revision/{id_peticion}/aprobar")
+def _aprobar_herramienta(
+    item: dict[str, Any],
+    config: dict[str, bool],
+    activos: list[str],
+    tiempo_revision_humana_ms: int,
+) -> dict[str, Any]:
+    """Un humano aprobo una solicitud de herramienta: se "ejecuta" la version
+    SIMULADA (proxy/herramientas.py: solo escribe en el log y devuelve datos
+    ficticios; no hay ningun efecto real). Un nombre o argumentos invalidos
+    (el modelo puede alucinarlos) responden 422 y no ejecutan nada.
+    """
+    try:
+        resultado = herramientas.ejecutar_herramienta_simulada(
+            item["herramienta"], item["argumentos"]
+        )
+    except ValueError as exc:
+        logger.warning("herramienta aprobada no ejecutable: %s", exc)
+        raise HTTPException(
+            status_code=422, detail="La herramienta solicitada no se pudo ejecutar."
+        ) from exc
+
+    _registrar_evento(
+        _construir_evento(
+            item["modelo"],
+            item.get("vector_probado"),
+            activos,
+            None,
+            tiempo_revision_humana_ms,
+            _MetricasCadena(),
+            config,
+            tiempo_revision_humana_ms=tiempo_revision_humana_ms,
+            es_extension=True,
+        )
+    )
+    logger.info(
+        "herramienta SIMULADA %s aprobada tras %dms en revision humana",
+        item["herramienta"],
+        tiempo_revision_humana_ms,
+    )
+    return {
+        "id": item["id"],
+        "estado": "aprobada",
+        "herramienta": item["herramienta"],
+        "resultado_simulado": resultado,
+        "tiempo_revision_humana_ms": tiempo_revision_humana_ms,
+    }
+
+
+@app.post("/revision/{id_peticion}/aprobar", responses=_RESPUESTAS_APROBAR_REVISION)
 async def aprobar_revision(id_peticion: str) -> dict[str, Any]:
     """Mecanismo 5: completa una peticion pendiente y devuelve la respuesta real.
 
@@ -712,9 +1128,17 @@ async def aprobar_revision(id_peticion: str) -> dict[str, Any]:
     activos = _mecanismos_activos(config)
     metricas = _MetricasCadena()
 
+    if item.get("tipo") == "herramienta":
+        return _aprobar_herramienta(item, config, activos, tiempo_revision_humana_ms)
+
     inicio_procesamiento = time.perf_counter()
     respuesta, mecanismo_bloqueo = await _completar_peticion(
-        item["modelo"], item["mensaje"], config, metricas
+        item["modelo"],
+        item["mensaje"],
+        config,
+        metricas,
+        cliente=item.get("cliente", "desconocido"),
+        vector_probado=item.get("vector_probado"),
     )
     latencia_procesamiento_ms = int((time.perf_counter() - inicio_procesamiento) * 1000)
 
@@ -735,7 +1159,7 @@ async def aprobar_revision(id_peticion: str) -> dict[str, Any]:
         "(modelo=%s, mecanismo_salida=%s)",
         id_peticion,
         tiempo_revision_humana_ms,
-        item["modelo"],
+        _sanear_para_log(item["modelo"]),
         mecanismo_bloqueo,
     )
     return respuesta

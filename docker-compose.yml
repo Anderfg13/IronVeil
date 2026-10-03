@@ -51,6 +51,29 @@ services:
       # (unsafe) en cada peticion -- ver docs/FUENTE_DE_VERDAD.md, seccion 4.
       MODELO_PROMPT_GUARD_ID: ${MODELO_PROMPT_GUARD_ID:-meta-llama/Llama-Prompt-Guard-2-86M}
       HF_TOKEN: ${HF_TOKEN}
+      # Cuanto tiempo mantiene Ollama un modelo cargado en memoria tras la
+      # ultima peticion (nativo de su API). 30m por defecto, mas que el 5m
+      # de Ollama, para que una pausa entre peticiones (demo en vivo,
+      # bateria de ataques con huecos) no fuerce una recarga en frio.
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
+      # Extensiones opcionales (vacias = apagadas). Ver .env.example.
+      MODELOS_CON_HERRAMIENTAS: ${MODELOS_CON_HERRAMIENTAS:-}
+      # Exportacion de cada evento a un archivo en formato Wazuh JSON (ver
+      # docs/siem/wazuh/LEEME.md). Vacio = apagada. La ruta es DENTRO del
+      # contenedor; ./docs/siem/exportados se monta mas abajo.
+      SIEM_ARCHIVO_WAZUH: ${SIEM_ARCHIVO_WAZUH:-}
+      NOTIFICAR_WEBHOOK_URL: ${NOTIFICAR_WEBHOOK_URL:-}
+      NOTIFICAR_SLACK_WEBHOOK_URL: ${NOTIFICAR_SLACK_WEBHOOK_URL:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USUARIO: ${SMTP_USUARIO:-}
+      SMTP_CLAVE: ${SMTP_CLAVE:-}
+      SMTP_REMITENTE: ${SMTP_REMITENTE:-}
+      NOTIFICAR_CORREO_DESTINO: ${NOTIFICAR_CORREO_DESTINO:-}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_WHATSAPP_ORIGEN: ${TWILIO_WHATSAPP_ORIGEN:-}
+      NOTIFICAR_WHATSAPP_DESTINO: ${NOTIFICAR_WHATSAPP_DESTINO:-}
     volumes:
       # Monta config.yaml (no se copia en la imagen) para poder cambiar de
       # configuracion (C0..C6) con solo editar el archivo y reiniciar el
@@ -58,6 +81,7 @@ services:
       # en el host: son evidencia, no deben perderse si el contenedor cae.
       - ./config.yaml:/app/config.yaml:ro
       - ./resultados:/app/resultados
+      - ./docs/siem/exportados:/app/siem
     depends_on:
       ollama-init:
         condition: service_completed_successfully

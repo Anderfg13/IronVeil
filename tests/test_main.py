@@ -97,7 +97,7 @@ def _preparar_entorno(
         "message": {"role": "assistant", "content": contenido_respuesta_ollama}
     }
     cliente_falso = _ClienteOllamaFalso(payload_ollama)
-    monkeypatch.setattr(main.httpx, "AsyncClient", lambda *a, **k: cliente_falso)
+    monkeypatch.setattr(main, "_obtener_cliente_http", lambda: cliente_falso)
 
     return cliente_falso, resultados_dir
 
@@ -116,6 +116,44 @@ class _ClienteOllamaConError:
 
     async def post(self, *args: object, **kwargs: object) -> Any:
         raise self._excepcion
+
+
+# --- _obtener_cliente_http(): conexion HTTP reutilizada hacia Ollama ------
+#
+# Optimizacion de latencia (evita abrir una conexion TCP nueva en cada
+# llamada): un cliente compartido, creado perezosamente, en vez de uno por
+# peticion.
+
+
+def test_obtener_cliente_http_reutiliza_la_misma_instancia(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(main, "_cliente_http_ollama", None)
+
+    primero = main._obtener_cliente_http()
+    segundo = main._obtener_cliente_http()
+
+    assert primero is segundo
+
+
+# --- _sanear_para_log() (CWE-117, log injection) --------------------------
+
+
+def test_sanear_para_log_escapa_saltos_de_linea() -> None:
+    entrada = "modelo-real\nINFO: linea de log falsa"
+
+    saneado = main._sanear_para_log(entrada)
+
+    assert "\n" not in saneado
+    assert saneado == "modelo-real\\nINFO: linea de log falsa"
+
+
+def test_sanear_para_log_escapa_retorno_de_carro() -> None:
+    assert main._sanear_para_log("a\rb") == "a\\rb"
+
+
+def test_sanear_para_log_no_toca_texto_normal() -> None:
+    assert main._sanear_para_log("soporte") == "soporte"
 
 
 # --- Manejo de errores de Ollama: mensaje generico (OWASP Error Handling) --
@@ -143,7 +181,7 @@ def test_chat_error_http_de_ollama_no_revela_detalle_crudo(
         "404 Not Found", request=peticion_ollama, response=respuesta_ollama
     )
     monkeypatch.setattr(
-        main.httpx, "AsyncClient", lambda *a, **k: _ClienteOllamaConError(excepcion)
+        main, "_obtener_cliente_http", lambda: _ClienteOllamaConError(excepcion)
     )
 
     respuesta = client.post("/chat", json={"modelo": "noexiste", "mensaje": "hola"})
@@ -162,7 +200,7 @@ def test_chat_error_de_conexion_a_ollama_no_revela_detalle_crudo(
 
     excepcion = httpx.ConnectError("Connection refused a ironveil-ollama.internal")
     monkeypatch.setattr(
-        main.httpx, "AsyncClient", lambda *a, **k: _ClienteOllamaConError(excepcion)
+        main, "_obtener_cliente_http", lambda: _ClienteOllamaConError(excepcion)
     )
 
     respuesta = client.post("/chat", json={"modelo": "soporte", "mensaje": "hola"})
@@ -216,6 +254,8 @@ def test_chat_filtrado_apagado_es_passthrough(
 
     assert respuesta.status_code == 200
     assert cliente_falso.llamado is True
+    assert cliente_falso.ultimo_payload is not None
+    assert cliente_falso.ultimo_payload["keep_alive"] == main.KEEP_ALIVE_OLLAMA
     eventos = _leer_eventos(resultados_dir)
     assert eventos[0]["configuracion"] == "C0"
     assert eventos[0]["resultado"] == "permitido_normal"
@@ -1104,8 +1144,10 @@ def test_revision_lista_una_peticion_pendiente(
     assert item["mensaje"] == MENSAJE_MALICIOSO
     assert item["vector_probado"] == "V3-A"
     assert item["motivo"] == "filtrado"
-    assert "id" in item and item["id"]
-    assert "encolado_en" in item and item["encolado_en"]  # timestamp de llegada
+    assert "id" in item
+    assert item["id"]
+    assert "encolado_en" in item
+    assert item["encolado_en"]  # timestamp de llegada
     assert cliente_falso.llamado is False
 
 

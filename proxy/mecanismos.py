@@ -363,6 +363,15 @@ MODELO_CLASIFICADOR: str = os.getenv("MODELO_CLASIFICADOR", "llama-guard3:1b")
 # generoso para un modelo de 1B en CPU y deja margen frente al
 # REQUEST_TIMEOUT (120s) del proxy para el resto de la peticion.
 TIMEOUT_CLASIFICADOR_S: float = float(os.getenv("TIMEOUT_CLASIFICADOR_S", "10"))
+# Cuanto tiempo mantiene Ollama el modelo cargado en memoria tras la
+# ULTIMA peticion antes de descargarlo (parametro nativo de su API, no
+# inventado aqui). Por defecto Ollama usa 5m; subirlo evita que una pausa
+# entre peticiones (ritmo real de un ataque por turnos, o un hueco durante
+# una demo en vivo) fuerce una recarga en frio del modelo en la siguiente
+# peticion -- la misma causa raiz, medida, detras de los outliers de
+# latencia del clasificador (docs/FUENTE_DE_VERDAD.md, seccion 5: C3 real,
+# maximo 170.5s frente a una mediana de 12.7s).
+KEEP_ALIVE_OLLAMA: str = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
 
 # Llama Guard 3 distingue si esta evaluando lo que dijo el usuario o lo que
 # respondio el modelo (plantilla oficial, ver docstring de clasificar()).
@@ -455,6 +464,28 @@ def clasificar(texto: str, direccion: str) -> bool:
     return _clasificar_salida_llama_guard(texto, direccion)
 
 
+# Cliente httpx compartido hacia Ollama para Llama Guard (mecanismo 3,
+# salida): una sola conexion/pool TCP reutilizada entre peticiones, en vez
+# de abrir una conexion nueva en cada llamada. Carga perezosa protegida
+# con lock, mismo patron que _pipeline_prompt_guard/_obtener_pipeline_
+# prompt_guard() mas abajo y por la misma razon: _clasificar_salida_
+# llama_guard() corre via run_in_threadpool, en hilos reales del
+# threadpool, no en el event loop -- varias peticiones concurrentes si
+# podrian competir por crearlo a la vez.
+_cliente_http_llama_guard: httpx.Client | None = None
+_lock_cliente_http_llama_guard = threading.Lock()
+
+
+def _obtener_cliente_http_llama_guard() -> httpx.Client:
+    global _cliente_http_llama_guard
+    if _cliente_http_llama_guard is not None:
+        return _cliente_http_llama_guard
+    with _lock_cliente_http_llama_guard:
+        if _cliente_http_llama_guard is None:
+            _cliente_http_llama_guard = httpx.Client(timeout=TIMEOUT_CLASIFICADOR_S)
+    return _cliente_http_llama_guard
+
+
 def _clasificar_salida_llama_guard(texto: str, direccion: str) -> bool:
     """Mecanismo 3, direccion "salida": Llama Guard 3 via Ollama.
 
@@ -476,11 +507,12 @@ def _clasificar_salida_llama_guard(texto: str, direccion: str) -> bool:
         "model": MODELO_CLASIFICADOR,
         "messages": [{"role": _ROL_LLAMA_GUARD[direccion], "content": texto}],
         "stream": False,
+        "keep_alive": KEEP_ALIVE_OLLAMA,
     }
     try:
-        with httpx.Client(timeout=TIMEOUT_CLASIFICADOR_S) as client:
-            respuesta = client.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload)
-            respuesta.raise_for_status()
+        client = _obtener_cliente_http_llama_guard()
+        respuesta = client.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload)
+        respuesta.raise_for_status()
     except httpx.TimeoutException:
         logger.error(
             "clasificar(): timeout de %.1fs esperando a %s; fail closed (unsafe).",
@@ -489,7 +521,7 @@ def _clasificar_salida_llama_guard(texto: str, direccion: str) -> bool:
         )
         return True
     except httpx.HTTPError as exc:
-        logger.error(
+        logger.exception(
             "clasificar(): error llamando a %s: %s; fail closed (unsafe).",
             MODELO_CLASIFICADOR,
             exc,
@@ -524,12 +556,21 @@ def _obtener_pipeline_prompt_guard() -> Any:
                     f"descargar {MODELO_PROMPT_GUARD_ID}, un modelo con "
                     "licencia restringida en Hugging Face."
                 )
+            import torch
             from transformers import pipeline as _crear_pipeline
 
+            # Sin `device`, pipeline() corre en CPU aunque haya GPU (default
+            # -1): Prompt Guard (86M) en CPU era parte del sobrecosto de
+            # latencia de clasificacion medido el 2026-10-03 (+205 ms). 0 =
+            # primera GPU CUDA; sin CUDA (p. ej. torch CPU-only del
+            # Dockerfile) sigue en -1, comportamiento identico al anterior.
+            dispositivo = 0 if torch.cuda.is_available() else -1
+            logger.info("Prompt Guard cargado en device=%d.", dispositivo)
             _pipeline_prompt_guard = _crear_pipeline(
                 "text-classification",
                 model=MODELO_PROMPT_GUARD_ID,
                 token=HF_TOKEN,
+                device=dispositivo,
             )
     return _pipeline_prompt_guard
 
@@ -576,7 +617,7 @@ def _clasificar_entrada_prompt_guard(texto: str) -> bool:
     try:
         etiqueta = _predecir_prompt_guard(texto)
     except Exception as exc:  # noqa: BLE001 -- fail closed ante cualquier fallo
-        logger.error(
+        logger.exception(
             "clasificar(): error usando Prompt Guard (%s): %s; fail closed (unsafe).",
             MODELO_PROMPT_GUARD_ID,
             exc,
@@ -618,6 +659,9 @@ def _interpretar_respuesta_llama_guard(contenido: str) -> bool:
 PREFIJOS_POR_MODELO: dict[str, str] = {
     "soporte": "SPT",
     "rrhh": "RRHH",
+    # Extension (Excessive Agency): variante de rrhh con herramientas
+    # simuladas; misma credencial propia.
+    "rrhh-agente": "RRHH",
 }
 
 # PATRON_CREDENCIAL_GENERICO (definido arriba, junto a las constantes de
