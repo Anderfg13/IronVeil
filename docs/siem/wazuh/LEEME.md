@@ -35,6 +35,9 @@ minutos en estar listo tras `docker compose up -d`.
 
 `exportar_a_siem(evento, "cef")` devuelve una línea CEF:0 para otros SIEM
 (severidad: bloqueado 5, exitoso_para_atacante 9, permitido_normal 1).
+**Wazuh no trae un decodificador CEF** (comprobado con `wazuh-logtest`: «No decoder
+matched»): para Wazuh el formato a usar es el JSON. Validación completa del formato:
+`VALIDACION_FORMATO.md`.
 
 ## Reglas de IronVeil (`ironveil_rules.xml`)
 

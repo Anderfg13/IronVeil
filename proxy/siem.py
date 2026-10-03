@@ -18,15 +18,14 @@ forma independiente (dos SIEM pueden compartir transporte pero no formato,
 o viceversa). Quien conecte un SIEM real implementa las dos interfaces UNA
 vez cada una, sin tocar `proxy/main.py` -- ver `enviar_a_siem()`.
 
-IMPORTANTE -- todavia NO esta cableado a `/chat`: `_registrar_evento()` en
-`proxy/main.py` sigue siendo la unica escritura real, hacia
-`resultados/<fecha>/eventos.jsonl` (el dataset del experimento, protegido
-por la regla 4 de CLAUDE.md -- nunca se edita a mano ni se mezcla con otra
-cosa). Conectar esto de verdad a `/chat` es tarea de Piedrahita (reparto de
-equipo, CLAUDE.md seccion 8, "export SIEM"): aqui solo queda la interfaz
-lista para que ella (o quien sea) la use sin tener que disenarla desde cero,
-decidiendo en ese momento si el envio al SIEM es sincrono, en un hilo aparte,
-o en background -- una decision de esa integracion, no de este andamiaje.
+ESTADO -- cableado a `/chat` de forma OPCIONAL: `_registrar_evento()` en
+`proxy/main.py` sigue escribiendo siempre el dataset del experimento
+(`resultados/<fecha>/eventos.jsonl`, protegido por la regla 4 de CLAUDE.md) y
+despues llama a `_exportar_a_siem()`, que solo actua si `SIEM_ARCHIVO_WAZUH`
+esta definida: usa `FormateadorWazuhJSON` + `ConectorArchivoLocal` de este
+modulo, de forma sincrona (un append local, sin red) y sin poder romper la
+peticion. Los adapters de abajo siguen siendo la via para otros SIEM o
+transportes. Validacion contra Wazuh: docs/siem/wazuh/VALIDACION_FORMATO.md.
 """
 
 from __future__ import annotations
