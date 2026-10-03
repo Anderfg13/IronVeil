@@ -157,10 +157,19 @@ se probaba era el cableado, no el modelo) escribió cada evento al archivo vía
 100104 por la ráfaga y 100102) y Filebeat del manager confirmó conexión
 con el indexer (`filebeat test output`).
 
+**Dashboard (confirmado por captura del usuario, 2026-10-02):** el Overview de
+Wazuh en https://localhost muestra las alertas de IronVeil en «Last 24 hours
+alerts»: 38 de severidad alta (nivel 12-14), 63 media y 155 baja, 0 críticas.
+Las 38 altas coinciden exactamente con las 38 alertas de la regla 100102 del
+`alerts.json` del manager, **pero la mayoría no son ataques exitosos reales**:
+36 vienen de eventos V7 que el proxy etiqueta `exitoso_para_atacante` aunque
+el modelo no hubiera pedido ninguna herramienta (ver `analisis/resultados_excessive_agency.md`,
+limitaciones). Al leer el panel, «alta» significa «el proxy no bloqueó una
+petición con vector etiquetado», no «hubo fuga».
+
 **No verificado:** la entrega por agente remoto ni por syslog/CEF (CEF solo
 está probado con tests unitarios de formato, no contra un colector real), ni
-cómo se ven las alertas dentro del dashboard (el login lo hace quien lee esto:
-yo no ingresé las credenciales por defecto desde un navegador).
+la vista de eventos con los campos `data.*` ni el mapeo de tipos del índice.
 
 **Incidente a tener en cuenta:** al reiniciar el stack tras una parada brusca
 de Docker, el indexer no arrancó (`IndexFormatTooOldException`: volumen de datos

@@ -95,7 +95,8 @@ aprobación) y la 100104 (ráfaga); ver `LEEME.md`.
 
 - Entrega por agente remoto o por syslog (solo lectura de archivo local desde
   el manager).
-- Cómo se ven las alertas en el dashboard, y el mapeo de tipos del índice.
+- La vista de eventos con los campos `data.*` en el dashboard y el mapeo de tipos
+  del índice (el Overview sí muestra las alertas; ver `LEEME.md`).
 - CEF contra un colector que sí lo entienda.
 - El resto de los eventos del log (solo 5 de 13 102, elegidos para cubrir
   casos distintos; la validación estructural es automatizable sobre todos con
