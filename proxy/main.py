@@ -21,6 +21,7 @@ import logging
 import os
 import threading
 import time
+import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -35,7 +36,9 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 import proxy.cola as cola
+import proxy.herramientas as herramientas
 import proxy.mecanismos as mecanismos
+import proxy.notificacion as notificacion
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +52,14 @@ OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
 KEEP_ALIVE_OLLAMA: str = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
 REQUEST_TIMEOUT: float = float(os.getenv("PROXY_REQUEST_TIMEOUT", "120"))
 RESULTADOS_DIR: Path = Path(__file__).resolve().parent.parent / "resultados"
+# Extension Excessive Agency (endpoint /agente). Modelo de Ollama con el
+# mismo system prompt/canario de "rrhh" mas la politica de uso de
+# herramientas (Modelfile.rrhh-agente.template): un modelo APARTE para no
+# alterar "rrhh", que es el que miden C0..C6. En el log del experimento
+# sigue apareciendo como modelo_destino "rrhh" (su dominio), con
+# es_extension: true -- ver skill esquema-log.
+MODELO_AGENTE_OLLAMA: str = os.getenv("MODELO_AGENTE", "rrhh-agente")
+_DOMINIO_AGENTE: str = "rrhh"
 
 # Mensajes genericos hacia el cliente cuando la cadena bloquea. Genericos a
 # proposito: no revelan que mecanismo actuo ni por que (esa informacion queda
@@ -499,13 +510,22 @@ def _sanear_para_log(valor: str) -> str:
     return valor.replace("\r", "\\r").replace("\n", "\\n")
 
 
-async def _llamar_ollama(modelo: str, mensaje: str) -> dict[str, Any]:
-    payload = {
+async def _llamar_ollama(
+    modelo: str,
+    mensaje: str,
+    definiciones_herramientas: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """POST a /api/chat de Ollama. `definiciones_herramientas` solo lo usa
+    la extension /agente (campo "tools" de la API de tool calling); /chat
+    nunca lo pasa, asi que su payload no cambia."""
+    payload: dict[str, Any] = {
         "model": modelo,
         "messages": [{"role": "user", "content": mensaje}],
         "stream": False,
         "keep_alive": KEEP_ALIVE_OLLAMA,
     }
+    if definiciones_herramientas:
+        payload["tools"] = definiciones_herramientas
     client = _obtener_cliente_http()
     try:
         response = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload)
@@ -543,8 +563,49 @@ def _identificar_cliente(http_request: Request) -> str:
     return http_request.client.host if http_request.client else "desconocido"
 
 
+def _encolar_para_revision(peticion: dict[str, Any], configuracion: str) -> bool:
+    """Encola `peticion` en la cola de revision (mecanismo 5) y, si quedo
+    encolada, dispara la notificacion de la extension del 17 de octubre.
+
+    Unico punto por donde pasa todo encolado del proxy (rate limit,
+    bloqueo de entrada interceptado, invocacion de herramienta), para que
+    ninguno se quede sin notificar. Le asigna el `id` ANTES de encolar
+    (`ColaRevision.encolar()` respeta un id ya presente) para que la
+    notificacion pueda referenciar el mismo id que lista `GET /revision`.
+    La notificacion nunca bloquea ni puede hacer fallar el encolado (ver
+    proxy/notificacion.py). Devuelve lo mismo que
+    `mecanismos.enviar_a_revision()`.
+    """
+    peticion = {"id": uuid.uuid4().hex, **peticion}
+    en_cola = mecanismos.enviar_a_revision(peticion)
+    if en_cola:
+        notificacion.notificar_en_revision(peticion, configuracion)
+    return en_cola
+
+
+def _peticion_para_revision(
+    request: ChatRequest,
+    http_request: Request,
+    motivo: str,
+    extras: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Diccionario que se encola: mismo formato de siempre + `extras`
+    (p. ej. `{"endpoint": "agente"}` cuando viene de la extension)."""
+    return {
+        "modelo": request.modelo,
+        "mensaje": request.mensaje,
+        "vector_probado": request.vector_probado,
+        "cliente": _identificar_cliente(http_request),
+        "motivo": motivo,
+        **(extras or {}),
+    }
+
+
 def _verificar_limite_de_tasa(
-    request: ChatRequest, http_request: Request
+    request: ChatRequest,
+    http_request: Request,
+    configuracion: str,
+    extras: dict[str, Any] | None = None,
 ) -> str | None:
     """Mecanismo 5, disparador 1: limite de tasa, por cliente y global.
 
@@ -571,14 +632,8 @@ def _verificar_limite_de_tasa(
     if not (excede_cliente or excede_global):
         return None
     motivo = "limite_de_peticiones" if excede_cliente else "limite_global_de_peticiones"
-    mecanismos.enviar_a_revision(
-        {
-            "modelo": request.modelo,
-            "mensaje": request.mensaje,
-            "vector_probado": request.vector_probado,
-            "cliente": cliente,
-            "motivo": motivo,
-        }
+    _encolar_para_revision(
+        _peticion_para_revision(request, http_request, motivo, extras), configuracion
     )
     return "aprobacion_humana"
 
@@ -587,6 +642,8 @@ def _gestionar_aprobacion_humana(
     request: ChatRequest,
     http_request: Request,
     mecanismo_bloqueo: str | None,
+    configuracion: str,
+    extras: dict[str, Any] | None = None,
 ) -> str | None:
     """Mecanismo 5. Convierte un bloqueo (o exceso de tasa) en cola de revision.
 
@@ -612,14 +669,9 @@ def _gestionar_aprobacion_humana(
     if mecanismo_bloqueo is None:
         return None
 
-    en_cola = mecanismos.enviar_a_revision(
-        {
-            "modelo": request.modelo,
-            "mensaje": request.mensaje,
-            "vector_probado": request.vector_probado,
-            "cliente": _identificar_cliente(http_request),
-            "motivo": mecanismo_bloqueo,
-        }
+    en_cola = _encolar_para_revision(
+        _peticion_para_revision(request, http_request, mecanismo_bloqueo, extras),
+        configuracion,
     )
     if not en_cola:
         logger.warning(
@@ -647,6 +699,7 @@ def _construir_evento(
     config: dict[str, bool],
     *,
     tiempo_revision_humana_ms: int | None = None,
+    extras: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Arma el evento de log con los 8 campos base del esquema (skill esquema-log).
 
@@ -660,8 +713,9 @@ def _construir_evento(
     caso vale 0). Agrega `tiempo_revision_humana_ms` solo si se pasa
     explicitamente (peticion que paso por la cola de revision): es un
     evento aparte del que ya escribio `/chat` al encolar, nunca lo
-    reemplaza (JSONL es append-only). Los 8 campos base nunca se renombran
-    ni se omiten.
+    reemplaza (JSONL es append-only). `extras` agrega campos extendidos
+    de la extension /agente (`es_extension`, `herramientas_invocadas`). Los
+    8 campos base nunca se renombran ni se omiten.
     """
     evento: dict[str, Any] = {
         "timestamp": datetime.now().astimezone().isoformat(),
@@ -677,6 +731,8 @@ def _construir_evento(
         evento["latencia_clasificador_ms"] = metricas.latencia_clasificador_ms
     if tiempo_revision_humana_ms is not None:
         evento["tiempo_revision_humana_ms"] = tiempo_revision_humana_ms
+    for clave, valor in (extras or {}).items():
+        evento.setdefault(clave, valor)
     return evento
 
 
@@ -718,6 +774,61 @@ async def _completar_peticion(
     return respuesta, mecanismo_bloqueo
 
 
+async def _evaluar_entrada(
+    request: ChatRequest,
+    http_request: Request,
+    config: dict[str, bool],
+    metricas: _MetricasCadena,
+    extras_revision: dict[str, Any] | None = None,
+) -> tuple[str, str | None]:
+    """Lado de ENTRADA del pipeline, comun a /chat y /agente.
+
+    Rate limit (mecanismo 5, disparador 1) -> cadena de bloqueo de entrada
+    -> intercepcion de aprobacion humana (disparador 2). Devuelve
+    (mensaje_resultante, mecanismo_que_bloqueo_o_None).
+    `extras_revision` se agrega a lo que se encola (p. ej. el endpoint de
+    origen), para que aprobar la peticion despues la complete por el mismo
+    camino por el que entro.
+    """
+    configuracion = determinar_configuracion(_mecanismos_activos(config))
+    if config["aprobacion_humana"]:
+        bloqueo = _verificar_limite_de_tasa(
+            request, http_request, configuracion, extras_revision
+        )
+        if bloqueo is not None:
+            return request.mensaje, bloqueo
+
+    mensaje, mecanismo_bloqueo = await _ejecutar_cadena(
+        request.mensaje, "entrada", request.modelo, config, metricas
+    )
+    # Mecanismo 5, disparador 2: la cadena de entrada ya marco un bloqueo.
+    # Con aprobacion_humana activo, ese bloqueo se convierte en cola en vez
+    # de rechazo automatico (ver _gestionar_aprobacion_humana()).
+    if config["aprobacion_humana"]:
+        mecanismo_bloqueo = _gestionar_aprobacion_humana(
+            request, http_request, mecanismo_bloqueo, configuracion, extras_revision
+        )
+    return mensaje, mecanismo_bloqueo
+
+
+def _rechazar_en_entrada(mecanismo_bloqueo: str | None, modelo: str) -> HTTPException:
+    """Excepcion HTTP para un bloqueo de entrada: 429 si quedo en revision
+    humana (encolar no es rechazar), 400 generico para cualquier otro."""
+    if mecanismo_bloqueo == "aprobacion_humana":
+        logger.warning(
+            "peticion puesta en revision humana (modelo=%s)", _sanear_para_log(modelo)
+        )
+        return HTTPException(
+            status_code=_STATUS_EN_REVISION, detail=_DETALLE_EN_REVISION
+        )
+    logger.warning(
+        "peticion bloqueada en entrada por %s (modelo=%s)",
+        mecanismo_bloqueo,
+        _sanear_para_log(modelo),
+    )
+    return HTTPException(status_code=400, detail=_DETALLE_BLOQUEO)
+
+
 @app.post("/chat", responses=_RESPUESTAS_CHAT)
 async def chat(request: ChatRequest, http_request: Request) -> dict[str, Any]:
     inicio = time.perf_counter()
@@ -725,27 +836,11 @@ async def chat(request: ChatRequest, http_request: Request) -> dict[str, Any]:
     activos = _mecanismos_activos(config)
     metricas = _MetricasCadena()
 
-    mecanismo_bloqueo: str | None = None
-    mensaje = request.mensaje
-
-    if config["aprobacion_humana"]:
-        mecanismo_bloqueo = _verificar_limite_de_tasa(request, http_request)
-
-    if mecanismo_bloqueo is None:
-        mensaje, mecanismo_bloqueo = await _ejecutar_cadena(
-            request.mensaje, "entrada", request.modelo, config, metricas
-        )
-        # Mecanismo 5, disparador 2: la cadena de entrada ya marco un
-        # bloqueo. Con aprobacion_humana activo, ese bloqueo se convierte
-        # en cola en vez de rechazo automatico (ver
-        # _gestionar_aprobacion_humana()).
-        if config["aprobacion_humana"]:
-            mecanismo_bloqueo = _gestionar_aprobacion_humana(
-                request, http_request, mecanismo_bloqueo
-            )
+    mensaje, mecanismo_bloqueo = await _evaluar_entrada(
+        request, http_request, config, metricas
+    )
 
     respuesta: dict[str, Any] | None = None
-
     if mecanismo_bloqueo is None:
         respuesta, mecanismo_bloqueo = await _completar_peticion(
             request.modelo, mensaje, config, metricas
@@ -765,21 +860,203 @@ async def chat(request: ChatRequest, http_request: Request) -> dict[str, Any]:
     )
 
     if respuesta is None:
-        if mecanismo_bloqueo == "aprobacion_humana":
-            logger.warning(
-                "peticion puesta en revision humana (modelo=%s)",
-                _sanear_para_log(request.modelo),
-            )
-            raise HTTPException(
-                status_code=_STATUS_EN_REVISION, detail=_DETALLE_EN_REVISION
-            )
-        logger.warning(
-            "peticion bloqueada en entrada por %s (modelo=%s)",
-            mecanismo_bloqueo,
-            _sanear_para_log(request.modelo),
-        )
-        raise HTTPException(status_code=400, detail=_DETALLE_BLOQUEO)
+        raise _rechazar_en_entrada(mecanismo_bloqueo, request.modelo)
+    return respuesta
 
+
+# --- Extension Excessive Agency: endpoint /agente ---------------------------
+#
+# EXTENSION OPCIONAL (semana del 17 de octubre), fuera del nucleo de 7
+# configuraciones: /chat no cambia. /agente es el mismo pipeline (misma
+# cadena de entrada y salida, mismas banderas de config.yaml) pero hacia
+# el modelo "rrhh-agente", que puede pedir invocar las herramientas
+# SIMULADAS de proxy/herramientas.py. Que se "ejecuten" o no depende solo
+# de aprobacion_humana:
+#   - false: se ejecutan de inmediato (simuladas) -- el escenario de
+#     Excessive Agency (OWASP LLM06) sin defensa.
+#   - true: NINGUNA se ejecuta; cada invocacion queda en la cola de
+#     revision (y dispara la notificacion) hasta que un humano la apruebe
+#     en POST /revision/{id}/aprobar.
+# Cada evento de log lleva es_extension: true y herramientas_invocadas,
+# para no mezclarse nunca con el dataset del nucleo.
+
+_EXTRAS_REVISION_AGENTE: dict[str, Any] = {"endpoint": "agente"}
+ESTADO_HERRAMIENTA_EJECUTADA: str = "ejecutada_simulada"
+ESTADO_HERRAMIENTA_EN_REVISION: str = "en_revision"
+ESTADO_HERRAMIENTA_INVALIDA: str = "invalida"
+ESTADO_HERRAMIENTA_NO_ENCOLADA: str = "rechazada_cola_llena"
+
+
+class AgenteRequest(BaseModel):
+    mensaje: str
+    # Mismo significado que en ChatRequest (IDs V7-* de variantes_ataque.md).
+    vector_probado: str | None = None
+
+
+def _extras_evento_agente(invocaciones: list[dict[str, Any]]) -> dict[str, Any]:
+    """Campos extendidos de todo evento de /agente. Lista de NOMBRES, no de
+    objetos: el decodificador JSON de Wazuh no soporta arrays de objetos
+    (ver proxy/siem.py)."""
+    return {
+        "es_extension": True,
+        "herramientas_invocadas": [inv["nombre"] for inv in invocaciones],
+    }
+
+
+def _resolver_invocaciones(
+    invocaciones: list[dict[str, Any]],
+    origen: dict[str, Any],
+    config: dict[str, bool],
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Ejecuta (simuladas) o encola cada invocacion que pidio el modelo.
+
+    `origen` trae `mensaje` (texto original del usuario), `vector_probado`
+    y `cliente` de la peticion que provoco las invocaciones -- un dict y no
+    el `Request` HTTP porque tambien se llama al aprobar una peticion de
+    /agente desde la cola, donde ya no hay peticion HTTP original.
+    Devuelve (estado_por_invocacion, mecanismo_que_bloqueo). Con
+    aprobacion_humana activa, ninguna se ejecuta aqui y el mecanismo que
+    bloqueo es "aprobacion_humana" (aunque sea una sola invocacion).
+    """
+    estados: list[dict[str, Any]] = []
+    if not invocaciones:
+        # Nada que ejecutar ni que encolar: sin esto, con aprobacion_humana
+        # activa una respuesta normal sin herramientas quedaba registrada
+        # como "bloqueado" (falso positivo encontrado por el test de C6).
+        return estados, None
+    if not config["aprobacion_humana"]:
+        for inv in invocaciones:
+            try:
+                resultado = herramientas.ejecutar_herramienta(
+                    inv["nombre"], inv["argumentos"]
+                )
+            except ValueError as exc:
+                logger.warning("invocacion de herramienta invalida: %s", exc)
+                estados.append(
+                    {"nombre": inv["nombre"], "estado": ESTADO_HERRAMIENTA_INVALIDA}
+                )
+                continue
+            estados.append(
+                {
+                    "nombre": inv["nombre"],
+                    "estado": ESTADO_HERRAMIENTA_EJECUTADA,
+                    "resultado": resultado,
+                }
+            )
+        return estados, None
+
+    configuracion = determinar_configuracion(_mecanismos_activos(config))
+    for inv in invocaciones:
+        peticion = {
+            "modelo": _DOMINIO_AGENTE,
+            "mensaje": origen["mensaje"],
+            "vector_probado": origen.get("vector_probado"),
+            "cliente": origen.get("cliente", "desconocido"),
+            "motivo": "invocacion_herramienta",
+            "tipo": "herramienta",
+            "herramienta": inv["nombre"],
+            "argumentos": inv["argumentos"],
+        }
+        en_cola = _encolar_para_revision(peticion, configuracion)
+        estados.append(
+            {
+                "nombre": inv["nombre"],
+                "estado": (
+                    ESTADO_HERRAMIENTA_EN_REVISION
+                    if en_cola
+                    else ESTADO_HERRAMIENTA_NO_ENCOLADA
+                ),
+            }
+        )
+    return estados, "aprobacion_humana"
+
+
+async def _completar_peticion_agente(
+    origen: dict[str, Any],
+    mensaje: str,
+    config: dict[str, bool],
+    metricas: _MetricasCadena,
+) -> tuple[dict[str, Any], str | None, list[dict[str, Any]]]:
+    """Equivalente de `_completar_peticion()` para /agente: delimitacion ->
+    Ollama con herramientas -> ejecutar/encolar invocaciones -> cadena de
+    SALIDA sobre el texto del modelo.
+
+    El mecanismo que bloqueo en salida (filtrado/clasificacion) tiene
+    prioridad en el log sobre "aprobacion_humana" de las herramientas solo
+    si ocurre; si no, queda el de las herramientas. Devuelve (respuesta,
+    mecanismo_que_bloqueo, invocaciones).
+    """
+    prompt_ollama = _preparar_prompt(mensaje, _DOMINIO_AGENTE, config)
+    respuesta = await _llamar_ollama(
+        MODELO_AGENTE_OLLAMA,
+        prompt_ollama,
+        list(herramientas.DEFINICIONES_HERRAMIENTAS),
+    )
+    invocaciones = herramientas.extraer_invocaciones(respuesta)
+    estados, bloqueo_herramientas = _resolver_invocaciones(invocaciones, origen, config)
+
+    mensaje_modelo = respuesta.setdefault("message", {})
+    contenido, bloqueo_salida = await _ejecutar_cadena(
+        mensaje_modelo.get("content", ""), "salida", _DOMINIO_AGENTE, config, metricas
+    )
+    mensaje_modelo["content"] = contenido
+    # Los argumentos crudos de tool_calls no se reenvian al cliente: pueden
+    # contener lo que la cadena de salida acaba de retener en `content`.
+    mensaje_modelo.pop("tool_calls", None)
+    respuesta["herramientas"] = estados
+    return respuesta, bloqueo_salida or bloqueo_herramientas, invocaciones
+
+
+@app.post("/agente", responses=_RESPUESTAS_CHAT)
+async def agente(request: AgenteRequest, http_request: Request) -> dict[str, Any]:
+    """Extension Excessive Agency: chat con el modelo "rrhh-agente", que
+    puede invocar herramientas SIMULADAS (ver bloque de comentario arriba).
+
+    Mismos codigos que /chat (400 bloqueo de entrada, 429 en revision,
+    502 Ollama). Un 200 trae ademas `herramientas`: una entrada por cada
+    invocacion que pidio el modelo, con su estado.
+    """
+    inicio = time.perf_counter()
+    config = mecanismos.cargar_config(mecanismos.CONFIG_PATH)
+    activos = _mecanismos_activos(config)
+    metricas = _MetricasCadena()
+    como_chat = ChatRequest(
+        modelo=_DOMINIO_AGENTE,
+        mensaje=request.mensaje,
+        vector_probado=request.vector_probado,
+    )
+
+    mensaje, mecanismo_bloqueo = await _evaluar_entrada(
+        como_chat, http_request, config, metricas, _EXTRAS_REVISION_AGENTE
+    )
+
+    respuesta: dict[str, Any] | None = None
+    invocaciones: list[dict[str, Any]] = []
+    if mecanismo_bloqueo is None:
+        origen = {
+            "mensaje": request.mensaje,
+            "vector_probado": request.vector_probado,
+            "cliente": _identificar_cliente(http_request),
+        }
+        respuesta, mecanismo_bloqueo, invocaciones = await _completar_peticion_agente(
+            origen, mensaje, config, metricas
+        )
+
+    _registrar_evento(
+        _construir_evento(
+            _DOMINIO_AGENTE,
+            request.vector_probado,
+            activos,
+            mecanismo_bloqueo,
+            int((time.perf_counter() - inicio) * 1000),
+            metricas,
+            config,
+            extras=_extras_evento_agente(invocaciones),
+        )
+    )
+
+    if respuesta is None:
+        raise _rechazar_en_entrada(mecanismo_bloqueo, _DOMINIO_AGENTE)
     return respuesta
 
 
@@ -792,6 +1069,40 @@ async def chat(request: ChatRequest, http_request: Request) -> dict[str, Any]:
 # pendiente NO se redefine aqui: es tal cual lo arma encolar() (id,
 # encolado_en, modelo, mensaje, vector_probado, cliente, motivo) -- un solo
 # lugar en el codigo que sabe como luce ese diccionario.
+
+
+def _extras_evento_desde_item(item: dict[str, Any]) -> dict[str, Any]:
+    """Campos extendidos del evento de una decision humana: vacios para una
+    peticion de /chat (nucleo, sin cambios); `es_extension` +
+    `herramientas_invocadas` si el item viene de la extension /agente."""
+    if item.get("tipo") == "herramienta":
+        return _extras_evento_agente([{"nombre": item.get("herramienta", "")}])
+    if item.get("endpoint") == "agente":
+        return _extras_evento_agente([])
+    return {}
+
+
+def _aprobar_herramienta(item: dict[str, Any]) -> dict[str, Any]:
+    """Un humano aprobo una invocacion de herramienta: ahora si se
+    "ejecuta" -- SIMULADA, sin efecto real (proxy/herramientas.py).
+
+    No llama a Ollama: el modelo ya decidio la invocacion antes de
+    encolarla; aprobar es solo dejar que la herramienta corra.
+    """
+    nombre = item.get("herramienta", "")
+    try:
+        resultado = herramientas.ejecutar_herramienta(
+            nombre, item.get("argumentos") or {}
+        )
+        estado: dict[str, Any] = {
+            "nombre": nombre,
+            "estado": ESTADO_HERRAMIENTA_EJECUTADA,
+            "resultado": resultado,
+        }
+    except ValueError as exc:
+        logger.warning("herramienta aprobada pero invalida: %s", exc)
+        estado = {"nombre": nombre, "estado": ESTADO_HERRAMIENTA_INVALIDA}
+    return {"id": item["id"], "estado": "aprobada", "herramientas": [estado]}
 
 
 def _obtener_pendiente_o_404(id_peticion: str) -> dict[str, Any]:
@@ -848,6 +1159,7 @@ def rechazar_revision(id_peticion: str) -> dict[str, Any]:
             _MetricasCadena(),
             config,
             tiempo_revision_humana_ms=tiempo_revision_humana_ms,
+            extras=_extras_evento_desde_item(item),
         )
     )
     logger.info(
@@ -883,11 +1195,20 @@ async def aprobar_revision(id_peticion: str) -> dict[str, Any]:
     config = mecanismos.cargar_config(mecanismos.CONFIG_PATH)
     activos = _mecanismos_activos(config)
     metricas = _MetricasCadena()
+    extras = _extras_evento_desde_item(item)
 
     inicio_procesamiento = time.perf_counter()
-    respuesta, mecanismo_bloqueo = await _completar_peticion(
-        item["modelo"], item["mensaje"], config, metricas
-    )
+    if item.get("tipo") == "herramienta":
+        respuesta, mecanismo_bloqueo = _aprobar_herramienta(item), None
+    elif item.get("endpoint") == "agente":
+        respuesta, mecanismo_bloqueo, invocaciones = await _completar_peticion_agente(
+            item, item["mensaje"], config, metricas
+        )
+        extras = _extras_evento_agente(invocaciones)
+    else:
+        respuesta, mecanismo_bloqueo = await _completar_peticion(
+            item["modelo"], item["mensaje"], config, metricas
+        )
     latencia_procesamiento_ms = int((time.perf_counter() - inicio_procesamiento) * 1000)
 
     _registrar_evento(
@@ -900,6 +1221,7 @@ async def aprobar_revision(id_peticion: str) -> dict[str, Any]:
             metricas,
             config,
             tiempo_revision_humana_ms=tiempo_revision_humana_ms,
+            extras=extras,
         )
     )
     logger.info(

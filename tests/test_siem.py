@@ -11,12 +11,18 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from proxy.siem import (
+    VERSION_PRODUCTO,
     ConectorArchivoLocal,
     ConectorSIEM,
+    FormateadorCEF,
     FormateadorJSON,
     FormateadorSIEM,
+    FormateadorWazuhJSON,
     enviar_a_siem,
+    exportar_a_siem,
 )
 
 EVENTO_EJEMPLO: dict[str, Any] = {
@@ -94,3 +100,103 @@ def test_enviar_a_siem_no_conoce_el_adapter_concreto() -> None:
     assert conector.recibidos == ["CUSTOM:bloqueado"]
     # Confirma tambien que ConectorSIEM (Protocol) no exige heredar.
     assert isinstance(conector, ConectorSIEM)
+
+
+# --- exportar_a_siem() / Wazuh JSON / CEF (extension del 17 de octubre) -----
+
+EVENTO_EXTENSION: dict[str, Any] = {
+    **EVENTO_EJEMPLO,
+    "configuracion": "C5",
+    "mecanismos_activos": ["aprobacion_humana"],
+    "vector_probado": "V7-A",
+    "modelo_destino": "rrhh",
+    "mecanismo_que_bloqueo": "aprobacion_humana",
+    "es_extension": True,
+    "herramientas_invocadas": ["enviar_correo"],
+}
+
+
+def test_exportar_a_siem_es_una_linea_json_valida_para_wazuh() -> None:
+    mensaje = exportar_a_siem(EVENTO_EJEMPLO)
+
+    assert "\n" not in mensaje
+    decodificado = json.loads(mensaje)
+    assert decodificado["@source"] == "ironveil"
+    assert decodificado["timestamp"] == EVENTO_EJEMPLO["timestamp"]
+    assert decodificado["ironveil"] == EVENTO_EJEMPLO
+
+
+def test_exportar_a_siem_es_pura() -> None:
+    copia = dict(EVENTO_EJEMPLO)
+    assert exportar_a_siem(EVENTO_EJEMPLO) == exportar_a_siem(EVENTO_EJEMPLO)
+    assert copia == EVENTO_EJEMPLO
+
+
+def test_exportar_a_siem_escapa_saltos_de_linea_en_valores() -> None:
+    evento = {**EVENTO_EJEMPLO, "vector_probado": "linea1\nlinea2"}
+    mensaje = exportar_a_siem(evento)
+    assert "\n" not in mensaje
+    assert json.loads(mensaje)["ironveil"]["vector_probado"] == "linea1\nlinea2"
+
+
+def test_exportar_a_siem_incluye_campos_de_extension() -> None:
+    decodificado = json.loads(exportar_a_siem(EVENTO_EXTENSION))
+    assert decodificado["ironveil"]["es_extension"] is True
+    assert decodificado["ironveil"]["herramientas_invocadas"] == ["enviar_correo"]
+
+
+def test_exportar_a_siem_falla_si_falta_un_campo_base() -> None:
+    evento = dict(EVENTO_EJEMPLO)
+    del evento["resultado"]
+    with pytest.raises(ValueError, match="resultado"):
+        exportar_a_siem(evento)
+
+
+def test_exportar_a_siem_rechaza_array_de_objetos() -> None:
+    """El decodificador JSON de Wazuh no soporta arrays de objetos."""
+    evento = {**EVENTO_EJEMPLO, "detalle": [{"a": 1}]}
+    with pytest.raises(ValueError, match="array de objetos"):
+        exportar_a_siem(evento)
+
+
+def test_formateador_wazuh_cumple_el_protocolo() -> None:
+    assert isinstance(FormateadorWazuhJSON(), FormateadorSIEM)
+    assert isinstance(FormateadorCEF(), FormateadorSIEM)
+
+
+def test_formateador_cef_cabecera_y_extension() -> None:
+    mensaje = FormateadorCEF().formatear(EVENTO_EJEMPLO)
+
+    cabecera = mensaje.split("|")
+    assert cabecera[:7] == [
+        "CEF:0",
+        "IronVeil",
+        "Proxy",
+        VERSION_PRODUCTO,
+        "bloqueado",
+        "IronVeil bloqueado",
+        "5",
+    ]
+    assert "cs1=C1" in mensaje
+    assert "cs5=filtrado" in mensaje
+    assert "cn1=12" in mensaje
+    assert "\n" not in mensaje
+
+
+def test_formateador_cef_severidad_alta_para_ataque_exitoso() -> None:
+    evento = {
+        **EVENTO_EJEMPLO,
+        "resultado": "exitoso_para_atacante",
+        "mecanismo_que_bloqueo": None,
+    }
+    assert FormateadorCEF().formatear(evento).split("|")[6] == "8"
+
+
+def test_formateador_cef_escapa_caracteres_especiales() -> None:
+    evento = {**EVENTO_EJEMPLO, "vector_probado": "a=b\\c\nd"}
+    mensaje = FormateadorCEF().formatear(evento)
+    assert "cs3=a\\=b\\\\c\\nd" in mensaje
+
+
+def test_formateador_cef_incluye_herramientas_en_extension() -> None:
+    assert "cs6=enviar_correo" in FormateadorCEF().formatear(EVENTO_EXTENSION)

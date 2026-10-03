@@ -73,11 +73,28 @@ COLUMNAS_TIEMPO_COSTO = {
 }
 
 
-def cargar_resultados(ruta_csv: Path) -> pd.DataFrame:
+def es_fila_extension(df: pd.DataFrame) -> pd.Series:
+    """Mascara booleana: True en las filas marcadas `es_extension` (V7 y
+    cualquier otra extension opcional). Acepta "True"/"true"/"1", que es
+    como queda un bool al pasar por CSV. Sin la columna, ninguna fila lo es.
+    """
+    if "es_extension" not in df.columns:
+        return pd.Series(False, index=df.index)
+    return df["es_extension"].str.strip().str.lower().isin({"true", "1"})
+
+
+def cargar_resultados(ruta_csv: Path, incluir_extension: bool = False) -> pd.DataFrame:
     """Lee resultados_template.csv y valida que tenga las columnas minimas.
 
     No modifica el archivo. Falla ruidosamente si faltan columnas del
     esquema de 8 campos base (ver docs/arquitectura.md, seccion 5).
+
+    Por defecto EXCLUYE las filas con `es_extension` verdadero: las
+    extensiones opcionales (p. ej. V7, Excessive Agency, semana del 17 de
+    octubre) no forman parte del nucleo de 7 configuraciones y no deben
+    mezclarse con el ASR que responde la pregunta de investigacion. Quien
+    las necesite (`consolidar_excessive_agency.py`) pasa
+    `incluir_extension=True` y filtra por su cuenta.
     """
     if not ruta_csv.exists():
         raise FileNotFoundError(f"No existe el CSV de resultados: {ruta_csv}")
@@ -88,6 +105,8 @@ def cargar_resultados(ruta_csv: Path) -> pd.DataFrame:
     if faltantes:
         raise ValueError(f"Faltan columnas requeridas en {ruta_csv}: {faltantes}")
 
+    if not incluir_extension:
+        df = df[~es_fila_extension(df)].reset_index(drop=True)
     return df
 
 

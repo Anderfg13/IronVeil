@@ -49,6 +49,32 @@ respuesta final y defendible a la pregunta de investigación, ya con el
 costo de implementación incluido — todo en
 `analisis/resultados_finales.md` (supersede a `conclusion_borrador.md`).
 
+**Extensiones opcionales (semana del 17 de octubre), fuera del núcleo de 7
+configuraciones:**
+
+- **Excessive Agency** — `POST /agente` habla con el modelo `rrhh-agente`,
+  que puede pedir usar dos herramientas **simuladas, sin ningún efecto
+  real** (`enviar_correo`, `consultar_base_datos`, en
+  `proxy/herramientas.py`). Con `aprobacion_humana: true` ninguna se
+  ejecuta sin pasar antes por la cola de `/revision`. Ataques V7 en
+  `ataques/variantes_ataque.md`; se corren con
+  `python -m ataques.vector7_excessive_agency --configuracion C0` (y luego
+  `C5`) y se consolidan con `python analisis/consolidar_excessive_agency.py`.
+  Sus filas llevan `es_extension: true` y no entran al ASR del núcleo.
+- **Notificación** — cada encolado en revisión humana dispara un webhook
+  (no bloqueante) si `IRONVEIL_WEBHOOK_NOTIFICACION` está definido. Para
+  probarlo: `python -m ataques.receptor_notificaciones --host 0.0.0.0` en el
+  host, `IRONVEIL_WEBHOOK_NOTIFICACION=http://host.docker.internal:9000/`
+  en `.env`, y `docker compose up -d proxy`. Lo recibido queda en
+  `resultados/<fecha>/notificaciones_recibidas.jsonl`.
+- **SIEM** — `proxy/siem.py::exportar_a_siem()` convierte un evento del
+  log a JSON de una línea para Wazuh (`FormateadorCEF` para CEF).
+  Validación: `docs/VALIDACION_SIEM.md`. No se desplegó Wazuh.
+
+Si ya tenías el volumen de Ollama creado antes de esta extensión, vuelve a
+correr la inicialización para crear `rrhh-agente`:
+`docker compose up ollama-init`.
+
 ## Estructura del proyecto
 
 ```
@@ -59,13 +85,17 @@ costo de implementación incluido — todo en
 │   ├── main.py            # FastAPI: POST /chat -> Ollama /api/chat
 │   ├── mecanismos.py       # Los 5 mecanismos defensivos
 │   ├── cola.py             # Cola de revision humana + rate limiter (mecanismo 5)
+│   ├── herramientas.py     # Extension: herramientas SIMULADAS de /agente
+│   ├── notificacion.py     # Extension: webhook al encolar en revision
+│   ├── siem.py             # Exportacion de eventos a Wazuh (JSON) / CEF
 │   ├── requirements.txt
 │   └── Dockerfile
 ├── ollama/
 │   ├── init.sh             # crea los modelos "soporte" y "rrhh" al arrancar
 │   └── modelfiles/
 │       ├── Modelfile.soporte.template
-│       └── Modelfile.rrhh.template
+│       ├── Modelfile.rrhh.template
+│       └── Modelfile.rrhh-agente.template   # extension Excessive Agency
 ├── tests/                  # pytest: unitarias e integracion
 └── docs/
     └── arquitectura.md
@@ -148,6 +178,8 @@ repositorio):
 | `BASE_MODEL`  | Modelo base de Ollama usado por `soporte` y `rrhh`.        |
 | `SPT_SECRET`  | Credencial ficticia (canario) del modelo `soporte`.        |
 | `RRHH_SECRET` | Credencial ficticia (canario) del modelo `rrhh`.            |
+| `IRONVEIL_WEBHOOK_NOTIFICACION` | Extension: URL del webhook de revision humana (vacio = desactivado). |
+| `MODELO_AGENTE` | Extension: modelo de Ollama usado por `/agente` (default `rrhh-agente`). |
 
 ## Apagar el entorno
 

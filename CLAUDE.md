@@ -161,6 +161,8 @@ aprobacion_humana: false
 
 Campos adicionales acordados sobre la marcha (latencia propia del clasificador, tiempo humano de revisión, tipo de variante `original`/`nueva`, paso 1/2 en V4) se agregan **sin renombrar los 8 campos base**.
 
+**Extensión Excessive Agency (17 oct, fuera del núcleo):** el endpoint `POST /agente` (no `/chat`) escribe además `es_extension: true` y `herramientas_invocadas` (lista de nombres de herramienta, no de objetos — Wazuh no decodifica arrays de objetos; pendiente de confirmar con el equipo). `modelo_destino` sigue siendo `rrhh`. `analisis/consolidar.py::cargar_resultados()` excluye las filas `es_extension` por defecto, para que nunca entren al ASR del núcleo.
+
 ---
 
 ## 5. Estructura del repositorio
@@ -169,11 +171,16 @@ Esta es la estructura **objetivo**. Lo marcado `[ya existe]` está en el repo ho
 
 ```
 /proxy/                 main.py (FastAPI) [ya existe], mecanismos.py, cola.py,
-                        siem.py (andamiaje Adapter para exportar a un SIEM
-                        futuro, aun no cableado a /chat — ver su docstring)
-/ollama/modelfiles/     Modelfile.soporte.template, Modelfile.rrhh.template [ya existen]
+                        siem.py (Adapter + exportar_a_siem() para Wazuh/CEF,
+                        aun no cableado en vivo a /chat — ver su docstring),
+                        herramientas.py y notificacion.py (extension 17 oct:
+                        herramientas SIMULADAS de /agente y webhook de revision)
+/ollama/modelfiles/     Modelfile.soporte.template, Modelfile.rrhh.template [ya existen],
+                        Modelfile.rrhh-agente.template (extension Excessive Agency)
 /tests/                 pruebas unitarias y de integración
-/ataques/               variantes_ataque.md, vector4_*.py, vector5_*.py, promptfooconfig.yaml
+/ataques/               variantes_ataque.md, vector4_*.py, vector5_*.py, vector6_*.py,
+                        vector7_excessive_agency.py, receptor_notificaciones.py,
+                        promptfooconfig.yaml
 /resultados/            resultados_template.csv, /YYYY-MM-DD/ logs crudos, /graficas/
 /analisis/              consolidar.py, validar_dataset.py, análisis en Markdown
 /docs/                  arquitectura.md [ya existe], FUENTE_DE_VERDAD.md [ya existe, por rellenar],

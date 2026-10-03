@@ -46,7 +46,8 @@ Se pueden agregar campos nuevos. **Nunca se renombran ni se eliminan los 8 base.
 | `tipo_variante` | `original` \| `nueva` | V3 desde la semana del 12 de septiembre |
 | `paso_bloqueado` | `1` \| `2` \| null | V4 (movimiento lateral) |
 | `nivel_carga` | int | V5 (peticiones concurrentes) |
-| `es_extension` | bool | resultados fuera del núcleo de 7 configuraciones |
+| `es_extension` | bool | resultados fuera del núcleo de 7 configuraciones (lo escribe el proxy en todo evento de `/agente`; `consolidar.cargar_resultados()` excluye esas filas por defecto) |
+| `herramientas_invocadas` | lista[string] | eventos de `/agente` (extensión Excessive Agency): nombres de herramientas que pidió el modelo. Lista de strings, nunca de objetos (Wazuh no los decodifica). Pendiente de confirmar con el equipo |
 
 **Antes de inventar un campo nuevo:** revisa si uno de estos ya cubre el caso, y avisa al equipo. Un campo que solo entiende quien lo escribió es ruido en el dataset.
 

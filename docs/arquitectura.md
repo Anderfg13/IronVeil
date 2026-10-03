@@ -236,7 +236,8 @@ Se agregan sin renombrar los 8 base:
 | `tipo_variante` | `original` \| `nueva` | V3, desde la semana del 12 de septiembre |
 | `paso_bloqueado` | `1` \| `2` \| null | V4 (movimiento lateral) |
 | `nivel_carga` | int | V5 (agotamiento de recursos), ya en uso en `ataques/vector5_carga.py` |
-| `es_extension` | bool | resultados fuera del núcleo de 7 configuraciones (p. ej. Excessive Agency) |
+| `es_extension` | bool | resultados fuera del núcleo de 7 configuraciones (p. ej. Excessive Agency). Lo escribe el proxy en todo evento de `/agente`; `consolidar.cargar_resultados()` excluye esas filas por defecto |
+| `herramientas_invocadas` | lista[string] | eventos de `/agente` (extensión Excessive Agency): nombres de las herramientas que el modelo pidió invocar (lista de strings, no de objetos: el decodificador JSON de Wazuh no soporta arrays de objetos). Pendiente de confirmar con el equipo |
 
 Cualquier campo nuevo se avisa al equipo y se documenta aquí y en
 `CLAUDE.md` en el mismo commit.
@@ -252,7 +253,8 @@ leer esta columna para tratarla igual que la lista del JSONL.
 
 ### Quién escribe el log
 
-El log lo escribe **el endpoint `/chat`**, nunca las funciones de
+El log lo escribe **el endpoint `/chat`** (y, en la extensión, `/agente`
+y los de `/revision`), nunca las funciones de
 `mecanismos.py`. Los mecanismos deciden (retornan bloqueo sí/no); el
 endpoint es el único que sabe la latencia total, la configuración vigente y
 el resultado final, así que es el único que arma el evento y lo serializa
@@ -378,6 +380,44 @@ con `json.dumps(evento, ensure_ascii=False)` + salto de línea.
   `POST /revision/{id}/aprobar`, `POST /revision/{id}/rechazar`, `GET
   /revision/ui`). No queda pendiente ningún mecanismo del núcleo del
   experimento.
+
+### Extensiones opcionales (semana del 17 de octubre) — fuera del núcleo
+
+Nada de esto cambia `/chat` ni, por tanto, las 7 configuraciones del
+núcleo. La evaluación de entrada de `/chat` se movió a
+`_evaluar_entrada()` (refactor sin cambio de comportamiento; la suite
+previa pasa intacta) para que `/agente` la comparta.
+
+- **Excessive Agency — `POST /agente`** (`proxy/main.py`). Mismo pipeline
+  y mismas banderas que `/chat` (cadena de entrada, delimitación, cadena de
+  salida), pero hacia el modelo `rrhh-agente` (Modelfile aparte: mismo
+  system prompt y canario que `rrhh` + política de uso de herramientas;
+  `rrhh` no cambia) y enviando las definiciones de tool calling de
+  `proxy/herramientas.py`. Las dos herramientas, `enviar_correo()` y
+  `consultar_base_datos()`, son **simuladas, sin ningún efecto real**
+  (regla 6 de `CLAUDE.md`). Si el modelo pide invocarlas:
+  - `aprobacion_humana: false` → se "ejecutan" (simuladas) de inmediato.
+  - `aprobacion_humana: true` → **ninguna se ejecuta**: cada invocación se
+    encola (`tipo: "herramienta"`, `motivo: "invocacion_herramienta"`) y
+    solo `POST /revision/{id}/aprobar` la ejecuta; `rechazar` la descarta.
+  Cada evento lleva `es_extension: true` y `herramientas_invocadas`, con
+  `modelo_destino: "rrhh"` (el dominio) aunque el modelo de Ollama sea
+  `rrhh-agente`. Un 200 de `/agente` trae `herramientas` (estado por
+  invocación) y nunca reenvía los `tool_calls` crudos al cliente.
+- **Notificación** (`proxy/notificacion.py`). Todo encolado del proxy
+  (rate limit, bloqueo interceptado, invocación de herramienta) pasa por
+  `_encolar_para_revision()`, que dispara un webhook POST con mecanismo que
+  detectó, configuración, vector, id de revisión y timestamp — sin el
+  mensaje del usuario. Corre en un pool de 2 hilos, nunca en el camino de
+  la petición; cualquier fallo solo se registra como advertencia. Opt-in
+  con `IRONVEIL_WEBHOOK_NOTIFICACION` (vacío = desactivada).
+  `ataques/receptor_notificaciones.py` es un receptor local de prueba.
+- **Exportación SIEM** (`proxy/siem.py`). `exportar_a_siem(evento) -> str`
+  (pura) produce JSON de una línea para el `log_format` `json` de Wazuh;
+  `FormateadorCEF` produce CEF para SIEM que sí lo ingieren (Wazuh no
+  tiene `log_format` CEF). Validación contra la documentación oficial en
+  `docs/VALIDACION_SIEM.md`. Todavía **no** se envía en vivo desde `/chat`
+  (no hay instancia de Wazuh en el laboratorio).
 
 ## 7. Documentos relacionados
 

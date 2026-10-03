@@ -564,3 +564,45 @@ def test_calcular_costo_operativo_sin_decisiones_deja_tiempos_vacios() -> None:
 
     assert fila["Decisiones humanas registradas (n)"] == 0
     assert fila["Tiempo revisión media (ms)"] is None
+
+
+def _csv_con_extension(tmp_path: Path) -> Path:
+    from analisis.agregar_resultados_desde_jsonl import COLUMNAS_MAESTRAS
+
+    base = dict.fromkeys(COLUMNAS_MAESTRAS, "")
+    filas = [
+        {**base, "configuracion": "C0", "vector_probado": "V3-A", "es_extension": ""},
+        {
+            **base,
+            "configuracion": "C0",
+            "vector_probado": "V7-A",
+            "es_extension": "True",
+        },
+        {
+            **base,
+            "configuracion": "C5",
+            "vector_probado": "V7-B",
+            "es_extension": "true",
+        },
+    ]
+    ruta = tmp_path / "resultados.csv"
+    pd.DataFrame(filas).to_csv(ruta, index=False)
+    return ruta
+
+
+def test_cargar_resultados_excluye_filas_de_extension_por_defecto(
+    tmp_path: Path,
+) -> None:
+    from analisis.consolidar import cargar_resultados
+
+    df = cargar_resultados(_csv_con_extension(tmp_path))
+
+    assert df["vector_probado"].tolist() == ["V3-A"]
+
+
+def test_cargar_resultados_puede_incluir_extension(tmp_path: Path) -> None:
+    from analisis.consolidar import cargar_resultados
+
+    df = cargar_resultados(_csv_con_extension(tmp_path), incluir_extension=True)
+
+    assert len(df) == 3

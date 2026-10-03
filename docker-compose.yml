@@ -56,6 +56,18 @@ services:
       # de Ollama, para que una pausa entre peticiones (demo en vivo,
       # bateria de ataques con huecos) no fuerce una recarga en frio.
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
+      # Extension (17 oct): webhook que se llama cada vez que aprobacion
+      # humana encola una peticion. Vacio = sin notificacion (default, el
+      # nucleo C0..C6 no depende de el). Para probarlo en local:
+      # `python -m ataques.receptor_notificaciones` en el host y
+      # IRONVEIL_WEBHOOK_NOTIFICACION=http://host.docker.internal:9000/
+      IRONVEIL_WEBHOOK_NOTIFICACION: ${IRONVEIL_WEBHOOK_NOTIFICACION:-}
+      MODELO_AGENTE: ${MODELO_AGENTE:-rrhh-agente}
+    # host.docker.internal ya existe en Docker Desktop (Windows/macOS); esta
+    # linea lo agrega tambien en Docker Engine sobre Linux, para que el
+    # webhook de arriba pueda apuntar a un receptor corriendo en el host.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       # Monta config.yaml (no se copia en la imagen) para poder cambiar de
       # configuracion (C0..C6) con solo editar el archivo y reiniciar el

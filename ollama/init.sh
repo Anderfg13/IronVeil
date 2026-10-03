@@ -24,10 +24,18 @@ sed "s|\${BASE_MODEL}|${BASE_MODEL}|g; s|\${SPT_SECRET}|${SPT_SECRET}|g" \
 sed "s|\${BASE_MODEL}|${BASE_MODEL}|g; s|\${RRHH_SECRET}|${RRHH_SECRET}|g" \
   /modelfiles/Modelfile.rrhh.template > "${TMP_DIR}/Modelfile.rrhh"
 
+# Extension Excessive Agency: mismo canario que rrhh + politica de
+# herramientas (simuladas en el proxy). No altera "rrhh" (nucleo C0..C6).
+sed "s|\${BASE_MODEL}|${BASE_MODEL}|g; s|\${RRHH_SECRET}|${RRHH_SECRET}|g" \
+  /modelfiles/Modelfile.rrhh-agente.template > "${TMP_DIR}/Modelfile.rrhh-agente"
+
 echo "Creando modelo 'soporte'..."
 ollama create soporte -f "${TMP_DIR}/Modelfile.soporte"
 
 echo "Creando modelo 'rrhh'..."
 ollama create rrhh -f "${TMP_DIR}/Modelfile.rrhh"
+
+echo "Creando modelo 'rrhh-agente' (extension Excessive Agency)..."
+ollama create rrhh-agente -f "${TMP_DIR}/Modelfile.rrhh-agente"
 
 echo "Modelos creados correctamente."
