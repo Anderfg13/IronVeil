@@ -237,3 +237,47 @@ def test_clasificar_salida_respuesta_vacia_es_fail_closed(
 def test_clasificar_direccion_invalida_lanza_value_error() -> None:
     with pytest.raises(ValueError, match="direccion invalida"):
         clasificar("cualquier texto", "lateral")
+
+
+def _inyectar_transformers_y_torch(
+    monkeypatch: pytest.MonkeyPatch, cuda_disponible: bool
+) -> dict[str, object]:
+    """Reemplaza `transformers` y `torch` por dobles, para ver con que
+    `device` se construye el pipeline sin descargar ni cargar el modelo real.
+    """
+    import sys
+    import types
+
+    capturado: dict[str, object] = {}
+
+    def _pipeline_falso(*args: object, **kwargs: object) -> str:
+        capturado.update(kwargs)
+        return "pipeline-falso"
+
+    transformers_falso = types.ModuleType("transformers")
+    transformers_falso.pipeline = _pipeline_falso  # type: ignore[attr-defined]
+    torch_falso = types.ModuleType("torch")
+    torch_falso.cuda = types.SimpleNamespace(  # type: ignore[attr-defined]
+        is_available=lambda: cuda_disponible
+    )
+    monkeypatch.setitem(sys.modules, "transformers", transformers_falso)
+    monkeypatch.setitem(sys.modules, "torch", torch_falso)
+    monkeypatch.setattr(mecanismos, "_pipeline_prompt_guard", None)
+    monkeypatch.setattr(mecanismos, "HF_TOKEN", "token-de-prueba")
+    return capturado
+
+
+def test_prompt_guard_usa_la_gpu_si_hay_cuda(monkeypatch: pytest.MonkeyPatch) -> None:
+    capturado = _inyectar_transformers_y_torch(monkeypatch, cuda_disponible=True)
+
+    mecanismos._obtener_pipeline_prompt_guard()
+
+    assert capturado["device"] == 0
+
+
+def test_prompt_guard_usa_cpu_si_no_hay_cuda(monkeypatch: pytest.MonkeyPatch) -> None:
+    capturado = _inyectar_transformers_y_torch(monkeypatch, cuda_disponible=False)
+
+    mecanismos._obtener_pipeline_prompt_guard()
+
+    assert capturado["device"] == -1

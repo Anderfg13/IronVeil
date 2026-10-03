@@ -167,8 +167,10 @@ una capa, pero este experimento no puede demostrar ese beneficio.
   6 filas de C6 que no cruzan limpio contra `eventos.jsonl`).
 - **Horas de costo** son una estimación (no hubo registro de tiempo);
   **falsos positivos** es evidencia puntual.
-- **Prompt Guard corre en CPU** aunque haya GPU (`pipeline()` sin `device`):
-  parte de los +205 ms de clasificación es evitable.
+- **Prompt Guard corrió en CPU** en estas corridas aunque hubiera GPU
+  (`pipeline()` sin `device`): parte de los +205 ms de clasificación es
+  evitable. Ya se corrigió en el código (`device=0` si hay CUDA); la latencia
+  de C3 y C6 de este documento es anterior a ese cambio.
 - **LLM no determinista**; los resultados no se reproducen bit a bit.
 - Dos ambigüedades de datos abiertas, documentadas en
   `docs/LIMPIEZA_DATOS.md` (`paso_bloqueado` en V4 "paso 2 omitido"; filas
@@ -178,12 +180,12 @@ una capa, pero este experimento no puede demostrar ese beneficio.
 
 1. Re-correr V5 en GPU con el código actual y los mismos niveles de carga en
    las 7 configuraciones.
-2. Fijar `device` en Prompt Guard cuando haya CUDA y re-medir el costo de
-   clasificación.
+2. Re-medir la latencia de clasificación (C3, C6) con Prompt Guard en GPU
+   (ya implementado, falta correrlo).
 3. Un modelo base menos alineado (o un conjunto de payloads más fuertes)
    para que V3 tenga espacio de medición.
-4. Pausa entre V1-V3 y V4 (o un límite de tasa configurable) para que C5/C6
-   dejen de medir saturación.
+4. Re-correr C5/C6 con la pausa entre peticiones (`--pausa-entre-peticiones-s`,
+   ya implementada) para que dejen de medir saturación del límite de tasa.
 5. Ejecutar la combinación mínimo privilegio + filtrado (+ aprobación
    humana) como configuración propia, para convertir la recomendación en
    una medición.

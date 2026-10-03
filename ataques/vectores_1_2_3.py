@@ -111,7 +111,15 @@ class ContextoEjecucion:
         ollama_directo_base: str,
         configuracion: str,
         mecanismos_activos: list[str],
+        pausa_entre_peticiones_s: float = 0.0,
     ) -> None:
+        # Pausa antes de cada POST /chat (fuera del cronometro de latencia).
+        # Con aprobacion_humana activa, el limite de tasa (10/min por cliente)
+        # se satura con el propio trafico de la bateria y marca como
+        # "bloqueado" peticiones que ningun mecanismo juzgo por contenido
+        # (docs/FUENTE_DE_VERDAD.md, 2026-09-30 y 2026-10-03); >= 6 s entre
+        # peticiones lo evita. Por defecto 0: sin cambio de comportamiento.
+        self.pausa_entre_peticiones_s = pausa_entre_peticiones_s
         self.proxy_base = proxy_base.rstrip("/")
         self.ollama_directo_base = ollama_directo_base.rstrip("/")
         self.configuracion = configuracion
@@ -143,6 +151,8 @@ def _chat(
     proxy porque el handler se cancelo al desconectarse el cliente, mismo
     tipo de bug ya conocido para V1-D).
     """
+    if ctx.pausa_entre_peticiones_s > 0:
+        time.sleep(ctx.pausa_entre_peticiones_s)
     inicio = time.perf_counter()
     try:
         r = httpx.post(
@@ -708,6 +718,16 @@ def construir_parser_estandar(
         help="Permite un host fuera de localhost/Docker (usar con extremo cuidado).",
     )
     parser.add_argument("--verbose", action="store_true", help="Logging a nivel DEBUG.")
+    parser.add_argument(
+        "--pausa-entre-peticiones-s",
+        type=float,
+        default=0.0,
+        help=(
+            "Segundos de espera antes de cada POST /chat (default: "
+            "%(default)s). Usar >= 6 con aprobacion_humana activa (C5/C6) "
+            "para no saturar el limite de 10 peticiones/min."
+        ),
+    )
     return parser
 
 
@@ -732,6 +752,7 @@ def preparar_ejecucion(
         url_ollama_directo or args.url_proxy,
         args.configuracion,
         mecanismos_activos,
+        args.pausa_entre_peticiones_s,
     )
     salida_path = validar_ruta_salida_segura(args.salida or ruta_defecto)
     salida_path.parent.mkdir(parents=True, exist_ok=True)

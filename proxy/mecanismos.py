@@ -556,12 +556,21 @@ def _obtener_pipeline_prompt_guard() -> Any:
                     f"descargar {MODELO_PROMPT_GUARD_ID}, un modelo con "
                     "licencia restringida en Hugging Face."
                 )
+            import torch
             from transformers import pipeline as _crear_pipeline
 
+            # Sin `device`, pipeline() corre en CPU aunque haya GPU (default
+            # -1): Prompt Guard (86M) en CPU era parte del sobrecosto de
+            # latencia de clasificacion medido el 2026-10-03 (+205 ms). 0 =
+            # primera GPU CUDA; sin CUDA (p. ej. torch CPU-only del
+            # Dockerfile) sigue en -1, comportamiento identico al anterior.
+            dispositivo = 0 if torch.cuda.is_available() else -1
+            logger.info("Prompt Guard cargado en device=%d.", dispositivo)
             _pipeline_prompt_guard = _crear_pipeline(
                 "text-classification",
                 model=MODELO_PROMPT_GUARD_ID,
                 token=HF_TOKEN,
+                device=dispositivo,
             )
     return _pipeline_prompt_guard
 
