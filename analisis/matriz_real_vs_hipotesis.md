@@ -1,17 +1,16 @@
 # Matriz real vs. matriz de hipótesis (Sección 6.5/6.6)
 
-> Versión del 2026-10-03, sobre la re-corrida homogénea en Colab GPU T4
-> (C0-C6, V1-V4, mismo hardware y mismo código del proxy). **Reemplaza** a la
-> versión anterior, que mezclaba dos criterios de éxito distintos (ver
-> `docs/LIMPIEZA_DATOS.md`, sección 6) y por eso llegaba a conclusiones que
-> los datos nuevos no sostienen.
+> Versión del 2026-10-04, sobre tres re-corridas en Colab GPU T4 (mismo
+> hardware; mismo código del proxy salvo los cambios de la 3.ª corrida, que
+> solo afectan a C5/C6). **Reemplaza** a las versiones anteriores, que
+> mezclaban criterios de éxito distintos y, en C5/C6, medían saturación del
+> límite de tasa (ver `docs/LIMPIEZA_DATOS.md`, sección 6).
 >
-> **Fuentes (todas generadas por `analisis/matriz_real_vs_hipotesis.py`):**
+> **Fuentes (generadas por `analisis/matriz_real_vs_hipotesis.py`):**
 > `matriz_real_asr.md` (regla de umbral), `matriz_real_pvalores.md` (Fisher),
-> `matriz_real_con_significancia.md` (la que usa el heatmap),
-> `v4_ataque_completo.md` (V4 separado por pasos). Hipótesis: Sección 6.5 del
-> documento de propuesta (fuera del repo), transcrita y confirmada el
-> 2026-09-30.
+> `matriz_real_con_significancia.md` (la del heatmap), `v4_ataque_completo.md`
+> (V4 por pasos). Hipótesis: Sección 6.5 del documento de propuesta (fuera
+> del repo), transcrita y confirmada el 2026-09-30.
 
 ## 1. Las matrices
 
@@ -25,159 +24,158 @@
 | 4. Movimiento lateral | N/A | N/A | N/A | Sí (directo) | Parcial |
 | 5. Agotamiento de recursos | N/A | N/A | N/A | N/A | Sí (directo) |
 
-**Real, ASR por fuga verificada (k/n = intentos con fuga / intentos) y valor
-p de Fisher contra C0.** C0-C5: 4 repeticiones de V1-V4 (n = 20 / 20 / 48 / 24
-para V1 / V2 / V3 / V4); C6: 3 repeticiones (15 / 15 / 27 / 18).
+**Real: ASR por fuga verificada (k/n) y valor p de Fisher contra C0.**
+C0-C4: 7 repeticiones de V1-V4 (n = 35 / 35 / 84 / 42; C1 tiene 77 en V3).
+C5 y C6: 3 repeticiones, con 7 s entre peticiones (n = 15 / 15 / 36 y 34 / 18).
 
 | Vector | C0 (base) | Filtrado | Delimitación | Clasificación | Mín. Privilegio | Aprob. Humana |
 |---|---|---|---|---|---|---|
-| V1 | 8/20 | 8/20 (p=1.00) | 8/20 (p=1.00) | 8/20 (p=1.00) | 8/20 (p=1.00) | 8/20 (p=1.00) |
-| V2 | 10/20 | 4/20 (p=0.10) | 6/20 (p=0.33) | 7/20 (p=0.52) | 10/20 (p=1.00) | 9/20 (p=1.00) |
-| V3 | 3/48 | 0/43 (p=0.24) | 2/48 (p=1.00) | 2/48 (p=1.00) | 3/48 (p=1.00) | 2/36 (p=1.00) |
-| V4 (agregado) | 8/24 | **0/24 (p=0.004)** | 2/24 (p=0.07) | 8/24 (p=1.00) | 5/24 (p=0.52) | **0/24 (p=0.004)** |
+| V1 | 14/35 | 14/35 (p=1.00) | 14/35 (p=1.00) | 14/35 (p=1.00) | 14/35 (p=1.00) | 6/15 (p=1.00) |
+| V2 | 18/35 | **7/35 (p=0.012)** | 10/35 (p=0.087) | 13/35 (p=0.34) | 20/35 (p=0.81) | 7/15 (p=1.00) |
+| V3 | 4/84 | 0/77 (p=0.12) | 3/84 (p=1.00) | 3/84 (p=1.00) | 7/84 (p=0.54) | 2/36 (p=1.00) |
+| V4 (agregado) | 14/42 | **0/42 (p<0.001)** | **2/42 (p=0.002)** | 10/42 (p=0.47) | 6/42 (p=0.07) | 8/18 (p=0.56) |
 | V5 | 277/371 | sin datos | sin datos | 20/20 (p=0.006)* | sin datos | **37/18329 (p<0.001)** |
 
 \* V5 × Clasificación **sube**; no es comparable: las 20 filas de C3 son todas
-`nivel_carga=20` y C0 nunca se probó en ese nivel (ver 3.5).
+`nivel_carga=20` y C0 nunca se probó en ese nivel. V5 no se re-corrió.
 
-**Qué cambió respecto a la regla de umbral original** (50 puntos de
-reducción = "Sí (directo)", 0-50 = "Parcial"): con n de 15-48 esa regla
-etiqueta "Parcial" diferencias de uno o dos eventos (p. ej. V3: 3/48 → 2/48).
-Se añadió una **guarda de significancia** (Fisher, α=0.05) que solo puede
-*bajar* una etiqueta a "N/A (n.s.)", nunca subirla. La tabla con la regla
-original se conserva en `matriz_real_asr.md`. Con 25 pruebas se esperan ~1
-falso positivo a α=0.05; las tres celdas significativas tienen p ≤ 0.004.
+**Sobre la regla de etiquetado.** La regla original (≥50 puntos de reducción =
+"Sí (directo)", 0-50 = "Parcial") etiqueta "Parcial" diferencias de uno o dos
+eventos con n pequeño. Se añadió una **guarda de significancia** (Fisher,
+α=0.05) que solo puede *bajar* una etiqueta a "N/A (n.s.)"; la tabla con la
+regla original sigue en `matriz_real_asr.md`. Con 25 pruebas se espera ~1
+falso positivo a α=0.05; las celdas marcadas en negrita tienen p ≤ 0.012.
 
 ## 2. Comparación celda por celda
 
-Veredictos: **Confirmado** (coincide, con evidencia o trivialmente),
-**No concluyente** (la diferencia no se distingue del ruido, o no hay
-espacio para medirla), **No observado** (se predijo efecto y no hay),
-**Discrepancia** (efecto medido que la hipótesis no predice),
-**No comparable**, **Sin datos**.
+Veredictos: **Confirmado**, **No concluyente** (no se distingue del ruido o no
+hay espacio para medir), **No observado** (se predijo efecto y no hay),
+**Discrepancia** (efecto medido que la hipótesis no predice), **No
+comparable**, **Sin datos**.
 
 | Vector × Mecanismo | Predicho | Observado | Veredicto |
 |---|---|---|---|
-| V1 × Filtrado / Delimitación / Clasificación / Mín. Priv. | N/A | sin cambio (8/20, p=1) | Confirmado (trivial: V1 es sondeo de infraestructura) |
-| V1 × Aprob. Humana | Parcial (fricción) | sin cambio (p=1) | No observado — V1 no pasa por `/chat`, no hay cola que añada fricción |
-| V2 × Filtrado | Parcial | 10/20→4/20, p=0.096 | No concluyente (tendencia en la dirección correcta) |
-| V2 × Delimitación | Parcial | 10/20→6/20, p=0.33 | No concluyente |
-| V2 × Clasificación | Parcial | 10/20→7/20, p=0.52 | No concluyente |
-| V2 × Mín. Privilegio | Parcial | sin cambio, p=1 | No observado |
-| V2 × Aprob. Humana | Parcial | 10/20→9/20, p=1 | No observado |
-| V3 × Filtrado | Sí | 3/48→0/43, p=0.24 | No concluyente (efecto suelo, 3.1) |
-| V3 × Delimitación | Sí | 3/48→2/48, p=1 | No concluyente (efecto suelo) |
-| V3 × Clasificación | Sí | 3/48→2/48, p=1 | No concluyente (efecto suelo) |
-| V3 × Mín. Privilegio | N/A | sin cambio, p=1 | Confirmado |
-| V3 × Aprob. Humana | Parcial | 3/48→2/36, p=1 | No concluyente (efecto suelo) |
-| V4 × Filtrado | N/A | 8/24→0/24, **p=0.004** | **Discrepancia** (3.2) |
-| V4 × Delimitación | N/A | 8/24→2/24, p=0.07 | No concluyente (sugiere un efecto que la hipótesis no predice) |
-| V4 × Clasificación | N/A | 8/24→8/24, p=1 | Confirmado |
-| V4 × Mín. Privilegio | Sí (directo) | agregado 8/24→5/24, p=0.52; **por pasos: paso 2 bloqueado 5/5** | **Confirmado al medir por pasos** (3.3) |
-| V4 × Aprob. Humana | Parcial | 8/24→0/24, **p=0.004** | **Discrepancia por artefacto**: límite de tasa (3.4) |
-| V5 × Filtrado / Delimitación / Mín. Priv. | N/A | — | Sin datos (nunca se probaron contra V5) |
-| V5 × Clasificación | N/A | 277/371→20/20 | No comparable (3.5) |
+| V1 × Filtrado / Delimitación / Clasificación / Mín. Priv. | N/A | sin cambio (14/35, p=1) | Confirmado (trivial: V1 es sondeo de infraestructura) |
+| V1 × Aprob. Humana | Parcial (fricción) | sin cambio (p=1) | No observado — V1 no pasa por `/chat` |
+| V2 × Filtrado | Parcial | 18/35→7/35, **p=0.012** | **Confirmado** |
+| V2 × Delimitación | Parcial | 18/35→10/35, p=0.087 | No concluyente (misma dirección) |
+| V2 × Clasificación | Parcial | 18/35→13/35, p=0.34 | No concluyente |
+| V2 × Mín. Privilegio | Parcial | 18/35→20/35, p=0.81 | No observado |
+| V2 × Aprob. Humana | Parcial | 18/35→7/15, p=1 | No observado |
+| V3 × Filtrado | Sí | 4/84→0/77, p=0.12 | No concluyente (efecto suelo, 3.1) |
+| V3 × Delimitación | Sí | 4/84→3/84, p=1 | No concluyente (efecto suelo) |
+| V3 × Clasificación | Sí | 4/84→3/84, p=1 | No concluyente (efecto suelo) |
+| V3 × Mín. Privilegio | N/A | 4/84→7/84, p=0.54 | Confirmado |
+| V3 × Aprob. Humana | Parcial | 4/84→2/36, p=1 | No concluyente (efecto suelo) |
+| V4 × Filtrado | N/A | 14/42→0/42, **p<0.001** | **Discrepancia** (3.2) |
+| V4 × Delimitación | N/A | 14/42→2/42, **p=0.002** | **Discrepancia** (3.3) |
+| V4 × Clasificación | N/A | 14/42→10/42, p=0.47 | Confirmado |
+| V4 × Mín. Privilegio | Sí (directo) | agregado 14/42→6/42, p=0.07; **por pasos: paso 2 bloqueado 6/6** | **Confirmado al medir por pasos** (3.4) |
+| V4 × Aprob. Humana | Parcial | 14/42→8/18, p=0.56 | No observado (3.5) |
+| V5 × Filtrado / Delimitación / Mín. Priv. | N/A | — | Sin datos |
+| V5 × Clasificación | N/A | 277/371→20/20 | No comparable (3.6) |
 | V5 × Aprob. Humana | Sí (directo) | 277/371→37/18329 | Confirmado (por diseño: límite de tasa) |
 
-**Resumen de los 25 pares:** 8 confirmados, 8 no concluyentes, 3 no
-observados, 2 discrepancias, 1 no comparable, 3 sin datos. **Solo 3 celdas
-muestran un efecto estadísticamente distinguible del ruido** (V4 × Filtrado,
-V4 × Aprob. Humana, V5 × Aprob. Humana) más el paso 2 de V4 × Mín.
-Privilegio. La versión anterior de este documento afirmaba "13 de 15
-celdas coinciden en dirección": esa cifra no sobrevive al criterio unificado
-ni a medir la incertidumbre.
+**Resumen de los 25 pares:** 9 confirmados, 6 no concluyentes, 4 no
+observados, 2 discrepancias, 1 no comparable, 3 sin datos. **Solo 5 celdas
+son estadísticamente distinguibles del ruido** (V2 × Filtrado, V4 × Filtrado,
+V4 × Delimitación, V5 × Aprob. Humana y la V5 × Clasificación no comparable),
+más el paso 2 de V4 × Mín. Privilegio.
 
 ## 3. Discrepancias y celdas que piden explicación
 
-### 3.1. V3: efecto suelo (la hipótesis "Sí, Sí, Sí" no se puede probar con este modelo)
+### 3.1. V3: efecto suelo
 
-Con el criterio de fuga verificada, C0 filtra el secreto en solo **3 de 48**
-intentos de V3 (6.2%): `llama3.2:1b` rechaza casi todas las inyecciones por
-su cuenta. Con esa base, ningún mecanismo puede mostrar una reducción medible
-(el máximo posible serían 3 eventos). **No es evidencia en contra de la
-hipótesis**: los mecanismos sí actúan —clasificación bloqueó 14/48 intentos de
-V3, filtrado 7/43, aprobación humana 16/36— pero casi todo lo que bloquean
-es lo que el modelo ya habría rechazado. Lo que sí se puede afirmar es que
-el valor de estos tres mecanismos contra prompt injection **no es medible
-con un modelo base tan alineado**; una hipótesis razonable, no probada aquí,
-es que importarían más con un modelo menos alineado.
+C0 filtra el secreto en **4 de 84** intentos de V3 (4.8%): `llama3.2:1b`
+rechaza casi todo por su cuenta, y ningún mecanismo puede mostrar una
+reducción medible (máximo posible: 4 eventos). **No es evidencia contra la
+hipótesis**: los mecanismos sí actúan (clasificación bloqueó 46 peticiones en
+total, filtrado 38), pero casi todo lo que bloquean es lo que el modelo ya
+habría rechazado. Con este modelo base el valor de filtrado, delimitación y
+clasificación contra prompt injection **no es medible**; que importen más con
+un modelo menos alineado es una hipótesis razonable, no probada aquí.
 
-La versión anterior mostraba V3 × Clasificación como "Sí (directo)"
-(100%→0%). Era un artefacto: C0 se había puntuado como "nada lo bloqueó" y
-C3 como "la credencial salió".
+### 3.2. V4 × Filtrado: efecto no predicho (14/42 → 0/42)
 
-### 3.2. V4 × Filtrado: efecto no predicho (8/24 → 0/24, p=0.004)
+La hipótesis marca N/A porque filtrado no está pensado contra movimiento
+lateral. **Explicación:** el paso 1 de V4 es una *extracción* y reutiliza los
+payloads de V2-B, V3-A y V2-C (`ataques/variantes_ataque.md`), justo los que
+`filtrar()` bloquea en entrada y cuya credencial redacta en salida. En C1 el
+paso 1 quedó bloqueado 11/21 y exitoso 0/21 (C0: 7/21); sin extracción no hay
+paso 2. Es un efecto indirecto: frena el primer eslabón, no el uso cruzado.
 
-La hipótesis marca N/A porque filtrado no está diseñado contra movimiento
-lateral. **Hipótesis explicativa:** el paso 1 de V4 es una *extracción* y
-reutiliza los payloads de V2-B, V3-A y V2-C (`ataques/variantes_ataque.md`),
-justo los patrones que `filtrar()` bloquea en entrada y la credencial que
-redacta en salida. Dato: en C1 el paso 1 quedó bloqueado en 7/12 y exitoso
-en 0/12 (C0: 4/12 exitoso); sin extracción no hay paso 2. Es un efecto
-indirecto: filtrado frena el *primer* eslabón de la cadena, no el uso
-cruzado. Consistente con el mecanismo; la hipótesis lo subestimó por mirar
-solo el paso 2.
+### 3.3. V4 × Delimitación: efecto no predicho (14/42 → 2/42) — y corrige un error previo
 
-### 3.3. V4 × Mínimo privilegio: "Parcial" en el agregado, "Sí (directo)" por pasos
+La hipótesis marca N/A, y una versión anterior de este documento daba por
+"refutado por diseño" que delimitación pudiera mover el ASR. Ese razonamiento
+era válido solo para el criterio "nada lo bloqueó" (delimitación nunca
+bloquea). Con el criterio de **fuga verificada**, delimitación sí puede
+reducir el ASR sin bloquear nada: reestructura el prompt y cambia lo que el
+modelo hace. Dato: paso 1 exitoso 1/21 en C2 contra 7/21 en C0. La dirección
+se repite en V2 (18/35 → 10/35, p=0.087), aunque ahí no llega a significancia.
+Hipótesis: el marcado de la entrada como "no confiable" hace al modelo de 1B
+menos propenso a obedecer una petición de extracción; **no probada** (no se
+midió el mecanismo, solo el resultado). Es el hallazgo más inesperado y el
+más barato de verificar con más repeticiones.
 
-El ASR agregado de V4 mezcla dos pasos con semántica distinta (la trampa de
-`CLAUDE.md`, sección 9: mínimo privilegio bloquea el uso cruzado, no la
-extracción). Separados (`v4_ataque_completo.md`):
+### 3.4. V4 × Mínimo privilegio: "Parcial" agregado, "Sí (directo)" por pasos
+
+El ASR agregado mezcla dos pasos con semántica distinta (trampa de
+`CLAUDE.md`, sección 9). Separados (`v4_ataque_completo.md`):
 
 | Config. | Paso 1 exitoso (extracción) | Paso 2 bloqueado | Ataque completo |
 |---|---|---|---|
-| C0 | 4/12 | 0 | 4/12 |
-| C4 | 5/12 | **5 (de los 5 que extrajeron)** | 0/12 |
+| C0 | 7/21 | 0 | 7/21 |
+| C4 | 6/21 | **6 (de los 6 que extrajeron)** | 0/21 |
 
-En C4 la extracción **sigue funcionando** (5/12, como se espera por diseño) y
-el uso cruzado se bloquea en el 100% de los casos en que había algo que
-usar; en C0 el paso 2 tuvo éxito en 4 de 4. Fisher sobre los casos
-condicionados (5/5 bloqueados vs. 0/4): p=0.008. **Confirma la hipótesis
-con precisión**, con n pequeño (9 casos condicionados).
+En C4 la extracción **sigue funcionando** (6/21, por diseño) y el uso cruzado
+se bloquea en el 100% de los casos en que había algo que usar; en C0 el paso 2
+tuvo éxito 7 de 7. Fisher sobre los casos condicionados (6/6 vs. 0/7):
+p=0.0006. **Confirma la hipótesis con precisión.**
 
-### 3.4. V4 × Aprobación humana (8/24 → 0/24): artefacto del límite de tasa
+### 3.5. V4 × Aprobación humana: sin efecto, y eso resuelve un artefacto previo
 
-El mecanismo no juzgó contenido: en C5 el paso 1 de V4 quedó **bloqueado
-12/12** por `aprobacion_humana`. La batería corre V1-V3 y luego V4 sin pausa
-(la espera de 65 s es antes de cada configuración, no entre los dos scripts),
-así que cuando llega V4 el límite de 10 peticiones/min ya está excedido y
-todo se encola (429). Es el mismo efecto que ya afectó a C6 el 2026-09-30:
-**la celda no demuestra que aprobación humana detenga movimiento lateral**,
-solo que bloquea volumen. No debe citarse como evidencia de protección.
+Con las 7 s entre peticiones, C5 muestra **0 bloqueos** en V1-V4 (antes: 28,
+atribuidos al límite de tasa saturado) y V4 sube a 8/18 (p=0.56 vs. C0). La
+versión anterior mostraba "0/24, p=0.004" para esta celda: era saturación de
+la cola, no detección. Aprobación humana **no intercepta nada por contenido**
+(solo interviene cuando otro mecanismo bloquea o se excede el límite),
+exactamente como se diseñó.
 
-### 3.5. V5 × Clasificación (277/371 → 20/20) y los datos de V5 en general
+### 3.6. V5 × Clasificación (277/371 → 20/20) y V5 en general
 
 Las 20 filas de C3 son todas `nivel_carga=20`; C0 mezcla 2, 4, 6, 8, 10, 50 y
-100 y nunca se probó en 20, así que no hay punto de comparación al mismo
-nivel de concurrencia. Además, **V5 no se re-corrió**: sus filas vienen de
-corridas anteriores (CPU en C0/C3/C5, GPU con otra versión del proxy en C6).
-Las conclusiones sobre V5 (solo la de aprobación humana es robusta, por
-diseño) deben leerse con esa salvedad.
+100 y nunca se probó en 20: no hay comparación al mismo nivel. **V5 no se
+re-corrió** (CPU en C0/C3/C5; GPU con otra versión del proxy en C6); solo la
+conclusión sobre aprobación humana (límite de tasa, por diseño) es robusta.
 
-### 3.6. V2: tendencia, no evidencia
+### 3.7. C6 ahora sí mide defensa en profundidad, y no mejora a filtrado solo
 
-Las 5 celdas de V2 predicen "Parcial". Filtrado (p=0.096) y la
-configuración completa C6 (3/15, p=0.089) rozan la significancia; el resto no
-se distingue de C0. Coherente con el diseño pero no confirmable con n=20.
+Con la pausa, C5 solo no bloquea nada, así que los 26 bloqueos de C6
+(25 atribuidos a `aprobacion_humana`, 1 a `filtrado`) ya no son saturación:
+`aprobacion_humana` los *intercepta* (convierte un 400 en 429) cuando otro
+mecanismo detecta algo. **La atribución al mecanismo que realmente detectó se
+pierde por diseño** en C6. Resultado: C6 queda en V2 3/15, V3 0/34, V4 0/18
+— el mismo ASR promedio que C1 (15.0%). Las otras cuatro capas no añaden una
+reducción medible sobre filtrado solo en estas cuatro familias de ataque.
 
 ## 4. Nota de transcripción de la matriz de hipótesis
 
-El OCR inicial de la imagen de la Sección 6.5 ubicaba "Sí (directo)" en
-V3 × Mín. Privilegio; contradecía una cita textual ya presente en tres
-documentos del repo (`| 3. Prompt injection | Sí | Sí | Sí | N/A | Parcial |`)
-y la cita de `analisis/analisis_C0_C4_vector4.md` (efecto directo de mínimo
-privilegio sobre V4). Se concluyó que la celda era de la fila 4, y García
-confirmó V4 × Aprob. Humana = "Parcial".
+El OCR inicial de la Sección 6.5 ubicaba "Sí (directo)" en V3 × Mín.
+Privilegio, lo que contradecía una cita textual presente en tres documentos
+del repo y la de `analisis/analisis_C0_C4_vector4.md` (efecto directo de
+mínimo privilegio sobre V4). Se concluyó que la celda era de la fila 4, y
+García confirmó V4 × Aprob. Humana = "Parcial".
 
 ## 5. Conclusión
 
-La hipótesis de cobertura **no queda refutada ni confirmada en bloque**:
-con el criterio unificado y la incertidumbre a la vista, los datos solo
-discriminan en cuatro puntos —V4 × Mín. Privilegio por pasos (confirmado),
-V4 × Filtrado (efecto indirecto no predicho), y V5/V4 × Aprob. Humana (por
-volumen, no por contenido)—, y no pueden evaluar la parte central de la
-hipótesis (V3) porque el modelo base ya resiste. El hallazgo que sí
-sostiene la comparación es metodológico: **qué se mide importa** — agregar
-pasos de V4, mezclar criterios de éxito o ignorar el límite de tasa
-producían "confirmaciones" y "refutaciones" que eran artefactos de
-medición.
+La hipótesis de cobertura **se sostiene en lo que se puede medir y falla en
+dos lugares interesantes**. Se confirma: filtrado contra extracción (V2),
+mínimo privilegio contra uso cruzado (V4, por pasos), aprobación humana
+contra volumen (V5), y los N/A de V1. No se puede evaluar la parte central
+sobre prompt injection (V3) porque el modelo base ya resiste. Y aparecen dos
+efectos no predichos sobre V4: **filtrado** (frena la extracción previa) y
+**delimitación** (reduce la extracción por comportamiento del modelo, no por
+bloqueo). El hallazgo transversal es metodológico: qué se mide importa —
+criterio de éxito, desglose por pasos, saturación del límite de tasa y n
+pequeño producían "confirmaciones" y "refutaciones" que eran artefactos.

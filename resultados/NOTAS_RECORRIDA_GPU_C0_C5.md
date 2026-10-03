@@ -23,11 +23,9 @@
 - **1.ª corrida (2026-10-02, C0-C5, 1 repetición): ingestada.** Ver
   `docs/LIMPIEZA_DATOS.md`, sección 6.
 - **2.ª corrida (2026-10-03, C0-C6 × 3 repeticiones): ingestada.** Ver
-  `docs/LIMPIEZA_DATOS.md`, sección 6.1. **3.ª corrida pendiente** con
-  `RECORRIDA_GPU_C0_C6.ipynb` actualizado: Prompt Guard en GPU (`device=0`) y
-  pausa de 7 s entre peticiones en C5/C6 para no saturar el límite de tasa
-  (cambios del 2026-10-03, posteriores a los datos ya ingestados). Pendiente
-  aparte: V5 en GPU con el código actual.
+  `docs/LIMPIEZA_DATOS.md`, sección 6.1. **3.ª corrida (2026-10-03/04): ingestada.**
+  Ver `docs/LIMPIEZA_DATOS.md`, sección 6.2. Pendiente aparte: V5 en GPU con el
+  código actual.
 
 ## Después de correr el notebook (lo hace Claude)
 

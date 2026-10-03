@@ -344,3 +344,32 @@ en total.
 - Los bloqueos en *salida* (el proxy responde 200 con texto retenido) no los
   ve el script de ataque; por eso 6 filas de C6 no cruzan contra el log del
   proxy (`fusionar_latencia_clasificador.py` se abstiene).
+
+### 6.2. Tercera corrida (2026-10-03/04): pausa entre peticiones en C5/C6
+
+Misma versión del proxy que la 2.ª, más dos cambios (`device` de Prompt Guard y
+`--pausa-entre-peticiones-s`, 7 s en C5/C6). 584 filas nuevas. Los archivos de
+la corrida llevan sello `0052xx`-`01xxxx` dentro de `resultados/2026-10-03/`.
+
+**Decisiones de datos:**
+- **C5 y C6:** las 175 filas viejas de V1-V4 (2.ª corrida y primera) pasan a
+  `descartados.csv`. Con la pausa C5 muestra **0 bloqueos** en V1-V4 (antes 28):
+  esos bloqueos eran saturación del límite de tasa, no detección. C5/C6 quedan
+  con 3 repeticiones, pausadas.
+- **C0-C4:** se **suman** las filas nuevas a las anteriores (el código de esos
+  caminos no cambió): 7 repeticiones. Para C3 se verificó antes que cambiar
+  `device` no movió la latencia del clasificador (mediana 68 ms antes y
+  después), así que mezclar es válido.
+- `eventos.jsonl` del 2026-10-03 pasó a ser la **concatenación** de la 2.ª y la
+  3.ª corrida (ambas cayeron en esa fecha UTC). Por eso
+  `fusionar_latencia_clasificador.py` no logra cruzar esos grupos (118 filas
+  con conteo distinto): se abstiene, como está diseñado. No afecta a ninguna
+  tabla.
+- `limpiar_dataset.py` corrigió 27 `mecanismo_que_bloqueo` "desconocido".
+
+**Corrección a lo dicho antes:** se afirmó que parte del +205 ms de
+clasificación era evitable pasando Prompt Guard a GPU. No fue así: el
+clasificador mide ~68 ms de mediana (entrada + salida) con y sin GPU, y el
+sobrecosto de C3 se mantiene (+230 ms). Los ~160 ms restantes no están
+explicados.
+
