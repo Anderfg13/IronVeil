@@ -37,15 +37,15 @@ ya calculados por vector, no sobre los conteos crudos).
   (`tests/test_main.py`): un caso de petición legítima que se confirma que
   NO cae, por combinación de mecanismos. Se reporta cuál test cubre cada
   configuración, no un porcentaje inventado.
-- `Latencia mediana (ms)`: MEDIANA (no media -- ver `latencia_extra_por_config()`
-  para por qué) de `latencia_ms` por configuración, EXCLUYENDO las filas de
-  V5 (ráfaga de carga -- mezclar su latencia bajo contención con la de una
-  petición aislada no es comparable) y excluyendo filas con `latencia_ms`
-  vacío. Se muestra en valor absoluto y como delta contra la mediana de C0.
-  **Limitación real, no oculta:** las configuraciones se corrieron en
-  hardware distinto en semanas distintas (ver docstring de
-  `latencia_extra_por_config()`), así que esta columna NO aísla limpiamente
-  el costo de los mecanismos — también mezcla el costo del hardware.
+- `Latencia mediana (ms)`: MEDIANA de `latencia_ms` de las peticiones de chat
+  (V2-V4) que SÍ llegaron al modelo -- se excluyen V5, los sondeos de V1,
+  los eventos de "paso 2 omitido" (0 ms) y las peticiones bloqueadas, que
+  responden en milisegundos sin pagar inferencia (ver
+  `latencia_extra_por_config()`). Se muestra en valor absoluto y como
+  delta contra la mediana de C0.
+  Todas las configuraciones corrieron en la misma GPU T4 y con el mismo
+  código del proxy; aun así, diferencias de ~100 ms no se distinguen del
+  ruido de generación del LLM.
 - `Costo (líneas/horas)`: suma de `analisis/costo_mecanismos.py` (medición
   retrospectiva, no acoplada a este módulo) sobre los mecanismos activos de
   esa configuración -- C0 da "0 líneas / 0h" (baseline, ningún mecanismo),
@@ -91,6 +91,7 @@ COL_ASR_V5 = "ASR V5 (%)"
 # criterio de exito (fuga verificada por contenido); base del promedio.
 VECTORES_COMPARABLES = ("V1", "V2", "V3", "V4")
 SIN_DATOS = "Sin datos"
+VECTORES_CON_PETICION_DE_CHAT = ("V2", "V3", "V4")
 COL_LATENCIA_MEDIANA = "Latencia mediana (ms)"
 COL_FALSOS_POSITIVOS = "Falsos positivos"
 COL_COSTO = "Costo (líneas/horas)"
@@ -163,37 +164,81 @@ def asr_v5_por_config(tabla_asr: pd.DataFrame) -> dict[str, float]:
     return v5.set_index(COL_CONFIGURACION)["ASR (%)"].round(1).to_dict()
 
 
-def latencia_extra_por_config(df: pd.DataFrame) -> dict[str, float | None]:
-    """MEDIANA de `latencia_ms`, excluyendo filas de V5 (rafaga de carga) y
-    filas con `latencia_ms` vacio. `None` si no quedan filas validas.
+def _peticiones_de_chat_atendidas(
+    df: pd.DataFrame, *, incluir_bloqueadas: bool
+) -> pd.DataFrame:
+    """Filas de V2-V4 con una peticion de chat real (`latencia_ms > 0`).
 
-    Mediana, no media: la distribucion esta fuertemente sesgada por cargas
-    en frio de los clasificadores (Prompt Guard/Llama Guard), que disparan
-    la media muy por encima de lo que tarda una peticion ya caliente (p.
-    ej. C3 real: mediana 12.7s vs. media 29.4s, maximo 170.5s). La mediana
-    es mucho mas representativa del caso tipico.
-
-    **Limitacion metodologica real, no resuelta por esta mediana:** las
-    filas de distintas configuraciones se corrieron en hardware DISTINTO
-    en semanas distintas (laptop CPU del equipo en C0-C5, GPU T4 de Colab
-    en la corrida de C6 del 2026-09-30) -- comparar la latencia entre
-    configuraciones no aisla el costo de los mecanismos, tambien mezcla el
-    costo del hardware. Ver nota en el modulo y en
-    `docs/FUENTE_DE_VERDAD.md`. Un costo de latencia por mecanismo aislado
-    de verdad requeriria correr las 7 configuraciones en el mismo hardware,
-    pendiente.
+    Excluye V5 (rafaga de carga), V1 (sondeos de infraestructura de 0-20 ms,
+    no son llamadas al modelo) y los eventos de "paso 2 omitido" de V4
+    (`latencia_ms == 0`: nunca se envio la peticion).
     """
-    df = df.copy()
-    df["vector"] = df["vector_probado"].str.extract(r"^(V\d+)")
-    sin_v5 = df[(df["vector"] != "V5") & (df["latencia_ms"] != "")]
-    sin_v5 = sin_v5.assign(latencia_ms=pd.to_numeric(sin_v5["latencia_ms"]))
+    d = df.copy()
+    d["vector"] = d["vector_probado"].str.extract(r"^(V\d+)")
+    d = d[d["vector"].isin(VECTORES_CON_PETICION_DE_CHAT) & (d["latencia_ms"] != "")]
+    d = d.assign(latencia_ms=pd.to_numeric(d["latencia_ms"]))
+    d = d[d["latencia_ms"] > 0]
+    if not incluir_bloqueadas:
+        d = d[d["resultado"] != "bloqueado"]
+    return d
 
+
+def latencia_extra_por_config(df: pd.DataFrame) -> dict[str, float | None]:
+    """MEDIANA de `latencia_ms` de las peticiones de chat (V2-V4) que SI
+    llegaron al modelo (no bloqueadas). `None` si no queda ninguna.
+
+    Por que solo las no bloqueadas: una peticion bloqueada se corta antes de
+    llamar al modelo y responde en milisegundos; mezclarlas haria que una
+    configuracion que bloquea mucho (C5, C6) pareciera "mas rapida" solo por
+    responder antes un 400/429, no porque sus mecanismos sean baratos. Esta
+    columna mide el sobrecosto sobre una peticion que paga inferencia
+    completa. Ver `latencia_peticiones_que_llegan_al_modelo()` para cuantas
+    peticiones entran en cada mediana.
+
+    Mediana, no media: la distribucion tiene outliers (reintentos, cargas en
+    frio ocasionales) que disparan la media.
+
+    **Limites, no resueltos:** n por configuracion de 15 a 84 peticiones, y
+    la latencia de un LLM varia con el largo de la respuesta -- diferencias
+    de unos ~100 ms entre configuraciones no se distinguen del ruido. Todas
+    las configuraciones corrieron en la misma GPU T4 y con el mismo codigo
+    del proxy (re-corrida del 2026-10-02/03).
+    """
+    d = _peticiones_de_chat_atendidas(df, incluir_bloqueadas=False)
     resultado: dict[str, float | None] = {}
-    for config, grupo in sin_v5.groupby("configuracion"):
+    for config, grupo in d.groupby("configuracion"):
         resultado[config] = (
             round(float(grupo["latencia_ms"].median()), 1) if len(grupo) else None
         )
     return resultado
+
+
+def latencia_peticiones_que_llegan_al_modelo(df: pd.DataFrame) -> pd.DataFrame:
+    """Por configuracion: cuantas peticiones de chat (V2-V4) hubo, cuantas
+    llegaron al modelo (no bloqueadas), que porcentaje es, y la mediana de
+    latencia de esas ultimas (la misma que `latencia_extra_por_config()`).
+    """
+    todas = _peticiones_de_chat_atendidas(df, incluir_bloqueadas=True)
+    filas = []
+    for config in ORDEN_CONFIGURACIONES:
+        sub = todas[todas["configuracion"] == config]
+        if sub.empty:
+            continue
+        pasan = sub[sub["resultado"] != "bloqueado"]
+        filas.append(
+            {
+                COL_CONFIGURACION: config,
+                "Peticiones de chat (V2-V4)": len(sub),
+                "Llegan al modelo": len(pasan),
+                "% que llega al modelo": round(100 * len(pasan) / len(sub), 1),
+                "Latencia mediana, solo las que llegan (ms)": (
+                    round(float(pasan["latencia_ms"].median()), 1)
+                    if len(pasan)
+                    else None
+                ),
+            }
+        )
+    return pd.DataFrame(filas)
 
 
 def _formatear_latencia_mediana(
@@ -411,6 +456,12 @@ def main() -> None:
     # y corregido en consolidar.guardar_tabla()).
     ruta_md.write_text(tabla.to_markdown(index=False, floatfmt=".1f"), encoding="utf-8")
     ruta_tex.write_text(generar_latex(tabla), encoding="utf-8")
+    (output_dir / "latencia_peticiones_permitidas.md").write_text(
+        latencia_peticiones_que_llegan_al_modelo(df).to_markdown(
+            index=False, floatfmt=".1f"
+        ),
+        encoding="utf-8",
+    )
     graficar_tendencia_asr(tabla, ruta_png)
 
     logger.info("Tabla maestra escrita en %s, %s y %s", ruta_csv, ruta_md, ruta_tex)

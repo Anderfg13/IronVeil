@@ -22,11 +22,9 @@
 
 - **1.ª corrida (2026-10-02, C0-C5, 1 repetición): ingestada.** Ver
   `docs/LIMPIEZA_DATOS.md`, sección 6.
-- **2.ª corrida pendiente:** `RECORRIDA_GPU_C0_C6.ipynb` agrega C6 (la
-  corrida GPU de C6 del 2026-09-30 usó el código del proxy *anterior* al
-  calentamiento/`keep_alive`/conexión reutilizada, así que su latencia no es
-  comparable) y 3 repeticiones (n por celda de 5-21 intentos es demasiado
-  chico: una diferencia de un solo evento es ruido).
+- **2.ª corrida (2026-10-03, C0-C6 × 3 repeticiones): ingestada.** Ver
+  `docs/LIMPIEZA_DATOS.md`, sección 6.1. Pendiente aparte: V5 en GPU con el
+  código actual.
 
 ## Después de correr el notebook (lo hace Claude)
 

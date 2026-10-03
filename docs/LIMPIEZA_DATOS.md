@@ -320,3 +320,27 @@ contra 0% (criterio nuevo).
 - `timestamp_desordenado` (advertencia de `validar_dataset.py`): las filas
   nuevas se agregaron por archivo, V4 después de V1-V3; no es un error de
   reloj.
+
+### 6.1. Segunda corrida (2026-10-03): C0-C6 × 3 repeticiones
+
+`resultados/RECORRIDA_GPU_C0_C6.ipynb` (mismo código del proxy que la
+primera). 567 filas nuevas (`resultados/2026-10-03/`); las 53 filas viejas de
+C6 V1-V4 (Podman/CPU del 2026-09-18 y GPU con el proxy anterior del
+2026-09-30) se movieron a `descartados.csv`; V5 y V6 de C6 intactos. Se
+**conservaron** las filas de la primera corrida de C0-C5 (mismo hardware y
+código): quedan C0-C5 con 4 repeticiones y C6 con 3. `limpiar_dataset.py`
+corrigió 30 `mecanismo_que_bloqueo` "desconocido" (configuraciones de un solo
+mecanismo); `fusionar_latencia_clasificador.py` recuperó 99 `latencia_clasificador_ms`
+en total.
+
+**Cambios de análisis derivados** (detalle en `analisis/resultados_finales.md`):
+- Latencia mediana: ahora solo de peticiones de chat V2-V4 que llegan al
+  modelo. La versión anterior incluía sondeos de V1 (0-20 ms) y eventos de
+  "paso 2 omitido" de V4 (`latencia_ms=0`, nunca se envió nada), que hacían
+  parecer muy rápidas a C5/C6.
+- Matriz real: celdas con k/n y valor p de Fisher; guarda de significancia
+  (solo baja etiquetas). V4 se reporta también por pasos
+  (`analisis/v4_ataque_completo.md`).
+- Los bloqueos en *salida* (el proxy responde 200 con texto retenido) no los
+  ve el script de ataque; por eso 6 filas de C6 no cruzan contra el log del
+  proxy (`fusionar_latencia_clasificador.py` se abstiene).

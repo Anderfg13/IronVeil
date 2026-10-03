@@ -122,7 +122,7 @@ def test_latencia_extra_por_config_excluye_v5() -> None:
             {
                 "configuracion": "C0",
                 "mecanismos_activos": "",
-                "vector_probado": "V1-A",
+                "vector_probado": "V2-A",
                 "resultado": "permitido_normal",
                 "latencia_ms": "100",
             },
@@ -147,14 +147,14 @@ def test_latencia_extra_por_config_excluye_filas_vacias() -> None:
             {
                 "configuracion": "C0",
                 "mecanismos_activos": "",
-                "vector_probado": "V1-A",
+                "vector_probado": "V2-A",
                 "resultado": "permitido_normal",
                 "latencia_ms": "",
             },
             {
                 "configuracion": "C0",
                 "mecanismos_activos": "",
-                "vector_probado": "V1-B",
+                "vector_probado": "V2-B",
                 "resultado": "permitido_normal",
                 "latencia_ms": "50",
             },
@@ -175,7 +175,7 @@ def test_latencia_extra_por_config_usa_mediana_no_media() -> None:
             {
                 "configuracion": "C0",
                 "mecanismos_activos": "",
-                "vector_probado": "V1-A",
+                "vector_probado": "V2-A",
                 "resultado": "permitido_normal",
                 "latencia_ms": str(v),
             }
@@ -199,7 +199,7 @@ def test_calcular_tabla_maestra_columnas_y_orden() -> None:
             {
                 "configuracion": "C0",
                 "mecanismos_activos": "",
-                "vector_probado": "V1-A",
+                "vector_probado": "V2-A",
                 "resultado": "exitoso_para_atacante",
                 "latencia_ms": "100",
             },
@@ -209,8 +209,8 @@ def test_calcular_tabla_maestra_columnas_y_orden() -> None:
                     "filtrado,delimitacion,clasificacion,"
                     "minimo_privilegio,aprobacion_humana"
                 ),
-                "vector_probado": "V1-A",
-                "resultado": "bloqueado",
+                "vector_probado": "V2-A",
+                "resultado": "permitido_normal",
                 "latencia_ms": "50",
             },
         ]
@@ -284,3 +284,32 @@ def test_asr_promedio_con_vectores_ignora_los_demas() -> None:
 
     assert asr_promedio_por_config(tabla_asr, ("V1", "V2")) == {"C0": 30.0}
     assert asr_v5_por_config(tabla_asr) == {"C0": 100.0}
+
+
+def test_latencia_peticiones_que_llegan_al_modelo_excluye_bloqueadas_y_v5() -> None:
+    from analisis.tabla_maestra import latencia_peticiones_que_llegan_al_modelo
+
+    def fila(vector: str, resultado: str, latencia: str) -> dict[str, str]:
+        return {
+            "configuracion": "C5",
+            "vector_probado": vector,
+            "resultado": resultado,
+            "latencia_ms": latencia,
+        }
+
+    df = pd.DataFrame(
+        [
+            fila("V2-A", "bloqueado", "20"),
+            fila("V2-B", "permitido_normal", "400"),
+            fila("V3-A", "exitoso_para_atacante", "600"),
+            fila("V1-A", "permitido_normal", "5"),
+            fila("V4-A-paso2", "permitido_normal", "0"),
+            fila("V5-D", "permitido_normal", "9999"),
+        ]
+    )
+
+    tabla = latencia_peticiones_que_llegan_al_modelo(df).iloc[0]
+
+    assert tabla["Peticiones de chat (V2-V4)"] == 3
+    assert tabla["Llegan al modelo"] == 2
+    assert tabla["Latencia mediana, solo las que llegan (ms)"] == 500.0

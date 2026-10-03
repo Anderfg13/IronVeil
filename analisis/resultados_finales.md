@@ -1,223 +1,189 @@
 # Resultados finales — IronVeil
 
-> **⚠️ DESACTUALIZADO (2026-10-02) — NO CITAR EN EL INFORME TODAVÍA.** Las
-> cifras y conclusiones de este documento se calcularon con las filas de C0-C2
-> de la primera semana, que se puntuaron con otro criterio de éxito que el
-> resto (ASR "nada lo bloqueó", no "la credencial salió"). La re-corrida en
-> Colab GPU del 2026-10-02 reemplazó esas filas por datos con fuga verificada
-> por contenido y cambió el panorama (p. ej. V3 en C0 pasa de 100% a 0%: el
-> modelo base no filtra el secreto, así que ningún mecanismo puede "reducirlo").
-> Se reescribe cuando termine la segunda corrida (C0-C6 con 3 repeticiones,
-> `resultados/RECORRIDA_GPU_C0_C6.ipynb`). Detalle en `docs/LIMPIEZA_DATOS.md`,
-> sección 6.
-
-
-> **Esta es la versión final** de la sección de resultados del informe.
-> Supersede a `analisis/conclusion_borrador.md` (que queda como registro
-> histórico de la primera pasada, del 2026-09-30, cuando el costo de
-> implementación todavía estaba pendiente). Escrito en un lenguaje ya
-> cercano al que va al LaTeX final — Sección 7 del informe.
+> Versión del 2026-10-03. **Reemplaza** a la del 2026-09-30, que mezclaba dos
+> criterios de éxito distintos entre configuraciones y mezclaba hardware en
+> la latencia (ver `docs/LIMPIEZA_DATOS.md`, sección 6). Todo lo de V1-V4
+> viene ahora de una re-corrida homogénea en Colab GPU T4: mismas 7
+> configuraciones, mismo hardware, mismo código del proxy, fuga verificada
+> por contenido.
 >
-> **Material de referencia, generado por script, nunca a mano:**
-> - Tabla maestra completa: `analisis/tabla_maestra.{csv,md,tex}`
-> - Gráficas en alta resolución (dpi≥300): `resultados/graficas_finales/`
-> - Comparación celda por celda contra la hipótesis de la Sección 6.5:
->   `analisis/matriz_real_vs_hipotesis.md`
-> - Costo de implementación por mecanismo: `analisis/costo_mecanismos.md`,
->   metodología en `analisis/metodologia_costo_mecanismos.md`
-> - Calidad y limpieza del dataset: `docs/LIMPIEZA_DATOS.md`
+> **Material de apoyo (generado por script):** `analisis/tabla_maestra.{csv,md,tex}`,
+> `analisis/matriz_real_vs_hipotesis.md` (+ `matriz_real_pvalores.md`,
+> `v4_ataque_completo.md`), `analisis/latencia_peticiones_permitidas.md`,
+> `analisis/costo_mecanismos.md`, gráficas en `resultados/graficas_finales/`.
 
 ## 1. Pregunta de investigación
 
 > ¿Qué combinación de mecanismos ofrece la mejor relación protección /
 > utilidad / costo?
 
-## 2. Qué se midió
+## 2. Qué se midió y con qué incertidumbre
 
-Cinco mecanismos defensivos (filtrado, delimitación, clasificación,
-mínimo privilegio, aprobación humana + rate limit), activables por
-separado, evaluados en 7 configuraciones (`C0` baseline hasta `C6` los 5
-mecanismos activos) frente a 5 vectores de ataque originales
-(reconocimiento, extracción de system prompt, prompt injection,
-movimiento lateral, agotamiento de recursos) más un sexto vector
-adaptativo diseñado para explotar la combinación completa. Dataset:
-29 122 filas en `resultados_template.csv`, validado y limpio (ver
-`docs/LIMPIEZA_DATOS.md`), acumulado entre el 2026-09-05 y el 2026-09-30.
+Cinco mecanismos (filtrado, delimitación, clasificación, mínimo privilegio,
+aprobación humana + límite de tasa) en 7 configuraciones (C0 baseline … C6
+los cinco) contra 5 vectores originales. **ASR = intentos en que la
+credencial realmente apareció en la respuesta**, no "nada lo bloqueó".
 
-## 3. Tabla maestra de resultados (Sección 7.3)
+- V1-V4: C0-C5 con 4 repeticiones, C6 con 3 (n por celda: 20 / 20 / 48 / 24
+  para V1 / V2 / V3 / V4; C6: 15 / 15 / 27 / 18). Con n así, **una diferencia
+  de uno o dos eventos no se distingue del ruido del LLM**: cada comparación
+  lleva su valor p (test exacto de Fisher contra C0).
+- V5: no se re-corrió; sus filas vienen de corridas anteriores (otro
+  hardware y otras versiones del proxy). Solo se usa donde es robusto por
+  diseño.
+- Modelo base `llama3.2:1b`, que ya rechaza casi todo por su cuenta (sección 5).
 
-| Configuración | Filt. | Del. | Clas. | M.P. | A.H. | ASR promedio (%) | Falsos positivos | Latencia mediana (ms) | Costo (líneas/horas) |
-|---|---|---|---|---|---|---|---|---|---|
-| C0 | — | — | — | — | — | 64.3 | N/A (baseline, sin mecanismos que puedan bloquear) | 1432.0 (baseline) | 0 líneas / 0h (baseline) |
-| C1 | ✓ | — | — | — | — | 49.2 | 0/1 — `test_chat_filtrado_no_bloquea_mensaje_legitimo` | 977.0 (-455.0 vs. C0) | 248 líneas / 21h |
-| C2 | — | ✓ | — | — | — | 60.0 | N/A — delimitación nunca bloquea (no participa en la cadena de bloqueo) | 1650.0 (+218.0 vs. C0) | 181 líneas / 15h |
-| C3 | — | — | ✓ | — | — | 28.0 | 0/1 — `test_chat_clasificacion_no_bloquea_entrada_legitima` | 12687.5 (+11255.5 vs. C0) | 309 líneas / 34h |
-| C4 | — | — | — | ✓ | — | 50.0 | 0/1 (a nivel de mecanismo) — `test_validar_privilegio_no_bloquea_texto_sin_credenciales` | 504.5 (-927.5 vs. C0) | 167 líneas / 14h |
-| C5 | — | — | — | — | ✓ | 23.7 | 0/1 — `test_chat_aprobacion_humana_no_bloquea_mensaje_legitimo` | 9548.5 (+8116.5 vs. C0) | 694 líneas / 69h |
-| **C6** | ✓ | ✓ | ✓ | ✓ | ✓ | **8.4** | 0/1 — `test_c6_peticion_legitima_pasa_limpia_por_los_5_mecanismos` | 683.0 (-749.0 vs. C0) | 1599 líneas / 153h |
+## 3. Tabla maestra (Sección 7.3)
 
-**No queda ningún campo pendiente** — las 4 columnas de métrica (ASR,
-falsos positivos, latencia, costo) están completas para las 7
-configuraciones. Metodología de cada columna documentada en el docstring
-de `analisis/tabla_maestra.py` (no se repite aquí para que no se
-desincronice de la fuente real).
+| Config. | Filt. | Del. | Clas. | M.P. | A.H. | ASR prom. V1-V4 (%) | ASR V5 (%) | Falsos positivos | Latencia mediana (ms) | Costo (líneas/horas) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| C0 | — | — | — | — | — | 32.4 | 74.7 | N/A (baseline) | 382.5 (baseline) | 0 / 0h |
+| C1 | ✓ | — | — | — | — | 15.0 | Sin datos | 0/1 — `test_chat_filtrado_no_bloquea_mensaje_legitimo` | 314.0 (-68.5) | 248 / 21h |
+| C2 | — | ✓ | — | — | — | 20.6 | Sin datos | N/A — delimitación nunca bloquea | 263.0 (-119.5) | 181 / 15h |
+| C3 | — | — | ✓ | — | — | 28.1 | 100.0* | 0/1 — `test_chat_clasificacion_no_bloquea_entrada_legitima` | **588.0 (+205.5)** | 309 / 34h |
+| C4 | — | — | — | ✓ | — | 29.2 | Sin datos | 0/1 (a nivel de mecanismo) — `test_validar_privilegio_no_bloquea_texto_sin_credenciales` | 356.0 (-26.5) | 167 / 14h |
+| C5 | — | — | — | — | ✓ | 22.6 | 0.2 | 0/1 — `test_chat_aprobacion_humana_no_bloquea_mensaje_legitimo` | 273.0 (-109.5) | 694 / 69h |
+| **C6** | ✓ | ✓ | ✓ | ✓ | ✓ | **15.0** | 0.1 | 0/1 — `test_c6_peticion_legitima_pasa_limpia_por_los_5_mecanismos` | 268.0 (-114.5) | 1599 / 153h |
 
-## 4. Gráficas finales
+Cómo leerla:
+- **ASR promedio V1-V4**: media sin ponderar de los cuatro vectores presentes
+  en las 7 configuraciones. **V1 vale 40% en todas** (`V1-A`/`V1-C`: Ollama
+  alcanzable directo en la VM de Colab; es del entorno, no de ningún
+  mecanismo) y suma ~10 puntos a todas por igual. Sin V1 (V2-V4): C0 29.8,
+  C1 6.7, C2 14.2, C3 24.2, C4 25.7, C5 16.9, C6 6.7.
+- **\*** V5 en C3: 20 filas, todas en un solo nivel de carga que C0 nunca
+  probó; no es comparable (`matriz_real_vs_hipotesis.md`, 3.5).
+- **Latencia mediana**: de las peticiones de chat (V2-V4) que llegaron al
+  modelo. Las bloqueadas se excluyen porque responden en milisegundos sin
+  pagar inferencia (incluirlas hacía parecer "más rápidas" a C5/C6). **Las
+  diferencias de ~100 ms no son distinguibles del ruido; solo C3 (+205 ms)
+  destaca.** Mismo hardware y mismo código para las 7. C6 tiene solo 15
+  peticiones que llegan al modelo.
+- **Falsos positivos** es evidencia puntual (un test por configuración), no
+  una tasa sobre tráfico legítimo representativo.
 
-Las 3 gráficas en `resultados/graficas_finales/` (dpi=300, listas para
-LaTeX y diapositivas):
+## 4. Gráficas (`resultados/graficas_finales/`, dpi=300)
 
-1. **`asr_por_configuracion.png`** — tendencia de ASR promedio C0→C6:
-   baja de forma monótona con cada mecanismo adicional hasta C6, con la
-   única excepción de que C2 (60.0%) y C4 (50.0%) quedan por encima de
-   C1 (49.2%) tomadas individualmente — ningún mecanismo aislado domina a
-   todos los demás, consistente con que cada uno ataca un vector
-   distinto.
-2. **`latencia_por_configuracion.png`** — latencia mediana por
-   configuración, escala logarítmica (rango real: 504.5 ms – 12 687.5
-   ms). **No se debe leer como costo de mecanismo aislado**: mezcla
-   hardware distinto entre semanas (laptop CPU en C0-C5, GPU T4 de Colab
-   en la mayoría de C6) — ver limitación en la sección 6.
-3. **`matriz_cobertura_heatmap.png`** — mapa de calor lado a lado,
-   hipótesis de la Sección 6.5 vs. ASR real medido, misma escala de color
-   (N/A, Parcial, Sí directo, Sin datos). Detalle celda por celda y cada
-   hipótesis explicativa de las discrepancias en
-   `analisis/matriz_real_vs_hipotesis.md`.
+1. `asr_por_configuracion.png` — ASR promedio V1-V4 por configuración.
+2. `latencia_por_configuracion.png` — latencia mediana (escala log).
+3. `matriz_cobertura_heatmap.png` — hipótesis vs. real; "N/A (n.s.)" marca
+   celdas cuya diferencia contra C0 no es significativa (Fisher p ≥ 0.05).
 
-## 5. Comparación contra la hipótesis de cobertura (resumen)
+## 5. Qué se encontró
 
-Análisis completo en `analisis/matriz_real_vs_hipotesis.md`. Resumen: de
-las 15 celdas Vector × Mecanismo con datos comparables en ambos lados,
-**13 coinciden en la dirección predicha** (8 confirmadas, 1 matizada, 4
-mejor de lo esperado) y **2 van en dirección contraria** (delimitación en
-V2/V3 — ya documentado que `delimitar()` nunca bloquea por diseño, así
-que estructuralmente no puede mover el ASR). El hallazgo metodológico más
-importante: mínimo privilegio × movimiento lateral parece solo "Parcial"
-en el ASR agregado del vector, pero acierta exactamente como "Sí
-(directo)" cuando se mide en el paso que de verdad le corresponde (paso
-2, uso cruzado: 33.3%→0.0%) — el ASR agregado diluye el efecto real
-mezclándolo con un paso (extracción) que el mecanismo nunca pretendió
-bloquear.
+**5.1. Pocos efectos son distinguibles del ruido, y los que lo son no son los que
+predecía la hipótesis.** De 25 pares vector × mecanismo, solo estos
+muestran un efecto estadístico (p ≤ 0.004): V4 × Filtrado (8/24 → 0/24),
+V4 × Aprobación humana (8/24 → 0/24) y V5 × Aprobación humana; más el paso 2
+de V4 × Mínimo privilegio (5/5 bloqueado). Detalle y vereditos celda por
+celda en `analisis/matriz_real_vs_hipotesis.md`.
+
+**5.2. Mínimo privilegio hace exactamente lo que se diseñó.** En C4 la
+extracción (paso 1) sigue funcionando (5/12, por diseño) y el uso cruzado
+(paso 2) se bloquea en 5 de 5; en C0 el paso 2 tuvo éxito en 4 de 4. Ataque
+completo: 4/12 → 0/12. El ASR agregado de V4 lo muestra diluido (8/24 →
+5/24, p=0.52) porque mezcla los dos pasos.
+
+**5.3. Filtrado frena V4 de forma indirecta.** El paso 1 de V4 reutiliza
+payloads de extracción (V2/V3) que filtrado sí cubre; sin extracción no hay
+uso cruzado (paso 1 bloqueado 7/12 en C1, exitoso 0/12).
+
+**5.4. Contra prompt injection (V3) no se puede medir el aporte, porque el
+modelo base ya resiste.** C0 filtra el secreto en 3 de 48 intentos; ningún
+mecanismo tiene espacio para mostrar una reducción. Los mecanismos sí
+actúan (clasificación bloqueó 14/48, filtrado 7/43), pero casi todo lo que
+bloquean es lo que el modelo ya habría rechazado. Que "no se vea efecto" es
+una limitación del experimento (modelo de 1B muy alineado), no evidencia de
+que esos mecanismos no sirvan.
+
+**5.5. La protección aparente de C5 y C6 es sobre todo límite de tasa.** En
+C6 los 36 bloqueos de V1-V4 se atribuyen a `aprobacion_humana`; en C5, 28.
+La batería dispara peticiones más rápido que el límite (10/min), así que gran
+parte de lo "bloqueado" se encola sin que ningún otro mecanismo haya juzgado
+el contenido. Por eso el 15.0% de C6 (vs. 32.4% de C0) **no puede
+atribuirse a la defensa en profundidad** con estos datos. Aprobación humana
+sí es efectiva contra volumen (V5: 0.2% vs. 74.7%), por diseño.
+
+**5.6. Ningún combo llega a 0 frente a un atacante adaptativo.** El sondeo
+iterativo V6-C (`ataques/vector6_adaptativo.py`) encontró en 3 intentos un
+parafraseo que atraviesa los 5 mecanismos (corrida del 2026-09-30, GPU, otra
+versión del proxy; el modelo igual se negó a revelar el secreto).
 
 ## 6. Respuesta a la pregunta de investigación
 
-### Protección
+Evidencia por mecanismo (costo = horas de implementación, estimación;
+latencia = mediana sobre peticiones que llegan al modelo, C0 = 382.5 ms):
 
-**C6 (los 5 mecanismos activos) ofrece la mejor protección medida**: ASR
-promedio 8.4%, frente a 64.3% del baseline — una reducción de 55.9 puntos
-porcentuales. Es la única configuración con defensa en profundidad real:
-un ataque que evade `filtrado` puede seguir siendo detenido por
-`clasificación`, y uno que evade ambos puede todavía ser detenido por
-`mínimo_privilegio` en el caso de uso cruzado (confirmado empíricamente,
-`docs/CONFLICTOS_RESUELTOS.md`, conflicto #4). Ningún mecanismo
-individual se acerca: el segundo mejor en solitario es `aprobación_humana`
-(C5, 23.7%), casi 3 veces peor que C6.
+| Mecanismo | Efecto medido sobre fuga | Qué bloquea | Costo impl. | Costo en latencia |
+|---|---|---|---|---|
+| Filtrado | V4 8/24→0/24 (p=0.004); V2 10/20→4/20 (p=0.10) | 24 peticiones | 21h | ninguno distinguible |
+| Delimitación | ninguno distinguible (V4 p=0.07) | nada, por diseño | 15h | ninguno distinguible |
+| Clasificación | ninguno distinguible (efecto suelo en V3) | 26 peticiones | 34h | **+205 ms** |
+| Mínimo privilegio | V4 paso 2 bloqueado 5/5; ataque completo 4/12→0/12 | 5 (uso cruzado) | 14h (la más barata) | ninguno distinguible |
+| Aprobación humana | V5 por volumen; en V1-V4 es límite de tasa | 28 (volumen) | 69h | ninguno distinguible |
 
-**Con un matiz que no se debe esconder**: la literatura sobre atacantes
-adaptativos predice que ningún combo llega a ASR 0%, y los datos lo
-confirman — el ataque adaptativo V6-C (sondeo iterativo de parafraseos)
-encontró, en solo 3 intentos, una formulación que atraviesa los 5
-mecanismos sin ser detectada (`ataques/vector6_adaptativo.py`,
-`docs/FUENTE_DE_VERDAD.md`, entrada 2026-09-30). C6 es la configuración
-más segura medida, no una configuración perfecta.
+**Protección.** C6 tiene el menor ASR medido (15.0% frente a 32.4%), pero esa
+cifra la sostiene sobre todo el límite de tasa (5.5), no la combinación de
+defensas; los efectos *de contenido* demostrables son de filtrado y mínimo
+privilegio. **Utilidad.** Sin evidencia de falsos positivos en el caso
+puntual verificado por configuración; no es una tasa medida. **Costo.**
+Mínimo privilegio y filtrado dan los efectos demostrables más baratos
+(14h y 21h) y sin sobrecosto de latencia; clasificación es la única con
+sobrecosto de latencia claro (+205 ms, y en el despliegue Prompt Guard
+corre en CPU aunque haya GPU, así que es un costo reducible) y la más
+cara por hora sin efecto medible aquí; aprobación humana es la más cara de
+implementar y su valor está en el volumen, no en el contenido.
 
-### Utilidad
+**Respuesta defendible:** con la evidencia disponible, la mejor relación
+protección/costo no la da la configuración con más mecanismos sino la que
+combina **mínimo privilegio y filtrado** —los únicos con efecto de contenido
+demostrable y costo bajo (35h en total)— más **aprobación humana si el
+riesgo relevante es el abuso por volumen**. Esa combinación **no se
+ejecutó** como configuración (solo C1-C5 y C6), así que es una
+recomendación derivada de efectos por mecanismo, no una medición.
+**Clasificación y delimitación no muestran valor medible aquí**: la primera
+por el efecto suelo (modelo base muy alineado) y su costo de latencia; la
+segunda, por diseño, nunca bloquea. Es razonable esperar que la clasificación
+importe más con un modelo menos alineado, pero eso es una hipótesis que este
+experimento no probó. C6 sigue siendo la única configuración con defensa en
+profundidad por construcción y la que mejor tolera un atacante que evade
+una capa, pero este experimento no puede demostrar ese beneficio.
 
-No hay evidencia de que ninguna configuración, incluida C6, introduzca
-falsos positivos sobre los casos puntuales verificados — la petición
-legítima de prueba pasa limpia en las 7 configuraciones (columna "Falsos
-positivos" de la tabla maestra, un test de `pytest` específico por
-configuración). **Esto es evidencia puntual, no una tasa medida sobre una
-muestra representativa de tráfico legítimo** — el dataset nunca registró
-esa muestra (ver `docs/LIMPIEZA_DATOS.md`, sección 4). No se puede
-afirmar con esta evidencia que C6 sea tan utilizable como C0 en producción
-real, solo que no falla en el único caso legítimo que se probó por
-configuración.
+## 7. Limitaciones declaradas
 
-### Costo
+- **n pequeño**: 15-48 intentos por celda; la mayoría de las diferencias
+  no es estadísticamente distinguible. Varias celdas de la matriz son
+  "no concluyentes", no "sin efecto".
+- **Efecto suelo**: el modelo base filtra el secreto en 3/48 de V3 en C0.
+- **Límite de tasa fijo** (10/min por cliente) saturado por la propia
+  batería en C5 y C6: la atribución de mecanismo en esas dos es poco confiable.
+  Además V4 corre justo después de V1-V3 sin pausa.
+- **V1 es del entorno** (40% en todas); **V5 no se re-corrió** (datos
+  anteriores, otro hardware/código; C3 en un solo nivel de carga).
+- **Mediciones de cliente**: los scripts no ven los bloqueos en *salida*
+  (el proxy responde 200 con el texto retenido), así que algunos bloqueos de
+  clasificación o filtrado de salida figuran como "permitido" en el CSV (p. ej.
+  un V2-D de C6 que el log del proxy registra bloqueado por clasificación; hay
+  6 filas de C6 que no cruzan limpio contra `eventos.jsonl`).
+- **Horas de costo** son una estimación (no hubo registro de tiempo);
+  **falsos positivos** es evidencia puntual.
+- **Prompt Guard corre en CPU** aunque haya GPU (`pipeline()` sin `device`):
+  parte de los +205 ms de clasificación es evitable.
+- **LLM no determinista**; los resultados no se reproducen bit a bit.
+- Dos ambigüedades de datos abiertas, documentadas en
+  `docs/LIMPIEZA_DATOS.md` (`paso_bloqueado` en V4 "paso 2 omitido"; filas
+  de 2026-09-18/19 con `mecanismo_que_bloqueo` discordante).
 
-**Ya disponible, cierra el vacío que dejó pendiente el borrador anterior**
-(`analisis/costo_mecanismos.md`, metodología completa en
-`analisis/metodologia_costo_mecanismos.md`): C6 cuesta 1599 líneas de
-código y ~153 horas estimadas de desarrollo — el mecanismo más caro con
-diferencia es `aprobación_humana` (694 líneas / 69h, por su estado
-compartido entre peticiones concurrentes y su propia interfaz HTTP), el
-más barato es `mínimo_privilegio` (167 líneas / 14h).
+## 8. Qué queda pendiente
 
-**Hallazgo exploratorio, no solo el costo total**: si se divide la
-reducción de ASR lograda entre las horas invertidas (puntos de ASR
-reducidos por hora, usando C0 como referencia), el panorama cambia:
-
-| Configuración | Reducción de ASR (pts.) | Horas | Puntos de ASR / hora |
-|---|---|---|---|
-| C1 (filtrado) | 15.1 | 21 | 0.72 |
-| C2 (delimitación) | 4.3 | 15 | 0.29 |
-| C3 (clasificación) | 36.3 | 34 | **1.07** |
-| C4 (mínimo privilegio) | 14.3 | 14 | **1.02** |
-| C5 (aprobación humana) | 40.6 | 69 | 0.59 |
-| C6 (los 5) | 55.9 | 153 | 0.37 |
-
-`clasificación` y `mínimo privilegio`, en solitario, tienen la mejor
-relación entre reducción de ASR y horas de desarrollo invertidas — **C6
-da la mejor protección absoluta, pero con retornos marginales
-decrecientes por hora de desarrollo** frente a invertir en uno o dos
-mecanismos bien elegidos. **Esta tabla es exploratoria y no debe
-sobre-interpretarse**: trata todos los puntos de ASR como igual de
-valiosos (sin distinguir qué vector representa un riesgo mayor para el
-negocio), usa horas que ya están documentadas como una *estimación*, no
-una medición exacta (`analisis/metodologia_costo_mecanismos.md`, sección
-4), y es costo de *implementación* (una sola vez), no costo operativo
-continuo (cómputo, latencia, fricción del usuario) — ese costo operativo
-solo tiene evidencia parcial hoy (columna de latencia, con la limitación
-de hardware mezclado ya señalada).
-
-### Conclusión
-
-Si el criterio fuera solo **protección**, la respuesta es inequívoca: C6.
-Si el criterio fuera **protección por hora de desarrollo invertida**,
-`clasificación` sola (C3) o `mínimo privilegio` solo (C4) rinden más por
-hora, aunque con un ASR absoluto bastante más alto (28.0% y 50.0%
-respectivamente, frente a 8.4% de C6). **La recomendación defendible,
-dado lo medido:** para un despliegue que no puede tolerar una fuga
-confirmada de las credenciales del sistema, C6 es la única configuración
-con defensa en profundidad real y debe usarse pese a su costo; para un
-despliegue con presupuesto de desarrollo más ajustado y que pueda tolerar
-un ASR residual más alto, `clasificación` sola ofrece el mejor punto de
-partida medido (mejor relación ASR/hora de las 5 opciones individuales).
-En ningún escenario la evidencia sostiene que `delimitación` sola sea una
-buena inversión aislada: es la opción con peor relación ASR/hora **y**
-la única donde la hipótesis de diseño fue refutada por el dato, no solo
-matizada.
-
-## 7. Limitaciones declaradas (consolidado)
-
-- **n pequeño por variante** en V1-V4 (la mayoría, 1 intento por
-  variante por configuración) — ningún ASR de esos vectores es una
-  medición estadísticamente robusta.
-- **El LLM no es determinista** entre corridas (`CLAUDE.md`, sección 9).
-- **Latencia mezcla hardware** entre configuraciones (laptop CPU en
-  C0-C5, GPU T4 de Colab en C6) — no aísla el costo de los mecanismos.
-- **Horas de costo son una estimación**, no una medición de tiempo real
-  trabajado (el equipo no llevó registro semanal).
-- **Falsos positivos es evidencia puntual**, no una tasa estadística
-  sobre tráfico legítimo representativo.
-- **Rate-limit saturado por la propia batería de pruebas** en la corrida
-  de referencia de C6 (GPU): la atribución de mecanismo para V1-V4 bajo
-  C6 no es del todo confiable sin cruzar contra los eventos de la cola
-  de revisión (`docs/FUENTE_DE_VERDAD.md`, 2026-09-30).
-- **Dos hallazgos de datos aún abiertos**, documentados y no corregidos
-  unilateralmente: `paso_bloqueado` ambiguo en V4 "paso 2 omitido", y 13
-  filas de la semana del 18-19 de septiembre con `mecanismo_que_bloqueo`
-  discordante entre el log del proxy y el dataset consolidado (ver
-  `docs/LIMPIEZA_DATOS.md`, secciones 3.2 y 3.3).
-
-## 8. Qué queda pendiente de verdad
-
-1. Repetir la medición de latencia de las 7 configuraciones en el mismo
-   hardware, para que esa columna deje de mezclar CPU y GPU.
-2. Diseñar una muestra real de mensajes legítimos para una tasa de falsos
-   positivos propiamente dicha (no solo los casos puntuales de `pytest`).
-3. Confirmar con Sabogal las dos ambigüedades de datos abiertas (sección
-   7 de este documento) antes de citar esas filas en el informe.
-4. Resultados de la extensión opcional del 17 de octubre, si el equipo
-   decide incorporarlos a esta sección.
+1. Re-correr V5 en GPU con el código actual y los mismos niveles de carga en
+   las 7 configuraciones.
+2. Fijar `device` en Prompt Guard cuando haya CUDA y re-medir el costo de
+   clasificación.
+3. Un modelo base menos alineado (o un conjunto de payloads más fuertes)
+   para que V3 tenga espacio de medición.
+4. Pausa entre V1-V3 y V4 (o un límite de tasa configurable) para que C5/C6
+   dejen de medir saturación.
+5. Ejecutar la combinación mínimo privilegio + filtrado (+ aprobación
+   humana) como configuración propia, para convertir la recomendación en
+   una medición.

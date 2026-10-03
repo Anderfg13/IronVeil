@@ -38,7 +38,9 @@ from analisis.consolidar import (  # noqa: E402
 )
 from analisis.matriz_real_vs_hipotesis import (  # noqa: E402
     SIN_DATOS,
+    aplicar_guarda_de_significancia,
     construir_matriz_hipotesis,
+    construir_matriz_pvalores,
     construir_matriz_real,
 )
 from analisis.tabla_maestra import (  # noqa: E402
@@ -174,7 +176,12 @@ def graficar_heatmap_cobertura(
     fig, axes = plt.subplots(1, 2, figsize=(15, 5), sharey=True)
     for ax, valores, etiquetas, titulo in (
         (axes[0], valores_hip, etiquetas_hip, "Hipótesis (Sección 6.5)"),
-        (axes[1], valores_real, etiquetas_real, "Real (ASR medido, C1-C5 vs. C0)"),
+        (
+            axes[1],
+            valores_real,
+            etiquetas_real,
+            "Real (C1-C5 vs. C0; n.s. = Fisher p ≥ 0.05)",
+        ),
     ):
         sns.heatmap(
             valores,
@@ -233,7 +240,9 @@ def main() -> None:
     tabla_maestra = calcular_tabla_maestra(df)
     latencias = latencia_extra_por_config(df)
     tabla_asr = calcular_asr(df)
-    matriz_real = construir_matriz_real(tabla_asr)
+    matriz_real = aplicar_guarda_de_significancia(
+        construir_matriz_real(tabla_asr), construir_matriz_pvalores(tabla_asr)
+    )
     matriz_hipotesis = construir_matriz_hipotesis()
 
     ruta_asr = graficar_tendencia_asr(
