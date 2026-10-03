@@ -52,8 +52,10 @@ def test_exportar_lote_rechaza_eventos_incompletos_sin_abortar() -> None:
 
 
 def test_salida_fuera_del_repo_se_rechaza(tmp_path: Path) -> None:
+    eventos = lote.eventos_de_ejemplo()
+
     with pytest.raises(ValueError, match="fuera de"):
-        lote.exportar_lote(lote.eventos_de_ejemplo(), tmp_path / "x.json", "json")
+        lote.exportar_lote(eventos, tmp_path / "x.json", "json")
 
 
 def test_leer_eventos_cuenta_lineas_invalidas(tmp_path: Path) -> None:

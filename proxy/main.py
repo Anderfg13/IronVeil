@@ -524,11 +524,8 @@ def _exportar_a_siem(evento: dict[str, Any]) -> None:
                 siem.FormateadorWazuhJSON(),
                 siem.ConectorArchivoLocal(Path(ruta)),
             )
-    except Exception as exc:  # noqa: BLE001 - el SIEM no debe tumbar /chat
-        logger.error(
-            "exportacion a SIEM fallida (el evento quedo en el dataset): %s",
-            type(exc).__name__,
-        )
+    except Exception:  # noqa: BLE001 - el SIEM no debe tumbar /chat
+        logger.exception("exportacion a SIEM fallida (el evento quedo en el dataset)")
 
 
 def _sanear_para_log(valor: str) -> str:

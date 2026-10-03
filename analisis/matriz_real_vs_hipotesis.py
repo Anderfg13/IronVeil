@@ -76,12 +76,20 @@ MECANISMO_POR_CONFIG: dict[str, str] = {
 # Encabezado de columna por mecanismo, mismo texto que la matriz de
 # hipotesis del documento de propuesta (ver docstring del modulo) para que
 # la comparacion lado a lado sea directa.
+COL_FILTRADO = "Filtrado"
+COL_DELIMITACION = "Delimitación"
+COL_CLASIFICACION = "Clasificación"
+COL_MINIMO_PRIVILEGIO = "Mín. Privilegio"
+COL_APROBACION_HUMANA = "Aprob. Humana"
+SI_DIRECTO = "Sí (directo)"
+COL_NUMERO_INTENTOS = "Número de intentos"
+
 COLUMNA_POR_MECANISMO: dict[str, str] = {
-    "filtrado": "Filtrado",
-    "delimitacion": "Delimitación",
-    "clasificacion": "Clasificación",
-    "minimo_privilegio": "Mín. Privilegio",
-    "aprobacion_humana": "Aprob. Humana",
+    "filtrado": COL_FILTRADO,
+    "delimitacion": COL_DELIMITACION,
+    "clasificacion": COL_CLASIFICACION,
+    "minimo_privilegio": COL_MINIMO_PRIVILEGIO,
+    "aprobacion_humana": COL_APROBACION_HUMANA,
 }
 
 SIN_DATOS = "Sin datos"
@@ -106,39 +114,39 @@ VECTORES_CON_HIPOTESIS = ("V1", "V2", "V3", "V4", "V5")
 # documento, sin contraparte de hipótesis original.
 HIPOTESIS_SECCION_6_5: dict[str, dict[str, str]] = {
     "V1": {
-        "Filtrado": "N/A",
-        "Delimitación": "N/A",
-        "Clasificación": "N/A",
-        "Mín. Privilegio": "N/A",
-        "Aprob. Humana": "Parcial (fricción)",
+        COL_FILTRADO: "N/A",
+        COL_DELIMITACION: "N/A",
+        COL_CLASIFICACION: "N/A",
+        COL_MINIMO_PRIVILEGIO: "N/A",
+        COL_APROBACION_HUMANA: "Parcial (fricción)",
     },
     "V2": {
-        "Filtrado": "Parcial",
-        "Delimitación": "Parcial",
-        "Clasificación": "Parcial",
-        "Mín. Privilegio": "Parcial",
-        "Aprob. Humana": "Parcial",
+        COL_FILTRADO: "Parcial",
+        COL_DELIMITACION: "Parcial",
+        COL_CLASIFICACION: "Parcial",
+        COL_MINIMO_PRIVILEGIO: "Parcial",
+        COL_APROBACION_HUMANA: "Parcial",
     },
     "V3": {
-        "Filtrado": "Sí",
-        "Delimitación": "Sí",
-        "Clasificación": "Sí",
-        "Mín. Privilegio": "N/A",
-        "Aprob. Humana": "Parcial",
+        COL_FILTRADO: "Sí",
+        COL_DELIMITACION: "Sí",
+        COL_CLASIFICACION: "Sí",
+        COL_MINIMO_PRIVILEGIO: "N/A",
+        COL_APROBACION_HUMANA: "Parcial",
     },
     "V4": {
-        "Filtrado": "N/A",
-        "Delimitación": "N/A",
-        "Clasificación": "N/A",
-        "Mín. Privilegio": "Sí (directo)",
-        "Aprob. Humana": "Parcial",
+        COL_FILTRADO: "N/A",
+        COL_DELIMITACION: "N/A",
+        COL_CLASIFICACION: "N/A",
+        COL_MINIMO_PRIVILEGIO: SI_DIRECTO,
+        COL_APROBACION_HUMANA: "Parcial",
     },
     "V5": {
-        "Filtrado": "N/A",
-        "Delimitación": "N/A",
-        "Clasificación": "N/A",
-        "Mín. Privilegio": "N/A",
-        "Aprob. Humana": "Sí (directo)",
+        COL_FILTRADO: "N/A",
+        COL_DELIMITACION: "N/A",
+        COL_CLASIFICACION: "N/A",
+        COL_MINIMO_PRIVILEGIO: "N/A",
+        COL_APROBACION_HUMANA: SI_DIRECTO,
     },
 }
 
@@ -160,7 +168,7 @@ def clasificar_efecto(asr_c0: float, asr_mecanismo: float) -> str:
     """Aplica la regla de umbral documentada en el docstring del modulo."""
     reduccion = asr_c0 - asr_mecanismo
     if reduccion >= UMBRAL_EFECTO_DIRECTO:
-        return "Sí (directo)"
+        return SI_DIRECTO
     if reduccion > 0:
         return "Parcial"
     return "N/A"
@@ -176,7 +184,7 @@ def construir_matriz_real(tabla_asr: pd.DataFrame) -> pd.DataFrame:
         for _, fila in tabla_asr.iterrows()
     }
     intentos_por_config_vector: dict[tuple[str, str], int] = {
-        (fila[COL_CONFIGURACION], fila["Vector"]): int(fila["Número de intentos"])
+        (fila[COL_CONFIGURACION], fila["Vector"]): int(fila[COL_NUMERO_INTENTOS])
         for _, fila in tabla_asr.iterrows()
     }
 
@@ -239,8 +247,8 @@ def construir_matriz_pvalores(tabla_asr: pd.DataFrame) -> pd.DataFrame:
     """
     datos = {
         (f[COL_CONFIGURACION], f["Vector"]): (
-            round(f["ASR (%)"] * f["Número de intentos"] / 100),
-            int(f["Número de intentos"]),
+            round(f["ASR (%)"] * f[COL_NUMERO_INTENTOS] / 100),
+            int(f[COL_NUMERO_INTENTOS]),
         )
         for _, f in tabla_asr.iterrows()
     }

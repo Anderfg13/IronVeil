@@ -78,7 +78,7 @@ _NORM_COBERTURA = BoundaryNorm([-1.5, -0.5, 0.5, 1.5, 2.5], _CMAP_COBERTURA.N)
 # (el detalle cuantitativo completo ya vive en
 # analisis/matriz_real_vs_hipotesis.md). No toca sufijos no numericos como
 # "(directo)" o "(friccion)".
-_PATRON_SUFIJO_NUMERICO = re.compile(r"\s*\(\d[\d.]*%.*?\)\s*$")
+_PATRON_SUFIJO_NUMERICO = re.compile(r"\(\d[\d.]*%[^)]*\)\s*$")
 
 
 def _valor_heatmap(celda: str) -> int:

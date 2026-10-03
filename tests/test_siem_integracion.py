@@ -136,8 +136,10 @@ def test_un_fallo_del_siem_no_rompe_la_peticion_ni_el_dataset(
     assert respuesta.status_code == 200
     assert len(_dataset(resultados)) == 1
     assert "exportacion a SIEM fallida" in caplog.text
-    # Solo el tipo de excepcion: nunca la ruta ni el contenido del evento.
-    assert str(bloqueo) not in caplog.text
+    # El detalle (traza) queda en el log del servidor, nunca en la respuesta HTTP,
+    # y el contenido del evento no se vuelca.
+    assert "permitido_normal" not in caplog.text
+    assert "exportacion a SIEM fallida" not in respuesta.text
 
 
 def test_rafaga_concurrente_no_pierde_ni_mezcla_eventos_en_el_siem(

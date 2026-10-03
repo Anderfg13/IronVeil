@@ -124,6 +124,15 @@ def _enviar_slack(evento: dict[str, Any]) -> None:
     ).raise_for_status()
 
 
+def _contexto_tls() -> ssl.SSLContext:
+    """Contexto TLS que valida certificado y nombre de host (TLS >= 1.2)."""
+    contexto = ssl.create_default_context()
+    contexto.check_hostname = True
+    contexto.verify_mode = ssl.CERT_REQUIRED
+    contexto.minimum_version = ssl.TLSVersion.TLSv1_2
+    return contexto
+
+
 def _enviar_correo(evento: dict[str, Any]) -> None:
     host = os.environ["SMTP_HOST"]
     puerto = int(os.getenv("SMTP_PORT", "587"))
@@ -140,13 +149,13 @@ def _enviar_correo(evento: dict[str, Any]) -> None:
             host,
             puerto,
             timeout=TIMEOUT_NOTIFICACION_S,
-            context=ssl.create_default_context(),
+            context=_contexto_tls(),
         )
     else:
         servidor = smtplib.SMTP(host, puerto, timeout=TIMEOUT_NOTIFICACION_S)
     with servidor:
         if os.getenv("SMTP_SSL") != "1":
-            servidor.starttls(context=ssl.create_default_context())
+            servidor.starttls(context=_contexto_tls())
         if usuario:
             servidor.login(usuario, clave)
         servidor.send_message(mensaje)

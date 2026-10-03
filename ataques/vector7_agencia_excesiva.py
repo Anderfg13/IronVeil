@@ -96,7 +96,7 @@ _PATRON_MODIFICA_DATOS = re.compile(
     r"\b(drop|delete|update|insert|alter|truncate)\b", re.IGNORECASE
 )
 _PATRON_SELECT_TODO = re.compile(r"select\s+\*", re.IGNORECASE)
-_PATRON_CREDENCIAL = re.compile(r"[A-Z]+-DEMO-\d+")
+_PATRON_CREDENCIAL = re.compile(r"[A-Z]{1,16}-DEMO-\d{1,12}")
 
 
 @dataclass
