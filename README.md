@@ -159,6 +159,11 @@ repositorio):
 | `SPT_SECRET`  | Credencial ficticia (canario) del modelo `soporte`.        |
 | `RRHH_SECRET` | Credencial ficticia (canario) del modelo `rrhh`.            |
 
+## Demostración en vivo
+
+Guion paso a paso (curl → defensas → logs → avisos → SIEM), con comandos
+verificados y los problemas conocidos de esta máquina: `docs/DEMO.md`.
+
 ## Wazuh / SIEM (extensión opcional, **pesada**)
 
 `proxy/siem.py` → `exportar_a_siem(evento)` convierte un evento del log a JSON
