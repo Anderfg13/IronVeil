@@ -58,6 +58,10 @@ services:
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
       # Extensiones opcionales (vacias = apagadas). Ver .env.example.
       MODELOS_CON_HERRAMIENTAS: ${MODELOS_CON_HERRAMIENTAS:-}
+      # Exportacion de cada evento a un archivo en formato Wazuh JSON (ver
+      # docs/siem/wazuh/LEEME.md). Vacio = apagada. La ruta es DENTRO del
+      # contenedor; ./docs/siem/exportados se monta mas abajo.
+      SIEM_ARCHIVO_WAZUH: ${SIEM_ARCHIVO_WAZUH:-}
       NOTIFICAR_WEBHOOK_URL: ${NOTIFICAR_WEBHOOK_URL:-}
       NOTIFICAR_SLACK_WEBHOOK_URL: ${NOTIFICAR_SLACK_WEBHOOK_URL:-}
       SMTP_HOST: ${SMTP_HOST:-}
@@ -77,6 +81,7 @@ services:
       # en el host: son evidencia, no deben perderse si el contenedor cae.
       - ./config.yaml:/app/config.yaml:ro
       - ./resultados:/app/resultados
+      - ./docs/siem/exportados:/app/siem
     depends_on:
       ollama-init:
         condition: service_completed_successfully

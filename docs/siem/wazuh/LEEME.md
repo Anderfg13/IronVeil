@@ -74,11 +74,49 @@ mkdir -p ironveil_logs && touch ironveil_logs/ironveil.json
 docker compose up -d
 ```
 
-El panel queda en `https://localhost` con las credenciales **por defecto** del
-repo oficial (están en su `docker-compose.yml`). Son públicas: sirven solo para
-un laboratorio local y no deben exponerse fuera de tu máquina.
+## Ver el dashboard
 
-## Probar la ingesta
+Wazuh **sí tiene interfaz web**: el panel (Wazuh Dashboard, basado en
+OpenSearch Dashboards) queda en **<https://localhost>** (puerto 443, certificado
+autofirmado: el navegador avisará, es normal en local) y redirige a
+`/app/login`. Tarda 1–3 minutos en responder tras `docker compose up -d`
+(mientras el indexer no esté listo da 503).
+
+- Usuario y contraseña: los **por defecto del repo oficial**, en el
+  `docker-compose.yml` de `wazuh-docker/single-node` (variables
+  `INDEXER_USERNAME` / `INDEXER_PASSWORD`). Son públicos: solo para un
+  laboratorio local, nunca exponerlos fuera de tu máquina.
+- Dónde ver los eventos de IronVeil: **Threat Hunting → Events** y filtrar con
+  `rule.groups: ironveil`, o con `data.vector_probado`, `data.resultado`,
+  `data.mecanismo_que_bloqueo`. Las alertas de nivel ≥ 10 (ataque exitoso,
+  ráfaga) salen primero en el resumen.
+- Otros puertos: `9200` API del indexer (HTTPS, con credenciales), `55000` API
+  del manager, `1514/1515` agentes, `514/udp` syslog.
+
+## Conectar el proxy (envío automático)
+
+Con `SIEM_ARCHIVO_WAZUH` definida, el proxy agrega cada evento, ya en formato
+Wazuh JSON, a un archivo; Wazuh lo lee con el `localfile` de arriba. No hace
+falta ejecutar `exportar_lote_siem.py`.
+
+```bash
+# .env de IronVeil
+SIEM_ARCHIVO_WAZUH=/app/siem/ironveil.json   # ruta DENTRO del contenedor
+
+# docker-compose.yml de IronVeil monta ./docs/siem/exportados en /app/siem.
+# Wazuh debe leer la MISMA carpeta del host: antes de `docker compose up`
+# en wazuh-docker/single-node, apuntar IRONVEIL_SIEM_DIR a ella (ruta absoluta):
+IRONVEIL_SIEM_DIR=<IronVeil>/docs/siem/exportados docker compose up -d
+```
+
+Decisión de diseño (`_exportar_a_siem()` en `proxy/main.py`): el envío es
+**síncrono** porque solo es un append de una línea a un archivo local, sin red;
+tiene su propio lock y **nunca rompe la petición** (un fallo se loggea con el
+tipo de excepción y se descarta; el dataset de `resultados/` ya quedó escrito).
+Con la variable vacía no hace nada. Si algún día el transporte fuese de red
+(syslog/HTTP), habría que desacoplarlo en un hilo o cola.
+
+## Probar la ingesta con un lote
 
 ```bash
 # Lote sintético (marcado "sintetico": true; NO es evidencia del experimento)
@@ -109,8 +147,20 @@ sintéticos (uno por resultado posible, más V7 y V4 paso 2) produjo
 **7 alertas** del manager con la regla y el nivel esperados, y 6 bloqueos
 seguidos del mismo vector disparan la regla de ráfaga 100104.
 
+Verificado también de punta a punta: el **proxy real** (uvicorn, con
+`filtrado` y `aprobacion_humana` activos y un Ollama **falso**, porque lo que
+se probaba era el cableado, no el modelo) escribió cada evento al archivo vía
+`SIEM_ARCHIVO_WAZUH`; Wazuh generó las alertas esperadas (100100, 100101 ×5,
+100104 por la ráfaga y 100102) y Filebeat del manager confirmó conexión
+con el indexer (`filebeat test output`).
+
 **No verificado:** la entrega por agente remoto ni por syslog/CEF (CEF solo
 está probado con tests unitarios de formato, no contra un colector real), ni
-la visualización de las alertas en el panel (se comprobó en el
-`alerts.json` del manager, no en el dashboard, para no usar las credenciales
-por defecto desde un navegador).
+cómo se ven las alertas dentro del dashboard (el login lo hace quien lee esto:
+yo no ingresé las credenciales por defecto desde un navegador).
+
+**Incidente a tener en cuenta:** al reiniciar el stack tras una parada brusca
+de Docker, el indexer no arrancó (`IndexFormatTooOldException`: volumen de datos
+corrupto). Se resolvió borrando solo el volumen `single-node_wazuh-indexer-data`
+(datos de prueba); el panel 503 con `ECONNREFUSED ...:9200` en sus logs es el
+síntoma. Conviene hacer `docker compose down` (no matar Docker) antes de apagar.

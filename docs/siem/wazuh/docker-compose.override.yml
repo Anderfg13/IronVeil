@@ -6,4 +6,6 @@ services:
   wazuh.manager:
     volumes:
       - ./ironveil_rules.xml:/var/ossec/etc/rules/ironveil_rules.xml:ro
-      - ./ironveil_logs:/var/log/ironveil
+      # IRONVEIL_SIEM_DIR = ruta absoluta de <IronVeil>/docs/siem/exportados, la
+      # misma carpeta donde escribe el proxy (SIEM_ARCHIVO_WAZUH).
+      - ${IRONVEIL_SIEM_DIR:-./ironveil_logs}:/var/log/ironveil

@@ -173,7 +173,7 @@ del proyecto. **Antes de intentarlo en tu máquina:**
 | Disco | ≈ 8 GB solo de imágenes (50 GB recomendados por Wazuh) |
 | Kernel | `vm.max_map_count=262144` (si no, el indexer no arranca) |
 
-Pasos, reglas y qué se verificó: `docs/siem/wazuh/LEEME.md`.
+Dashboard en https://localhost (puerto 443) una vez arriba. Pasos, reglas, conexión del proxy (`SIEM_ARCHIVO_WAZUH`) y qué se verificó: `docs/siem/wazuh/LEEME.md`.
 
 ## Apagar el entorno
 

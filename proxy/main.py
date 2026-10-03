@@ -38,6 +38,7 @@ import proxy.cola as cola
 import proxy.herramientas as herramientas
 import proxy.mecanismos as mecanismos
 import proxy.notificaciones as notificaciones
+import proxy.siem as siem
 
 logger = logging.getLogger(__name__)
 
@@ -475,14 +476,9 @@ def _registrar_evento(evento: dict[str, Any]) -> None:
     Protegida con `_registro_lock`: sin esto, peticiones concurrentes
     (V5) pueden pisarse la escritura entre si y perder eventos completos.
 
-    Punto de integracion futuro para SIEM (ver `proxy/siem.py`, patron
-    Adapter, todavia no cableado aqui): quien conecte un SIEM real
-    llamaria `siem.enviar_a_siem(evento, formateador, conector)` con este
-    mismo `evento`, ademas de (nunca en vez de) esta escritura -- el SIEM
-    es un consumidor adicional, no reemplaza el dataset del experimento.
-    Decision pendiente de esa integracion, no de esta funcion: si ese envio
-    va sincrono aqui mismo o desacoplado (cola, hilo aparte) para no sumarle
-    latencia de red a cada peticion.
+    Despues de la escritura del dataset (nunca en vez de ella) llama a
+    `_exportar_a_siem()`, que solo hace algo si `SIEM_ARCHIVO_WAZUH` esta
+    definida. El SIEM es un consumidor adicional: no reemplaza el dataset.
     """
     fecha = datetime.now().astimezone().strftime("%Y-%m-%d")
     directorio = RESULTADOS_DIR / fecha
@@ -491,6 +487,48 @@ def _registrar_evento(evento: dict[str, Any]) -> None:
         "a", encoding="utf-8"
     ) as f:
         f.write(json.dumps(evento, ensure_ascii=False) + "\n")
+    _exportar_a_siem(evento)
+
+
+# Variable de entorno con la ruta del archivo JSON Lines que vigila Wazuh
+# (`<localfile>` con `log_format json`). Vacia/ausente = exportacion apagada,
+# el proxy se comporta exactamente como antes. Se lee en cada llamada (no al
+# importar) para poder cambiarla sin reiniciar pruebas ni recargar modulos.
+SIEM_ARCHIVO_ENV = "SIEM_ARCHIVO_WAZUH"
+
+# Lock propio, distinto de `_registro_lock`: el SIEM es otro destino y no
+# debe competir por el mismo lock que protege el dataset del experimento.
+_siem_lock = threading.Lock()
+
+
+def _exportar_a_siem(evento: dict[str, Any]) -> None:
+    """Agrega `evento` en formato Wazuh JSON al archivo de `SIEM_ARCHIVO_WAZUH`.
+
+    **Sincrono a proposito**: el transporte es un append de UNA linea a un
+    archivo local (microsegundos, sin red); Wazuh es quien lo lee despues.
+    Un hilo aparte solo agregaria concurrencia y riesgo de perder eventos al
+    cerrar el proceso. Si el transporte fuese de red habria que desacoplarlo.
+
+    **Nunca rompe la peticion**: cualquier fallo (disco lleno, ruta
+    invalida, evento incompleto) se loggea con el tipo de excepcion y se
+    descarta -- la peticion y el dataset del experimento ya quedaron
+    registrados. Sin la variable definida no hace nada.
+    """
+    ruta = os.environ.get(SIEM_ARCHIVO_ENV, "").strip()
+    if not ruta:
+        return
+    try:
+        with _siem_lock:
+            siem.enviar_a_siem(
+                evento,
+                siem.FormateadorWazuhJSON(),
+                siem.ConectorArchivoLocal(Path(ruta)),
+            )
+    except Exception as exc:  # noqa: BLE001 - el SIEM no debe tumbar /chat
+        logger.error(
+            "exportacion a SIEM fallida (el evento quedo en el dataset): %s",
+            type(exc).__name__,
+        )
 
 
 def _sanear_para_log(valor: str) -> str:
