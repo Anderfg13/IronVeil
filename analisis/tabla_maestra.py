@@ -18,11 +18,18 @@ ya calculados por vector, no sobre los conteos crudos).
   configuración (✓/—), leído directamente de `mecanismos_activos` del CSV
   (no de `config.yaml`, que cambia con el tiempo -- esto es lo que
   realmente corrió en cada fila).
-- `ASR promedio (%)`: media SIN PONDERAR de los porcentajes de ASR por
-  vector de esa configuración (cada vector pesa igual, sin importar cuántos
-  intentos tuvo -- V5 por sí solo tiene miles de intentos y pesarlo por
-  conteo ahogaría a V1-V4). Se documenta explícitamente para que nadie lo
-  confunda con un ASR agregado sobre todas las filas.
+- `ASR promedio V1-V4 (%)`: media SIN PONDERAR de los porcentajes de ASR por
+  vector, SOLO sobre V1-V4 (cada vector pesa igual, sin importar cuántos
+  intentos tuvo). V5 se excluye del promedio y va en su propia columna:
+  no todas las configuraciones lo tienen (C1, C2 y C4 nunca se probaron
+  contra V5), y promediar conjuntos de vectores distintos entre filas
+  haría la columna incomparable entre configuraciones. V1-V4 sí existen
+  para las 7 configuraciones, medidos con el mismo criterio (fuga
+  verificada por contenido) desde la re-corrida GPU del 2026-10-02.
+- `ASR V5 (%)`: ASR del vector de agotamiento de recursos, o "Sin datos" si
+  esa configuración nunca se probó contra V5. NO es comparable entre
+  configuraciones sin mirar `nivel_carga` (ver
+  `analisis/matriz_real_vs_hipotesis.md`, sección V5 × Clasificación).
 - `Falsos positivos`: **NO es una tasa estadística** -- este proyecto nunca
   registró una muestra de mensajes legítimos en `resultados_template.csv`
   (cada fila ahí es un intento de ataque). Lo que sí existe es una
@@ -78,7 +85,12 @@ ORDEN_CONFIGURACIONES = ["C0", "C1", "C2", "C3", "C4", "C5", "C6"]
 # de filas, seleccion de columnas, grafica) -- una sola definicion para que
 # un cambio de redaccion no tenga que buscarse en cada sitio por separado
 # (SonarCloud: "Define a constant instead of duplicating this literal").
-COL_ASR_PROMEDIO = "ASR promedio (%)"
+COL_ASR_PROMEDIO = "ASR promedio V1-V4 (%)"
+COL_ASR_V5 = "ASR V5 (%)"
+# Unicos vectores que existen para las 7 configuraciones con el mismo
+# criterio de exito (fuga verificada por contenido); base del promedio.
+VECTORES_COMPARABLES = ("V1", "V2", "V3", "V4")
+SIN_DATOS = "Sin datos"
 COL_LATENCIA_MEDIANA = "Latencia mediana (ms)"
 COL_FALSOS_POSITIVOS = "Falsos positivos"
 COL_COSTO = "Costo (líneas/horas)"
@@ -133,11 +145,22 @@ def mecanismos_activos_por_config(df: pd.DataFrame) -> dict[str, set[str]]:
     return resultado
 
 
-def asr_promedio_por_config(tabla_asr: pd.DataFrame) -> dict[str, float]:
+def asr_promedio_por_config(
+    tabla_asr: pd.DataFrame, vectores: tuple[str, ...] | None = None
+) -> dict[str, float]:
     """Media SIN PONDERAR de 'ASR (%)' por configuracion, sobre los
-    porcentajes ya calculados por vector (ver docstring del modulo).
+    porcentajes ya calculados por vector (ver docstring del modulo). Con
+    `vectores`, solo promedia esos vectores base.
     """
+    if vectores is not None:
+        tabla_asr = tabla_asr[tabla_asr["Vector"].isin(vectores)]
     return tabla_asr.groupby(COL_CONFIGURACION)["ASR (%)"].mean().round(1).to_dict()
+
+
+def asr_v5_por_config(tabla_asr: pd.DataFrame) -> dict[str, float]:
+    """ASR (%) de V5 por configuracion; ausente si nunca se probo."""
+    v5 = tabla_asr[tabla_asr["Vector"] == "V5"]
+    return v5.set_index(COL_CONFIGURACION)["ASR (%)"].round(1).to_dict()
 
 
 def latencia_extra_por_config(df: pd.DataFrame) -> dict[str, float | None]:
@@ -193,6 +216,7 @@ def _construir_fila(
     config: str,
     activos: set[str],
     asr_prom: dict[str, float],
+    asr_v5: dict[str, float],
     latencias: dict[str, float | None],
     latencia_c0: float | None,
 ) -> dict[str, object]:
@@ -202,6 +226,7 @@ def _construir_fila(
         fila[columna] = "✓" if nombre in activos else "—"
 
     fila[COL_ASR_PROMEDIO] = asr_prom.get(config)
+    fila[COL_ASR_V5] = asr_v5.get(config, SIN_DATOS)
     fila[COL_LATENCIA_MEDIANA] = _formatear_latencia_mediana(
         config, latencias.get(config), latencia_c0
     )
@@ -220,12 +245,15 @@ def calcular_tabla_maestra(df: pd.DataFrame) -> pd.DataFrame:
     """Arma la tabla maestra de 1 fila por configuracion presente en `df`."""
     tabla_asr = calcular_asr(df)
     mecanismos = mecanismos_activos_por_config(df)
-    asr_prom = asr_promedio_por_config(tabla_asr)
+    asr_prom = asr_promedio_por_config(tabla_asr, VECTORES_COMPARABLES)
+    asr_v5 = asr_v5_por_config(tabla_asr)
     latencias = latencia_extra_por_config(df)
     latencia_c0 = latencias.get("C0")
 
     filas = [
-        _construir_fila(config, mecanismos[config], asr_prom, latencias, latencia_c0)
+        _construir_fila(
+            config, mecanismos[config], asr_prom, asr_v5, latencias, latencia_c0
+        )
         for config in ORDEN_CONFIGURACIONES
         if config in mecanismos
     ]
@@ -233,7 +261,13 @@ def calcular_tabla_maestra(df: pd.DataFrame) -> pd.DataFrame:
     columnas = (
         [COL_CONFIGURACION]
         + [col for _, col in MECANISMOS_COLUMNAS]
-        + [COL_ASR_PROMEDIO, COL_FALSOS_POSITIVOS, COL_LATENCIA_MEDIANA, COL_COSTO]
+        + [
+            COL_ASR_PROMEDIO,
+            COL_ASR_V5,
+            COL_FALSOS_POSITIVOS,
+            COL_LATENCIA_MEDIANA,
+            COL_COSTO,
+        ]
     )
     return pd.DataFrame(filas)[columnas]
 

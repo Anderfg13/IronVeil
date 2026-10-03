@@ -1,5 +1,17 @@
 # Resultados finales — IronVeil
 
+> **⚠️ DESACTUALIZADO (2026-10-02) — NO CITAR EN EL INFORME TODAVÍA.** Las
+> cifras y conclusiones de este documento se calcularon con las filas de C0-C2
+> de la primera semana, que se puntuaron con otro criterio de éxito que el
+> resto (ASR "nada lo bloqueó", no "la credencial salió"). La re-corrida en
+> Colab GPU del 2026-10-02 reemplazó esas filas por datos con fuga verificada
+> por contenido y cambió el panorama (p. ej. V3 en C0 pasa de 100% a 0%: el
+> modelo base no filtra el secreto, así que ningún mecanismo puede "reducirlo").
+> Se reescribe cuando termine la segunda corrida (C0-C6 con 3 repeticiones,
+> `resultados/RECORRIDA_GPU_C0_C6.ipynb`). Detalle en `docs/LIMPIEZA_DATOS.md`,
+> sección 6.
+
+
 > **Esta es la versión final** de la sección de resultados del informe.
 > Supersede a `analisis/conclusion_borrador.md` (que queda como registro
 > histórico de la primera pasada, del 2026-09-30, cuando el costo de

@@ -219,7 +219,7 @@ def test_calcular_tabla_maestra_columnas_y_orden() -> None:
     tabla = calcular_tabla_maestra(df)
 
     assert list(tabla["Configuración"]) == ["C0", "C6"]
-    assert "ASR promedio (%)" in tabla.columns
+    assert "ASR promedio V1-V4 (%)" in tabla.columns
     assert "Falsos positivos" in tabla.columns
     assert "Latencia mediana (ms)" in tabla.columns
     assert "Costo (líneas/horas)" in tabla.columns
@@ -245,7 +245,7 @@ def test_escapar_latex_traduce_checkmark_y_guion() -> None:
 
 def test_generar_latex_produce_tabular_valido() -> None:
     tabla = pd.DataFrame(
-        [{"Configuración": "C0", "Filt.": "—", "ASR promedio (%)": 64.4}]
+        [{"Configuración": "C0", "Filt.": "—", "ASR promedio V1-V4 (%)": 64.4}]
     )
 
     tex = generar_latex(tabla)
@@ -254,3 +254,33 @@ def test_generar_latex_produce_tabular_valido() -> None:
     assert r"\end{tabular}" in tex
     assert r"\toprule" in tex
     assert "C0 & -- & 64.4" in tex
+
+
+def test_asr_promedio_con_vectores_ignora_los_demas() -> None:
+    from analisis.tabla_maestra import asr_v5_por_config
+
+    tabla_asr = pd.DataFrame(
+        [
+            {
+                "Configuración": "C0",
+                "Vector": "V1",
+                "ASR (%)": 40.0,
+                "Número de intentos": 5,
+            },
+            {
+                "Configuración": "C0",
+                "Vector": "V2",
+                "ASR (%)": 20.0,
+                "Número de intentos": 5,
+            },
+            {
+                "Configuración": "C0",
+                "Vector": "V5",
+                "ASR (%)": 100.0,
+                "Número de intentos": 900,
+            },
+        ]
+    )
+
+    assert asr_promedio_por_config(tabla_asr, ("V1", "V2")) == {"C0": 30.0}
+    assert asr_v5_por_config(tabla_asr) == {"C0": 100.0}

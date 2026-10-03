@@ -279,3 +279,44 @@ python analisis/fusionar_latencia_clasificador.py
 Es seguro correrlo las veces que haga falta: solo toca filas con
 `latencia_clasificador_ms` vacío y nunca sobrescribe un valor que ya esté
 poblado.
+
+## 6. Re-corrida GPU del 2026-10-02 (C0-C5, V1-V4) y cambio de criterio de ASR
+
+**Qué se hizo.** Se re-corrieron V1-V4 en C0-C5 en Colab (GPU T4, proxy con
+calentamiento + `keep_alive` + conexión reutilizada). Las 146 filas viejas
+de V1-V4 de C0-C5 (CPU) se movieron a `descartados.csv` con
+`analisis/mover_a_descartados.py --vector-base V1 V2 V3 V4` (opción nueva:
+descarta por configuración *y* vector; V5 no se tocó). Se ingestaron 163
+filas nuevas (`resultados/2026-10-02/`), se aplicó `limpiar_dataset.py` (9
+`mecanismo_que_bloqueo` "desconocido" corregidos, config de un solo
+mecanismo) y `fusionar_latencia_clasificador.py` (20 filas con
+`latencia_clasificador_ms`, ahora sí con `eventos.jsonl` del proxy de esa
+corrida).
+
+**Hallazgo: las filas viejas de C0-C2 no eran comparables con las de C3-C6.**
+La primera semana (2026-09-05/07) el ASR de C0-C2 salió del `resultado` que
+escribe el proxy ("nada lo bloqueó"), mientras que los scripts de ataque
+posteriores puntúan por fuga *verificada por contenido*
+(`_resultado_desde_chat`). Al reemplazar C0-C2 con filas del criterio
+vigente, V3 en C0 pasa de 100% a 0%: `llama3.2:1b` no revela el secreto ante
+esas inyecciones, así que no hay ASR que un mecanismo pueda reducir (efecto
+suelo). Varias celdas de la matriz de hipótesis que parecían "Sí (directo)"
+(p. ej. V3 × Clasificación) eran artefacto de comparar 100% (criterio viejo)
+contra 0% (criterio nuevo).
+
+**Otros hechos de la corrida:**
+- V1 da 40% idéntico en las 7 configuraciones: son `V1-A`/`V1-C` (Ollama
+  alcanzable directo en la VM), una propiedad del entorno, no de ningún
+  mecanismo — confirma lo que ya se sospechaba.
+- n por celda es muy chico (V2: 5, V4: 6, V3: 9-12): una diferencia de un
+  evento mueve el ASR 8-20 puntos. Por eso la segunda corrida repite 3 veces.
+- La latencia mediana de C0-C5 baja a 53-238 ms (antes 0.5-12.7 s en CPU).
+  C6 (683 ms) viene de la corrida anterior, con otra versión del código, y no
+  es comparable hasta repetirla.
+- La latencia por configuración mezcla peticiones bloqueadas (rápidas) con
+  las que llegan al modelo; C5 sale la más "rápida" porque bloquea más.
+- La tabla maestra ahora promedia el ASR solo sobre V1-V4 (los únicos
+  presentes en las 7 configuraciones) y muestra V5 en columna aparte.
+- `timestamp_desordenado` (advertencia de `validar_dataset.py`): las filas
+  nuevas se agregaron por archivo, V4 después de V1-V3; no es un error de
+  reloj.

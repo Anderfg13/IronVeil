@@ -48,6 +48,10 @@ gráficas finales en alta resolución (`resultados/graficas_finales/`) y la
 respuesta final y defendible a la pregunta de investigación, ya con el
 costo de implementación incluido — todo en
 `analisis/resultados_finales.md` (supersede a `conclusion_borrador.md`).
+**Ojo:** `resultados_finales.md` y `matriz_real_vs_hipotesis.md` quedaron
+desactualizados tras la re-corrida GPU del 2026-10-02 (cambió el criterio de
+ASR de C0-C2); se reescriben tras la 2.ª corrida — ver `docs/LIMPIEZA_DATOS.md`,
+sección 6.
 
 ## Estructura del proyecto
 

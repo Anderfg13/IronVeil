@@ -1,6 +1,6 @@
-# Re-corrida de C0-C5 en Colab GPU
+# Re-corrida de C0-C6 en Colab GPU
 
-> **La guía ejecutable es el notebook `RECORRIDA_GPU_C0_C5.ipynb`** (misma
+> **La guía ejecutable es el notebook `RECORRIDA_GPU_C0_C6.ipynb`** (misma
 > carpeta): se sube tal cual a Google Colab y se corre celda por celda. Este
 > archivo solo documenta el *por qué* y las decisiones; antes traía los
 > comandos a mano, pero tenían errores (ver "Correcciones" abajo) y se
@@ -17,6 +17,16 @@
 - Alcance: V1-V4 (lo que entra en la métrica de latencia; V5 ya está
   excluido de esa métrica por diseño, ver `latencia_extra_por_config()`).
   Para V5 en GPU, correr aparte `ataques/vector5_carga.py`.
+
+## Estado
+
+- **1.ª corrida (2026-10-02, C0-C5, 1 repetición): ingestada.** Ver
+  `docs/LIMPIEZA_DATOS.md`, sección 6.
+- **2.ª corrida pendiente:** `RECORRIDA_GPU_C0_C6.ipynb` agrega C6 (la
+  corrida GPU de C6 del 2026-09-30 usó el código del proxy *anterior* al
+  calentamiento/`keep_alive`/conexión reutilizada, así que su latencia no es
+  comparable) y 3 repeticiones (n por celda de 5-21 intentos es demasiado
+  chico: una diferencia de un solo evento es ruido).
 
 ## Después de correr el notebook (lo hace Claude)
 

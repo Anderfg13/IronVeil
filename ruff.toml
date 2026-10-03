@@ -4,6 +4,9 @@
 # cambian entre versiones).
 target-version = "py311"
 line-length = 88
+# Los notebooks de resultados/ son runbooks para pegar en Colab (celdas con
+# magics y lineas largas), no codigo del proyecto.
+extend-exclude = ["*.ipynb"]
 
 [lint]
 # E, F: errores de pycodestyle/pyflakes (baseline).
