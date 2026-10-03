@@ -112,3 +112,12 @@ def test_detalle_csv_lleva_los_campos_propios_de_v7() -> None:
     assert filas[0]["uso_indebido_solicitado"] == "True"
     assert filas[2]["mecanismo_que_bloqueo"] == "aprobacion_humana"
     assert filas[1]["motivo_uso_indebido"] == ""
+
+
+def test_leer_jsonl_rechaza_rutas_fuera_del_repo(tmp_path: object) -> None:
+    import pytest
+
+    fuera = ext.RAIZ.parent / "fuera_del_repo.jsonl"
+
+    with pytest.raises(ValueError, match="fuera de"):
+        ext.leer_jsonl(fuera)

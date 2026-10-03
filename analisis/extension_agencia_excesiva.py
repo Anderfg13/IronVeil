@@ -94,7 +94,8 @@ LIMITACIONES: tuple[str, ...] = (
 
 
 def leer_jsonl(ruta: Path) -> list[dict[str, Any]]:
-    """Un dict por linea no vacia."""
+    """Un dict por linea no vacia. La ruta debe quedar dentro del repo (CWE-22)."""
+    ruta = validar_ruta_salida_segura(ruta)
     with ruta.open(encoding="utf-8") as f:
         return [json.loads(linea) for linea in f if linea.strip()]
 

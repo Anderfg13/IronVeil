@@ -8,6 +8,7 @@ webhook que dispara el proxy. Slack, correo y WhatsApp se prueban con dobles
 from __future__ import annotations
 
 import json
+import ssl
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -197,7 +198,10 @@ def test_correo_arma_el_mensaje_y_usa_starttls(monkeypatch: pytest.MonkeyPatch) 
         def __exit__(self, *a: object) -> None:
             return None
 
-        def starttls(self) -> None:
+        def starttls(self, *, context: ssl.SSLContext) -> None:
+            # Debe verificar certificado y nombre de host (SonarCloud S5332).
+            assert context.verify_mode == ssl.CERT_REQUIRED
+            assert context.check_hostname is True
             llamadas.append("starttls")
 
         def login(self, usuario: str, clave: str) -> None:
@@ -364,3 +368,24 @@ def test_una_peticion_normal_no_dispara_notificacion(
 
     assert r.status_code == 200
     assert llamadas == []
+
+
+# --- URL del webhook: HTTPS, o HTTP en claro solo hacia el laboratorio -------
+
+
+@pytest.mark.parametrize(
+    ("url", "valida"),
+    [
+        ("https://hooks.ejemplo.test/X", True),
+        ("http://127.0.0.1:18999/aviso", True),
+        ("http://localhost:8000/x", True),
+        ("http://host.docker.internal:18999/aviso", True),
+        ("http://hooks.ejemplo.test/X", False),
+        ("http://127.0.0.1.evil.test/X", False),
+        ("ftp://127.0.0.1/x", False),
+        ("https://", False),
+        ("sin esquema", False),
+    ],
+)
+def test_url_del_webhook_exige_https_salvo_laboratorio(url: str, valida: bool) -> None:
+    assert notificaciones._url_http_valida(url) is valida

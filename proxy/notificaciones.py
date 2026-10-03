@@ -34,11 +34,13 @@ from __future__ import annotations
 import logging
 import os
 import smtplib
+import ssl
 import threading
 from collections.abc import Callable
 from datetime import datetime
 from email.message import EmailMessage
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -46,7 +48,11 @@ logger = logging.getLogger(__name__)
 
 TIMEOUT_NOTIFICACION_S: float = 5.0
 _URL_TWILIO = "https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json"
-_ESQUEMAS_HTTP = ("http://", "https://")
+# Texto plano (sin TLS) solo hacia el propio laboratorio: el receptor local de
+# la demo o el host de Docker. Cualquier otro destino debe ser HTTPS.
+_HOSTS_DE_LABORATORIO = frozenset(
+    {"localhost", "127.0.0.1", "::1", "host.docker.internal"}
+)
 
 
 def construir_evento_notificacion(
@@ -93,13 +99,19 @@ def formatear_texto(evento: dict[str, Any]) -> str:
 
 
 def _url_http_valida(url: str) -> bool:
-    return url.startswith(_ESQUEMAS_HTTP)
+    """True si `url` es HTTPS, o HTTP en claro hacia un host del laboratorio."""
+    partes = urlsplit(url)
+    if partes.scheme == "https":
+        return bool(partes.hostname)
+    return partes.scheme == "http" and partes.hostname in _HOSTS_DE_LABORATORIO
 
 
 def _enviar_webhook(evento: dict[str, Any]) -> None:
     url = os.environ["NOTIFICAR_WEBHOOK_URL"]
     if not _url_http_valida(url):
-        raise ValueError("NOTIFICAR_WEBHOOK_URL debe empezar por http:// o https://")
+        raise ValueError(
+            "NOTIFICAR_WEBHOOK_URL debe ser HTTPS (o HTTP solo hacia localhost)"
+        )
     httpx.post(url, json=evento, timeout=TIMEOUT_NOTIFICACION_S).raise_for_status()
 
 
@@ -125,13 +137,16 @@ def _enviar_correo(evento: dict[str, Any]) -> None:
 
     if os.getenv("SMTP_SSL") == "1":
         servidor: smtplib.SMTP = smtplib.SMTP_SSL(
-            host, puerto, timeout=TIMEOUT_NOTIFICACION_S
+            host,
+            puerto,
+            timeout=TIMEOUT_NOTIFICACION_S,
+            context=ssl.create_default_context(),
         )
     else:
         servidor = smtplib.SMTP(host, puerto, timeout=TIMEOUT_NOTIFICACION_S)
     with servidor:
         if os.getenv("SMTP_SSL") != "1":
-            servidor.starttls()
+            servidor.starttls(context=ssl.create_default_context())
         if usuario:
             servidor.login(usuario, clave)
         servidor.send_message(mensaje)

@@ -40,7 +40,7 @@ class Receptor(BaseHTTPRequestHandler):
 
 def main() -> None:
     servidor = HTTPServer(("127.0.0.1", PUERTO), Receptor)
-    sys.stdout.write(f"Esperando avisos en http://127.0.0.1:{PUERTO} ...\n")
+    sys.stdout.write(f"Esperando avisos en 127.0.0.1:{PUERTO} ...\n")
     sys.stdout.flush()
     servidor.serve_forever()
 
