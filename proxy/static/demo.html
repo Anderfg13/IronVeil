@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
   <meta name="robots" content="noindex">
   <meta name="color-scheme" content="light dark">
   <title>Chat · IronVeil</title>
@@ -24,9 +24,10 @@
   <main class="demo-chat" id="principal">
     <h1 class="solo-lectores">Chat</h1>
 
-    <div class="demo-hilo" id="hilo" role="log" aria-live="polite" aria-label="Conversación" tabindex="-1">
+    <!-- Las respuestas se anuncian por #anuncios (una sola región viva); el hilo es
+         un log navegable que no se anuncia a sí mismo, para no leer todo dos veces. -->
+    <div class="demo-hilo" id="hilo" role="log" aria-live="off" aria-label="Conversación" tabindex="0">
       <section class="demo-inicio" id="inicio">
-        <img src="/revision/static/logo.svg" alt="" width="52" height="52">
         <h2>¿En qué puedo ayudarte?</h2>
       </section>
     </div>
@@ -34,7 +35,7 @@
     <form class="demo-compositor" id="formulario" novalidate>
       <label class="solo-lectores" for="mensaje">Mensaje</label>
       <div class="demo-caja">
-        <textarea id="mensaje" name="mensaje" rows="1" maxlength="12000" placeholder="Escribe tu mensaje…" autocomplete="off" spellcheck="true"></textarea>
+        <textarea id="mensaje" name="mensaje" rows="1" maxlength="12000" placeholder="Escribe tu mensaje…" autocomplete="off" spellcheck="true" aria-describedby="ayuda"></textarea>
         <div class="demo-controles">
           <div class="demo-campo">
             <label for="modelo">Asistente</label>
@@ -43,11 +44,17 @@
               <option value="rrhh">Recursos humanos</option>
             </select>
           </div>
-          <div class="relleno"></div>
+          <span class="demo-contador" id="contador" hidden></span>
           <button type="submit" class="demo-enviar" id="enviar">Enviar</button>
         </div>
       </div>
-      <p class="demo-ayuda">Enter envía, Mayús+Enter agrega una línea. Cada mensaje se responde por separado.</p>
+      <div class="demo-notas">
+        <p class="demo-ayuda" id="ayuda">
+          <span class="demo-solo-fino">Enter envía, Mayús+Enter agrega una línea.</span>
+          <span class="demo-solo-tactil">Toca Enviar para mandar tu mensaje.</span>
+        </p>
+        <p class="demo-ayuda">Cada mensaje se responde por separado. Las respuestas las genera un modelo y pueden tener errores.</p>
+      </div>
     </form>
   </main>
 

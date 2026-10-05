@@ -12,9 +12,21 @@ const MENSAJES = {
   400: "No puedo ayudarte con ese mensaje.",
   429: "Tu mensaje quedó pendiente de revisión. Vuelve a intentarlo más tarde.",
   otro: "No pude responder en este momento. Inténtalo de nuevo.",
+  vacio: "El asistente no devolvió ningún texto. Inténtalo de nuevo.",
+  espera: "Espera la respuesta antes de enviar otro mensaje.",
 };
+const ESCRIBIENDO = "Escribiendo…";
+const LENTO = "Sigo trabajando en tu respuesta…";
+const LIMITE = 12000; // igual que maxlength del cuadro de texto
+const AVISAR_DESDE = 10800; // 90 %: a partir de aqui se muestra el contador
+const TIEMPO_MAXIMO_MS = 120000;
+const AVISO_LENTO_MS = 8000;
 
 const estado = { enCurso: false };
+
+/* En pantalla tactil Enter es un salto de linea y no se enfoca solo el cuadro
+   (abriria el teclado y taparia la pantalla). */
+const tactil = () => window.matchMedia("(pointer: coarse)").matches;
 
 function h(etiqueta, atributos, ...hijos) {
   const nodo = document.createElement(etiqueta);
@@ -31,6 +43,7 @@ function h(etiqueta, atributos, ...hijos) {
   return nodo;
 }
 
+/* Unica region viva de la pagina: el hilo (role=log) no se anuncia a si mismo. */
 function anunciar(texto) {
   const region = $("anuncios");
   region.textContent = "";
@@ -42,48 +55,76 @@ function bajar() {
   el.scrollTop = el.scrollHeight;
 }
 
+/* Una respuesta larga se lee desde su primera linea, no desde la ultima. */
+function verDesdeArriba(mensaje) {
+  const hilo = $("hilo");
+  hilo.scrollTop += mensaje.getBoundingClientRect().top - hilo.getBoundingClientRect().top - 12;
+}
+
 function agregarMensaje(texto) {
   $("inicio")?.remove();
   $("nueva").hidden = false;
-  $("hilo").append(h("div", { class: "demo-msg usuario" }, h("div", { class: "demo-burbuja" }, texto)));
-  const cuerpo = h("div", {}, h("span", { class: "demo-pensando", role: "status" },
-    h("i"), h("i"), h("i"), h("span", { class: "solo-lectores" }, "Escribiendo")));
-  $("hilo").append(h("div", { class: "demo-msg" },
-    h("div", { class: "demo-avatar" }, h("img", { src: "/revision/static/logo.svg", alt: "" })),
-    h("div", { class: "demo-asistente" }, cuerpo)));
+  $("hilo").append(h("div", { class: "demo-msg demo-propio" },
+    h("div", { class: "demo-burbuja" }, h("span", { class: "solo-lectores" }, "Tú: "), texto)));
+  const rotulo = h("span", {}, ESCRIBIENDO);
+  const cuerpo = h("div", {}, h("span", { class: "demo-pensando" },
+    h("span", { class: "demo-puntos", "aria-hidden": "true" }, h("i"), h("i"), h("i")), rotulo));
+  const mensaje = h("div", { class: "demo-msg" },
+    h("div", { class: "demo-asistente" }, h("span", { class: "solo-lectores" }, "Asistente: "), cuerpo));
+  $("hilo").append(mensaje);
   bajar();
-  return cuerpo;
+  anunciar(ESCRIBIENDO);
+  return { cuerpo, rotulo, mensaje };
 }
 
-function mostrar(cuerpo, texto, esAviso) {
-  cuerpo.replaceChildren(h("p", { class: esAviso ? "demo-texto aviso" : "demo-texto" }, texto));
+function mostrar(vista, texto, esAviso) {
+  vista.cuerpo.replaceChildren(h("p", { class: esAviso ? "demo-texto demo-aviso" : "demo-texto" }, texto));
   anunciar(texto);
-  bajar();
+  verDesdeArriba(vista.mensaje);
+}
+
+function marcarEnvio(enCurso) {
+  const boton = $("enviar");
+  if (enCurso) boton.setAttribute("aria-disabled", "true");
+  else boton.removeAttribute("aria-disabled");
+  boton.textContent = enCurso ? "Enviando…" : "Enviar";
 }
 
 async function enviar(texto) {
-  if (estado.enCurso) return;
   estado.enCurso = true;
-  $("enviar").disabled = true;
-  const cuerpo = agregarMensaje(texto);
+  marcarEnvio(true);
+  const vista = agregarMensaje(texto);
+  const control = new AbortController();
+  const corte = setTimeout(() => control.abort(), TIEMPO_MAXIMO_MS);
+  const lento = setTimeout(() => { vista.rotulo.textContent = LENTO; anunciar(LENTO); }, AVISO_LENTO_MS);
+  let recuperar = false; // devolver el texto al cuadro para editarlo y reenviarlo
   try {
     const r = await fetch("/chat", {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST", headers: { "Content-Type": "application/json" }, signal: control.signal,
       body: JSON.stringify({ modelo: $("modelo").value, mensaje: texto }), credentials: "same-origin",
     });
     if (!r.ok) {
-      mostrar(cuerpo, MENSAJES[r.status] || MENSAJES.otro, true);
+      mostrar(vista, MENSAJES[r.status] || MENSAJES.otro, true);
+      recuperar = r.status !== 429; // si quedo en revision, reenviarlo duplicaria la peticion
     } else {
       const datos = await r.json();
       const respuesta = (datos.message && datos.message.content) || "";
-      mostrar(cuerpo, respuesta || "(sin respuesta)", !respuesta);
+      mostrar(vista, respuesta || MENSAJES.vacio, !respuesta);
+      recuperar = !respuesta;
     }
   } catch {
-    mostrar(cuerpo, MENSAJES.otro, true);
+    mostrar(vista, MENSAJES.otro, true);
+    recuperar = true;
   } finally {
+    clearTimeout(corte);
+    clearTimeout(lento);
     estado.enCurso = false;
-    $("enviar").disabled = false;
-    $("mensaje").focus();
+    marcarEnvio(false);
+    if (recuperar && !$("mensaje").value) {
+      $("mensaje").value = texto;
+      ajustarAltura();
+    }
+    if (!tactil()) $("mensaje").focus();
   }
 }
 
@@ -91,11 +132,19 @@ function ajustarAltura() {
   const campo = $("mensaje");
   campo.style.height = "auto";
   campo.style.height = `${Math.min(campo.scrollHeight, 176)}px`;
+  const n = campo.value.length;
+  const contador = $("contador");
+  contador.hidden = n < AVISAR_DESDE;
+  if (!contador.hidden) {
+    contador.textContent = n >= LIMITE ? `Límite alcanzado (${LIMITE})` : `${n} de ${LIMITE}`;
+  }
 }
 
 function iniciar() {
   $("formulario").addEventListener("submit", (ev) => {
     ev.preventDefault();
+    // Mientras responde, el texto escrito se conserva: no se borra ni se descarta.
+    if (estado.enCurso) { anunciar(MENSAJES.espera); return; }
     const texto = $("mensaje").value.trim();
     if (!texto) { $("mensaje").focus(); return; }
     $("mensaje").value = "";
@@ -104,11 +153,15 @@ function iniciar() {
   });
   $("mensaje").addEventListener("input", ajustarAltura);
   $("mensaje").addEventListener("keydown", (ev) => {
-    if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); $("formulario").requestSubmit(); }
+    // keyCode 229: Safari confirma una composicion (IME) con un Enter que no es de envio.
+    if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing && ev.keyCode !== 229 && !tactil()) {
+      ev.preventDefault();
+      $("formulario").requestSubmit();
+    }
   });
   // Recargar descarta el hilo en un solo paso.
   $("nueva").addEventListener("click", () => location.reload());
-  $("mensaje").focus();
+  if (!tactil()) $("mensaje").focus();
 }
 
 iniciar();

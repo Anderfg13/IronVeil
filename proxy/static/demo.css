@@ -1,67 +1,94 @@
 /* IronVeil · pantalla de chat de la demo.
    Usa los tokens de consola.css (misma familia visual): aqui solo hay layout y
-   componentes. Sin recursos externos; la apariencia sigue al sistema. */
+   componentes. Sin recursos externos; la apariencia sigue al sistema.
+   Todas las clases propias llevan el prefijo `demo-`: consola.css ya define
+   `.usuario` y `.aviso` (con otro aspecto) y reutilizarlas rompia el diseño. */
 
-.demo-cuerpo { height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
-.demo-chat { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.demo-cuerpo { height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow-y: auto; }
+/* Si la pantalla es baja o el texto muy grande, el conjunto desplaza la pagina
+   en vez de recortar el cuadro de texto o aplastar la conversacion a cero. */
+.demo-cuerpo > .barra { flex: none; position: static; } /* no se encoge ni tapa el foco (WCAG 2.4.11) al desplazar */
+.demo-chat { flex: 1 0 auto; display: flex; flex-direction: column; min-width: 0; }
 
 /* ---------- Conversacion ---------- */
-.demo-hilo { flex: 1; overflow-y: auto; padding: 24px 20px 8px; scroll-behavior: smooth; }
-.demo-hilo:focus { outline: none; }
+.demo-hilo { flex: 1 1 8rem; min-height: 8rem; overflow-y: auto; padding: 24px 20px 8px; scroll-behavior: smooth; }
+/* El hilo se alcanza con Tab: sin foco, el teclado no podria desplazar una
+   conversacion larga. */
+.demo-hilo:focus-visible { outline: 2px solid var(--veil); outline-offset: -4px; }
 .demo-hilo > * { max-width: 46rem; margin-left: auto; margin-right: auto; }
 
 .demo-inicio { text-align: center; padding: clamp(24px, 22vh, 180px) 0 8px; }
-.demo-inicio img { display: block; margin: 0 auto 16px; }
-.demo-inicio h2 { margin: 0; font-size: 1.75rem; letter-spacing: -0.02em; }
+.demo-inicio h2 { margin: 0; font-size: 1.75rem; letter-spacing: -0.02em; overflow-wrap: anywhere; }
 
-.demo-msg { margin: 18px auto; display: flex; gap: 12px; }
-.demo-msg.usuario { justify-content: flex-end; }
-.demo-msg.usuario .demo-burbuja { background: var(--veil-soft); border-radius: 18px 18px 4px 18px; max-width: 85%; padding: 10px 16px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.demo-avatar { flex: none; width: 32px; height: 32px; }
-.demo-avatar img { width: 32px; height: 32px; display: block; }
+.demo-msg { margin: 18px auto; display: flex; gap: 12px; min-width: 0; }
+.demo-msg.demo-propio { justify-content: flex-end; }
+.demo-msg.demo-propio .demo-burbuja { background: var(--veil-soft); border-radius: 18px 18px 4px 18px; max-width: 85%; padding: 10px 16px; white-space: pre-wrap; overflow-wrap: anywhere; position: relative; }
 .demo-asistente { min-width: 0; flex: 1; }
 .demo-texto { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 1rem; line-height: 1.6; max-width: 70ch; margin: 4px 0 0; }
-.demo-texto.aviso { color: var(--ink-2); }
-.demo-pensando { display: inline-flex; gap: 5px; align-items: center; color: var(--ink-3); min-height: 1.6rem; }
-.demo-pensando i { width: 7px; height: 7px; border-radius: 50%; background: currentcolor; animation: demo-latido 1.2s infinite ease-in-out; }
-.demo-pensando i:nth-child(2) { animation-delay: .15s; }
-.demo-pensando i:nth-child(3) { animation-delay: .3s; }
+/* Un aviso se distingue por la forma (recuadro con borde), no solo por el color. */
+.demo-texto.demo-aviso { background: var(--panel-2); border: 1px solid var(--borde); border-radius: 12px; padding: 10px 14px; width: fit-content; max-width: 100%; }
+.demo-pensando { display: inline-flex; flex-wrap: wrap; gap: 5px 8px; align-items: center; color: var(--ink-2); min-height: 1.6rem; font-size: 0.875rem; }
+.demo-puntos { display: inline-flex; gap: 5px; align-items: center; }
+.demo-puntos i { width: 7px; height: 7px; border-radius: 50%; background: currentcolor; animation: demo-latido 1.2s infinite ease-in-out; }
+.demo-puntos i:nth-child(2) { animation-delay: .15s; }
+.demo-puntos i:nth-child(3) { animation-delay: .3s; }
 @keyframes demo-latido { 0%, 80%, 100% { opacity: .25; transform: scale(.8); } 40% { opacity: 1; transform: scale(1); } }
 
 /* ---------- Compositor ---------- */
 .demo-compositor { flex: none; width: 100%; max-width: 46rem; margin: 0 auto; padding: 8px 20px 14px; }
-.demo-caja { background: var(--panel); border: 1px solid var(--borde); border-radius: 16px; }
+.demo-caja { background: var(--panel); border: 1px solid var(--borde); border-radius: 16px; min-width: 0; }
 .demo-caja:focus-within { outline: 2px solid var(--veil); outline-offset: 1px; }
 .demo-compositor textarea { width: 100%; resize: none; background: none; border: 0; padding: 14px 16px 6px; font: 1rem/1.5 var(--ui); max-height: 11rem; min-height: 3.25rem; display: block; color: inherit; }
 .demo-compositor textarea:focus { outline: none; }
-.demo-controles { display: flex; align-items: center; gap: 10px; padding: 4px 10px 10px 16px; }
-.demo-campo { display: flex; align-items: center; gap: 8px; }
+.demo-controles { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 4px 10px 10px 16px; }
+.demo-campo { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; flex: 0 1 auto; }
 .demo-campo label { color: var(--ink-2); font-size: 0.8125rem; }
-.demo-campo select { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; min-height: 36px; font: inherit; color: inherit; }
-.demo-enviar { background: var(--veil); color: var(--on-veil); border: 0; border-radius: 10px; padding: 0 20px; min-height: 40px; font-weight: 650; }
-.demo-enviar:disabled { opacity: .55; cursor: wait; }
-.demo-ayuda { margin: 8px 4px 0; color: var(--ink-3); font-size: 0.75rem; }
+/* El borde del selector es el unico indicio de que es un control: 3:1 como minimo. */
+.demo-campo select { background: var(--panel-2); border: 1px solid var(--borde); border-radius: 8px; padding: 0 10px; min-height: 36px; font: inherit; color: inherit; min-width: min(9rem, 100%); max-width: 100%; }
+.demo-contador { color: var(--ink-2); font-size: 0.75rem; margin-left: auto; font-variant-numeric: tabular-nums; }
+.demo-enviar { background: var(--veil); color: var(--on-veil); border: 0; border-radius: 10px; padding: 0 20px; min-height: 40px; font-weight: 650; margin-left: auto; min-width: 6.5rem; }
+.demo-contador:not([hidden]) + .demo-enviar { margin-left: 0; }
+/* Mientras responde, el boton sigue en el orden del foco (aria-disabled, no disabled). */
+.demo-enviar[aria-disabled="true"] { opacity: .65; cursor: progress; }
+.demo-enviar[aria-disabled="true"]:active { transform: none; }
+.demo-notas { margin: 8px 4px 0; }
+.demo-ayuda { margin: 0 0 2px; color: var(--ink-3); font-size: 0.75rem; }
+.demo-solo-tactil { display: none; }
 
-/* Pantallas bajas (telefono horizontal, ventana pequeña): la pagina hace scroll
-   en vez de aplastar la conversacion. */
-@media (max-height: 560px) {
-  .demo-cuerpo { height: auto; min-height: 100dvh; overflow: visible; }
-  .demo-hilo { min-height: 9rem; overflow: visible; }
-  .demo-inicio { padding-top: 16px; }
+/* Donde se toca, 44 px (HIG: accessibility.md > Mobility) y 16 px en el selector
+   para que iOS no haga zoom al enfocarlo. En pantalla tactil Enter es un salto de
+   linea (se envia con el boton); la ayuda lo dice. */
+@media (max-width: 1020px), (pointer: coarse) {
+  .demo-enviar, .demo-campo select { min-height: 44px; }
+  .demo-enviar { min-width: 44px; }
+  .demo-campo select { font-size: 1rem; }
 }
+@media (pointer: coarse) {
+  .demo-solo-fino { display: none; }
+  .demo-solo-tactil { display: inline; }
+}
+
 @media (max-width: 560px) {
   .demo-hilo { padding: 16px 12px 8px; }
   .demo-compositor { padding: 8px 12px 12px; }
+  .demo-campo { flex: 1 1 100%; }
+  .demo-campo select { flex: 1; }
+  .demo-enviar { flex: 1 1 8rem; }
+  .demo-contador { margin-left: 0; }
 }
 
-/* Colores forzados / alto contraste. */
+/* Colores forzados / alto contraste: sin relleno propio, cada control recibe borde. */
 @media (forced-colors: active) {
   .demo-burbuja, .demo-caja { border: 2px solid CanvasText; }
+  .demo-enviar, .demo-campo select { border: 2px solid ButtonText; }
+  .demo-enviar[aria-disabled="true"] { color: GrayText; border-color: GrayText; opacity: 1; }
+  .demo-texto.demo-aviso { border: 2px solid CanvasText; }
+  .demo-puntos i { forced-color-adjust: none; background: CanvasText; }
 }
 @media (prefers-contrast: more) {
   .demo-caja { border-color: var(--ink); }
 }
 @media (prefers-reduced-motion: reduce) {
   .demo-hilo { scroll-behavior: auto; }
-  .demo-pensando i { animation: none; }
+  .demo-puntos i { animation: none; }
 }
