@@ -109,7 +109,8 @@ function pintarVivo(ok) {
   $("vivo").classList.toggle("caido", !ok);
   const segundos = Math.max(0, Math.round((Date.now() - estado.ultimaCarga) / 1000));
   $("vivo-estado").textContent = ok ? "En vivo" : "Sin conexión con el proxy";
-  $("vivo-detalle").textContent = !ok ? "" : estado.enVivo ? " · tiempo real" : ` · actualizado hace ${segundos} s`;
+  const detalle = estado.enVivo ? " · tiempo real" : ` · actualizado hace ${segundos} s`;
+  $("vivo-detalle").textContent = ok ? detalle : "";
   if (estado.cargado && estado.enLinea !== null && estado.enLinea !== ok) {
     anunciar(ok ? "Conexión con el proxy recuperada." : "Se perdió la conexión con el proxy.");
   }
@@ -147,7 +148,8 @@ function pintarEstadisticas(e) {
   const resumen = $("resumen-historial");
   resumen.textContent = resumenHistorial(e);
   resumen.hidden = estado.pestana !== "historial" || !resumen.textContent;
-  document.title = `${e.pendientes ? `(${e.pendientes}) ` : ""}Revisión humana · IronVeil`;
+  const prefijo = e.pendientes ? `(${e.pendientes}) ` : "";
+  document.title = `${prefijo}Revisión humana · IronVeil`;
 }
 
 /* ---------- Lista ---------- */
@@ -317,17 +319,21 @@ function pintarResultado(caja) {
 
 /* El foco va al titulo, no a un boton: ninguna opcion queda como predeterminada,
    asi una tecla suelta (A, R) no confirma por accidente (HIG: alerts.md). */
+function textoConfirmacion(p, aprobar) {
+  if (!aprobar) return "La petición se descarta y no llega al modelo. Esta acción queda registrada.";
+  if (p.tipo === "herramienta") return "Se ejecutará la versión simulada de la herramienta.";
+  return "La petición se enviará al modelo y recibirás su respuesta.";
+}
+
 function confirmar(p, accion) {
   const dialogo = $("confirmar");
   const aprobar = accion === "aprobar";
   $("confirmar-titulo").textContent = aprobar ? "¿Confirmas que es un falso positivo?" : "¿Confirmas que es un ataque?";
-  $("confirmar-texto").textContent = aprobar
-    ? (p.tipo === "herramienta" ? "Se ejecutará la versión simulada de la herramienta." : "La petición se enviará al modelo y recibirás su respuesta.")
-    : "La petición se descarta y no llega al modelo. Esta acción queda registrada.";
+  $("confirmar-texto").textContent = textoConfirmacion(p, aprobar);
   const ok = $("confirmar-ok");
   ok.className = "accion confirmar";
   ok.textContent = aprobar ? "Aprobar" : "Rechazar";
-  ok.onclick = () => { dialogo.close(); decidir(p, accion); };
+  ok.onclick = () => { dialogo.close(); void decidir(p, accion); };
   $("confirmar-cancelar").onclick = () => dialogo.close();
   dialogo.showModal();
   $("confirmar-titulo").focus();
@@ -373,7 +379,7 @@ async function cargar() {
   if (cargando) { recargar = true; return; }
   cargando = true;
   try { await cargarAhora(); } finally { cargando = false; }
-  if (recargar) { recargar = false; cargar(); }
+  if (recargar) { recargar = false; void cargar(); }
 }
 
 async function cargarAhora() {
@@ -393,7 +399,8 @@ async function cargarAhora() {
     // nueva no debe borrar el scroll, la seleccion de texto ni el foco.
     if (!document.querySelector("dialog[open]") && !estado.resultado && estado.mostrado !== estado.seleccion) pintarExpediente();
     const nuevas = estado.pendientes.filter((p) => !conocidas.has(p.id)).length;
-    if (estado.cargado && nuevas) anunciar(`${nuevas === 1 ? "Llegó 1 petición nueva" : `Llegaron ${nuevas} peticiones nuevas`}. Pendientes: ${estado.pendientes.length}.`);
+    const textoNuevas = nuevas === 1 ? "Llegó 1 petición nueva" : `Llegaron ${nuevas} peticiones nuevas`;
+    if (estado.cargado && nuevas) anunciar(`${textoNuevas}. Pendientes: ${estado.pendientes.length}.`);
     pintarVivo(true);
     estado.cargado = true;
   } catch (e) {
@@ -487,7 +494,7 @@ function conectarEnVivo() {
   if (!("EventSource" in window)) return;
   const fuente = new EventSource("/revision/eventos");
   // Al abrir se carga una vez: cubre lo que cambio entre la primera carga y la conexion.
-  fuente.addEventListener("open", () => { estado.enVivo = true; cargar(); });
+  fuente.addEventListener("open", () => { estado.enVivo = true; void cargar(); });
   fuente.addEventListener("cambio", () => cargar());
   fuente.addEventListener("sesion", () => { fuente.close(); window.location.assign("/revision/login"); });
   fuente.addEventListener("lleno", () => { fuente.close(); estado.enVivo = false; });
@@ -515,9 +522,14 @@ async function iniciar() {
   conectarEnVivo();
   setInterval(() => {
     if (document.hidden) return;
-    if (!estado.enVivo || Date.now() - estado.ultimaCarga > RESPALDO_MS) cargar();
+    if (!estado.enVivo || Date.now() - estado.ultimaCarga > RESPALDO_MS) void cargar();
   }, SONDEO_MS);
   setInterval(tictac, 1000);
 }
 
-iniciar().catch((e) => { if (e.message !== "sesion") $("vivo-estado").textContent = "No se pudo iniciar la consola"; });
+/* Script de tipo "module" (ver revision.html): admite await en el nivel superior. */
+try {
+  await iniciar();
+} catch (e) {
+  if (e.message !== "sesion") $("vivo-estado").textContent = "No se pudo iniciar la consola";
+}

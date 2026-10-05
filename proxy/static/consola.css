@@ -295,12 +295,11 @@ dialog .acciones { display: flex; gap: 10px; justify-content: flex-end; }
   .barra { padding: 6px 12px; gap: 10px; }
   .vivo-detalle { display: none; }
   .usuario div { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-  .usuario { padding-left: 10px; }
+  .usuario { padding-left: 10px; min-width: 0; }
   .decision .ayuda { display: none; }
   .accion { flex: 1 1 100%; justify-content: center; text-align: center; }
   .franja { padding-inline: 12px; }
   .elemento .espera { white-space: normal; }
-  .usuario { min-width: 0; }
   .cuerpo { padding-inline: 12px; }
 }
 /* La barra de decision no debe tapar la evidencia en ventanas bajas o con texto muy grande. */

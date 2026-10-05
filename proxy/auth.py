@@ -253,7 +253,8 @@ class LimitadorIntentos:
         with self._lock:
             ahora = time.monotonic()
             if len(self._fallos) >= MAXIMO_CLAVES_LIMITADOR:
-                for k in list(self._fallos):
+                # `.copy()`: _purgar() borra claves del dict mientras se recorre.
+                for k in self._fallos.copy():
                     self._purgar(k, ahora)
             if len(self._fallos) < MAXIMO_CLAVES_LIMITADOR:
                 self._fallos.setdefault(clave, []).append(ahora)
@@ -395,16 +396,23 @@ USUARIO_DEMO = "admin"
 ARCHIVO_CLAVE_DEMO = "credenciales-demo.local.txt"
 
 
-def crear_cuenta_demo(ruta_env: Path, ruta_clave: Path, forzar: bool = False) -> str:
+ARCHIVO_ENV = ".env"
+
+
+def crear_cuenta_demo(directorio: Path, forzar: bool = False) -> str:
     """Crea la cuenta de demo `admin` (rol revisor, el maximo que existe) con una
     clave ALEATORIA y la deja lista para usar.
 
-    Escribe `REVISION_USUARIOS=admin:revisor:<hash>` en `ruta_env` (conserva el
-    resto del archivo) y la clave en `ruta_clave`, un archivo local que Git ignora.
+    Escribe `REVISION_USUARIOS=admin:revisor:<hash>` en el `.env` de `directorio`
+    (conserva el resto del archivo) y la clave en `ARCHIVO_CLAVE_DEMO`, un archivo
+    local que Git ignora. Los nombres de archivo son FIJOS: la funcion no recibe
+    rutas de archivo, asi que ningun argumento puede apuntar a otro lugar.
     No hay clave por defecto escrita en el codigo: cada maquina genera la suya.
     Si ya hay cuentas definidas no las pisa, salvo con `forzar=True`.
     Devuelve el nombre de usuario.
     """
+    ruta_env = directorio / ARCHIVO_ENV
+    ruta_clave = directorio / ARCHIVO_CLAVE_DEMO
     crudo = ruta_env.read_bytes().decode("utf-8") if ruta_env.exists() else ""
     salto = "\r\n" if "\r\n" in crudo else "\n"
     lineas = crudo.splitlines()
@@ -439,9 +447,7 @@ def crear_cuenta_demo(ruta_env: Path, ruta_clave: Path, forzar: bool = False) ->
 
 def _cli_demo(argv: list[str]) -> int:
     try:
-        usuario = crear_cuenta_demo(
-            Path(".env"), Path(ARCHIVO_CLAVE_DEMO), forzar="--forzar" in argv
-        )
+        usuario = crear_cuenta_demo(Path.cwd(), forzar="--forzar" in argv)
     except FileExistsError as exc:
         sys.stderr.write(f"{exc}\n")
         return 1

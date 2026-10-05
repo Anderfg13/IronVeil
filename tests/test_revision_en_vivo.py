@@ -331,65 +331,98 @@ def test_el_encabezado_dice_tiempo_real_solo_si_el_canal_esta_vivo() -> None:
 # --- Cuenta de demo ------------------------------------------------------------
 
 
+def _clave_guardada(directorio: Path) -> str:
+    texto = (directorio / auth.ARCHIVO_CLAVE_DEMO).read_text(encoding="utf-8")
+    return texto.split("Clave: ")[1].strip()
+
+
 def test_la_cuenta_de_demo_se_crea_con_clave_aleatoria_que_funciona(
     tmp_path: Path,
 ) -> None:
-    env = tmp_path / ".env"
+    env = tmp_path / auth.ARCHIVO_ENV
     env.write_text("BASE_MODEL=llama3.2\nNOTIFICAR_X=1\n", encoding="utf-8")
-    clave_txt = tmp_path / "clave.txt"
 
-    usuario = auth.crear_cuenta_demo(env, clave_txt)
+    usuario = auth.crear_cuenta_demo(tmp_path)
 
     assert usuario == "admin"
     lineas = env.read_text(encoding="utf-8").splitlines()
     assert "BASE_MODEL=llama3.2" in lineas  # el resto del .env sigue igual
     assert "NOTIFICAR_X=1" in lineas
     entrada = next(x for x in lineas if x.startswith("REVISION_USUARIOS="))
-    clave = re.search(r"Clave: (\S+)", clave_txt.read_text(encoding="utf-8"))
-    assert clave is not None
+    clave = _clave_guardada(tmp_path)
     proveedor = auth.ProveedorLocal.desde_texto(entrada.split("=", 1)[1])
-    identidad = proveedor.autenticar("admin", clave.group(1))
+    identidad = proveedor.autenticar("admin", clave)
     assert identidad is not None
     assert identidad.rol == auth.ROL_REVISOR
-    assert proveedor.autenticar("admin", clave.group(1) + "x") is None
+    assert proveedor.autenticar("admin", clave + "x") is None
 
 
 def test_cada_cuenta_de_demo_tiene_una_clave_distinta(tmp_path: Path) -> None:
     claves = set()
     for i in range(3):
-        archivo = tmp_path / f"c{i}.txt"
-        auth.crear_cuenta_demo(tmp_path / f"e{i}", archivo)
-        claves.add(archivo.read_text(encoding="utf-8").split("Clave: ")[1].strip())
+        directorio = tmp_path / f"d{i}"
+        directorio.mkdir()
+        auth.crear_cuenta_demo(directorio)
+        claves.add(_clave_guardada(directorio))
 
     assert len(claves) == 3
-    assert all(len(c) >= 12 for c in claves)
+    assert min(len(c) for c in claves) >= 12
 
 
-def test_no_pisa_cuentas_existentes_salvo_con_forzar(tmp_path: Path) -> None:
-    env = tmp_path / ".env"
+def test_la_funcion_no_acepta_rutas_de_archivo_sino_solo_un_directorio(
+    tmp_path: Path,
+) -> None:
+    """Los nombres de archivo son fijos: ningun argumento puede apuntar a otro lado."""
+    auth.crear_cuenta_demo(tmp_path)
+
+    assert sorted(p.name for p in tmp_path.iterdir()) == sorted(
+        [auth.ARCHIVO_ENV, auth.ARCHIVO_CLAVE_DEMO]
+    )
+
+
+def test_no_pisa_cuentas_existentes_sin_forzar(tmp_path: Path) -> None:
+    env = tmp_path / auth.ARCHIVO_ENV
     env.write_text("REVISION_USUARIOS=ana:revisor:hash-ajeno\n", encoding="utf-8")
 
     with pytest.raises(FileExistsError):
-        auth.crear_cuenta_demo(env, tmp_path / "c.txt")
-    assert "ana:revisor:hash-ajeno" in env.read_text(encoding="utf-8")
-    assert not (tmp_path / "c.txt").exists()
+        auth.crear_cuenta_demo(tmp_path)
 
-    auth.crear_cuenta_demo(env, tmp_path / "c.txt", forzar=True)
+    assert "ana:revisor:hash-ajeno" in env.read_text(encoding="utf-8")
+    assert not (tmp_path / auth.ARCHIVO_CLAVE_DEMO).exists()
+
+
+def test_con_forzar_reemplaza_las_cuentas_existentes(tmp_path: Path) -> None:
+    env = tmp_path / auth.ARCHIVO_ENV
+    env.write_text("REVISION_USUARIOS=ana:revisor:hash-ajeno\n", encoding="utf-8")
+
+    auth.crear_cuenta_demo(tmp_path, forzar=True)
+
     assert "ana:revisor:hash-ajeno" not in env.read_text(encoding="utf-8")
 
 
 def test_una_linea_vacia_de_cuentas_se_reemplaza_sin_duplicarla(
     tmp_path: Path,
 ) -> None:
-    env = tmp_path / ".env"
+    env = tmp_path / auth.ARCHIVO_ENV
     env.write_text("A=1\r\nREVISION_USUARIOS=\r\nB=2\r\n", encoding="utf-8", newline="")
 
-    auth.crear_cuenta_demo(env, tmp_path / "c.txt")
+    auth.crear_cuenta_demo(tmp_path)
 
     crudo = env.read_bytes().decode("utf-8")
     assert crudo.count("REVISION_USUARIOS=") == 1
-    assert "\r\n" in crudo and "\n" not in crudo.replace("\r\n", "")  # conserva CRLF
-    assert crudo.startswith("A=1\r\n") and crudo.rstrip().endswith("B=2")
+    assert crudo.startswith("A=1\r\n")
+    assert crudo.rstrip().endswith("B=2")
+
+
+def test_el_env_conserva_los_saltos_de_linea_crlf(tmp_path: Path) -> None:
+    env = tmp_path / auth.ARCHIVO_ENV
+    env.write_text("A=1\r\nB=2\r\n", encoding="utf-8", newline="")
+
+    auth.crear_cuenta_demo(tmp_path)
+
+    crudo = env.read_bytes().decode("utf-8")
+    assert "\r\n" in crudo
+    assert "\n" not in crudo.replace("\r\n", "")  # ningun salto suelto
 
 
 def test_el_comando_no_imprime_la_clave(
@@ -403,8 +436,7 @@ def test_el_comando_no_imprime_la_clave(
     salida = capsys.readouterr()
 
     assert codigo == 0
-    clave = (tmp_path / auth.ARCHIVO_CLAVE_DEMO).read_text(encoding="utf-8")
-    secreto = clave.split("Clave: ")[1].strip()
+    secreto = _clave_guardada(tmp_path)
     assert secreto not in salida.out + salida.err
     assert auth.ARCHIVO_CLAVE_DEMO in salida.out
 

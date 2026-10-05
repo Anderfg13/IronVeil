@@ -240,7 +240,7 @@ def test_hay_una_sola_region_viva_y_el_hilo_no_se_anuncia_a_si_mismo() -> None:
     """role=log es polite por defecto y #anuncios repetia la respuesta (2 lecturas)."""
     assert re.search(r'id="hilo"[^>]*aria-live="off"', HTML)
     assert len(re.findall(r"aria-live=\"(?!off)", HTML)) == 1
-    assert 'id="anuncios" role="status"' in HTML
+    assert '<output class="solo-lectores" id="anuncios" aria-live="polite">' in HTML
     assert 'role: "status"' not in JS
     assert "aria-live" not in JS
 
@@ -284,7 +284,8 @@ def test_el_indicador_de_espera_tiene_texto_visible_y_no_depende_de_la_animacion
     assert 'const ESCRIBIENDO = "Escribiendo…"' in JS
     assert 'h("span", {}, ESCRIBIENDO)' in JS  # visible: no lleva solo-lectores
     assert '"aria-hidden": "true"' in JS  # los puntos son decoracion
-    assert "LENTO" in JS and "AVISO_LENTO_MS" in JS
+    assert "LENTO" in JS
+    assert "AVISO_LENTO_MS" in JS
 
 
 def test_el_logo_no_se_repite_en_la_pantalla_de_chat() -> None:
@@ -305,7 +306,8 @@ def test_en_pantalla_tactil_enter_es_salto_de_linea_y_no_hay_autofoco() -> None:
     assert "&& !tactil()" in JS
     assert 'if (!tactil()) $("mensaje").focus();' in JS
     assert JS.count('$("mensaje").focus()') == 3  # vacio, tras responder, al iniciar
-    assert "demo-solo-tactil" in HTML and "demo-solo-fino" in HTML
+    assert "demo-solo-tactil" in HTML
+    assert "demo-solo-fino" in HTML
     assert ".demo-solo-fino { display: none; }" in _bloque(
         CSS_DEMO, "@media (pointer: coarse)"
     )
@@ -329,7 +331,8 @@ def test_con_texto_grande_o_pantalla_baja_la_pagina_se_desplaza_sin_recortar() -
     assert "min-height: 8rem" in _bloque(CSS_DEMO, ".demo-hilo {")
     # La barra no se encoge y no es sticky: no tapa el foco (WCAG 2.4.11).
     barra = _bloque(CSS_DEMO, ".demo-cuerpo > .barra")
-    assert "flex: none" in barra and "position: static" in barra
+    assert "flex: none" in barra
+    assert "position: static" in barra
 
 
 def test_la_respuesta_larga_se_muestra_desde_su_primera_linea() -> None:

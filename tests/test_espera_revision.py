@@ -10,7 +10,6 @@ import json
 import re
 import threading
 import time
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -63,9 +62,7 @@ def _config(ruta: Path, **activos: bool) -> Path:
 
 
 @pytest.fixture
-def entorno(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> Iterator[dict[str, Any]]:
+def entorno(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
     """Filtrado + aprobacion humana, cola y resultados nuevos, Ollama falso."""
     monkeypatch.delenv(auth.ENV_USUARIOS, raising=False)
     for variable in CANALES:
@@ -80,7 +77,7 @@ def entorno(
         "CONFIG_PATH",
         _config(tmp_path / "c.yaml", filtrado=True, aprobacion_humana=True),
     )
-    yield {"cola": cola_nueva, "cliente": TestClient(main.app), "tmp": tmp_path}
+    return {"cola": cola_nueva, "cliente": TestClient(main.app), "tmp": tmp_path}
 
 
 def _encolar(entorno: dict[str, Any]) -> str:
@@ -362,8 +359,10 @@ def test_el_registro_guarda_estados_y_respuesta() -> None:
 
 
 def test_el_registro_rechaza_un_estado_final_invalido() -> None:
+    registro = ResultadosRevision()
+
     with pytest.raises(ValueError):
-        ResultadosRevision().registrar("x", "en_curso")
+        registro.registrar("x", "en_curso")
 
 
 def test_el_registro_caduca_y_tiene_tope() -> None:
@@ -410,12 +409,13 @@ JS = (panel.DIRECTORIO_ESTATICO / "demo.js").read_text(encoding="utf-8")
 def test_el_chat_lee_el_id_del_429_y_espera_la_decision() -> None:
     assert 'r.headers.get("X-Revision-Id")' in JS
     assert "/chat/revision/${encodeURIComponent(turno)}" in JS
-    assert 'estado === "aprobada"' in JS
-    assert 'estado === "rechazada"' in JS
+    assert 'case "aprobada"' in JS
+    assert 'case "rechazada"' in JS
 
 
 def test_esperar_la_decision_no_bloquea_el_cuadro_de_texto() -> None:
-    assert re.search(r"(?<!await )esperarDecision\(vista, turno\);", JS)
+    assert re.search(r"esperarDecision\(vista, turno\)\.catch\(", JS)
+    assert "await esperarDecision" not in JS
 
 
 def test_el_chat_tiene_un_tope_de_espera_y_no_sondea_rapido() -> None:
@@ -524,7 +524,7 @@ def test_al_aprobarse_el_chat_muestra_que_prepara_la_respuesta_con_indicador() -
 
 
 def test_mientras_se_prepara_la_respuesta_no_se_acepta_otro_mensaje() -> None:
-    en_curso = JS.split('datos.estado === "en_curso"')[1].split("return;")[0]
+    en_curso = JS.split('datos?.estado === "en_curso"')[1].split("continue;")[0]
 
     assert "ocupar();" in en_curso
     assert "if (estado.ocupados > 0)" in JS  # el envio se rechaza mientras haya algo
@@ -534,7 +534,7 @@ def test_mientras_se_prepara_la_respuesta_no_se_acepta_otro_mensaje() -> None:
 def test_mientras_una_persona_revisa_el_cuadro_de_texto_sigue_libre() -> None:
     """Revisar puede tardar minutos: solo se bloquea al generarse la respuesta."""
     antes_de_en_curso = JS.split("async function esperarDecision")[1].split(
-        'datos.estado === "en_curso"'
+        'datos?.estado === "en_curso"'
     )[0]
 
     assert "ocupar()" not in antes_de_en_curso
@@ -551,8 +551,10 @@ def test_el_bloqueo_usa_un_contador_y_no_un_booleano() -> None:
 def test_el_cliente_no_entra_en_un_bucle_rapido_si_el_proxy_responde_de_inmediato() -> (
     None
 ):
-    en_curso = JS.split('datos.estado === "en_curso"')[1].split(
-        'datos.estado === "aprobada"'
-    )[0]
+    bucle = JS.split("async function esperarDecision")[1]
 
-    assert "Date.now() - desde < 1500" in en_curso
+    assert "Date.now() - desde < 1500" in bucle
+    # la pausa va DESPUES de mirar el desenlace, asi cubre tambien el estado en curso
+    assert bucle.index("mostrarDesenlace(vista, datos)") < bucle.index(
+        "await pausa(PAUSA_ENTRE_CONSULTAS_MS)"
+    )

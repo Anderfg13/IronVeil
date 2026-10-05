@@ -31,7 +31,10 @@ def test_hash_y_verificacion_de_ida_y_vuelta() -> None:
 def test_cada_hash_lleva_su_propia_sal() -> None:
     clave = _clave()
 
-    assert auth.hashear_clave(clave) != auth.hashear_clave(clave)
+    primero = auth.hashear_clave(clave)
+    segundo = auth.hashear_clave(clave)
+
+    assert primero != segundo
 
 
 def test_el_hash_es_seguro_para_un_env() -> None:

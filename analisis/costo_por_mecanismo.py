@@ -62,6 +62,38 @@ NOMBRES_PIEZA = {
 }
 PATRON_DEFECTO = "resultados/**/eventos.jsonl"
 DECIMALES = 3
+# Nombres de columna de las tablas (una sola vez; son el contrato con el CSV/MD).
+COL_CONFIGURACION = "Configuración"
+COL_TOTAL_MEDIANA = "Total, mediana (ms)"
+COL_TOTAL_P95 = "Total, p95 (ms)"
+COL_MODELO_MEDIANA = "Modelo, mediana (ms)"
+COL_PROPIO_MEDIANA = "Sobrecosto propio, mediana (ms)"
+COL_PROPIO_P95 = "Sobrecosto propio, p95 (ms)"
+COL_SUMA_MECANISMOS = "Suma de mecanismos, mediana (ms)"
+
+
+def _evento_de_medicion(linea: str, desde: datetime | None) -> dict | None:
+    """El evento de una linea del JSONL si es trafico de medicion; si no, None.
+
+    No lo es: una linea que no es JSON, un evento con vector (calentamiento y
+    ataques), de revision humana o de extension, o anterior a `desde`.
+    """
+    if "latencia_ms" not in linea:
+        return None
+    try:
+        evento = json.loads(linea)
+    except json.JSONDecodeError:
+        return None
+    ajeno = (
+        evento.get("vector_probado") is not None
+        or evento.get("tiempo_revision_humana_ms") is not None
+        or evento.get("es_extension")
+    )
+    if ajeno:
+        return None
+    if desde is not None and datetime.fromisoformat(evento["timestamp"]) < desde:
+        return None
+    return evento
 
 
 def leer_eventos(rutas: Iterable[Path], desde: datetime | None = None) -> pd.DataFrame:
@@ -71,28 +103,12 @@ def leer_eventos(rutas: Iterable[Path], desde: datetime | None = None) -> pd.Dat
     extension, y los anteriores a `desde`. Un evento duplicado (mismo archivo
     copiado en dos carpetas) se cuenta una vez.
     """
-    filas: list[dict] = []
-    for ruta in rutas:
-        for linea in ruta.read_text(encoding="utf-8").splitlines():
-            if "latencia_ms" not in linea:
-                continue
-            try:
-                evento = json.loads(linea)
-            except json.JSONDecodeError:
-                continue
-            if (
-                evento.get("vector_probado") is not None
-                or evento.get("tiempo_revision_humana_ms") is not None
-                or evento.get("es_extension")
-            ):
-                continue
-            if (
-                desde is not None
-                and datetime.fromisoformat(evento["timestamp"]) < desde
-            ):
-                continue
-            filas.append(evento)
-    df = pd.DataFrame(filas)
+    eventos = (
+        _evento_de_medicion(linea, desde)
+        for ruta in rutas
+        for linea in ruta.read_text(encoding="utf-8").splitlines()
+    )
+    df = pd.DataFrame([e for e in eventos if e is not None])
     if df.empty:
         return df
     return df.drop_duplicates(subset=["timestamp", "configuracion", "latencia_ms"])
@@ -123,13 +139,13 @@ def _por_configuracion(df: pd.DataFrame) -> list[str]:
 def resumen_legitimas(df: pd.DataFrame) -> pd.DataFrame:
     """Por configuracion, las peticiones que llegaron al modelo y no se retuvieron."""
     columnas = [
-        "Configuración",
+        COL_CONFIGURACION,
         "n",
-        "Total, mediana (ms)",
-        "Modelo, mediana (ms)",
-        "Sobrecosto propio, mediana (ms)",
-        "Sobrecosto propio, p95 (ms)",
-        "Suma de mecanismos, mediana (ms)",
+        COL_TOTAL_MEDIANA,
+        COL_MODELO_MEDIANA,
+        COL_PROPIO_MEDIANA,
+        COL_PROPIO_P95,
+        COL_SUMA_MECANISMOS,
         *[f"{NOMBRES_PIEZA[p]} (ms)" for p in PIEZAS_MECANISMO],
     ]
     if df.empty or "latencia_modelo_us" not in df:
@@ -142,13 +158,13 @@ def resumen_legitimas(df: pd.DataFrame) -> pd.DataFrame:
         g = llegaron[llegaron["configuracion"] == configuracion]
         propio = g["latencia_ms"] - _ms(g["latencia_modelo_us"])
         fila: dict[str, object] = {
-            "Configuración": configuracion,
+            COL_CONFIGURACION: configuracion,
             "n": len(g),
-            "Total, mediana (ms)": g["latencia_ms"].median(),
-            "Modelo, mediana (ms)": _ms(g["latencia_modelo_us"]).median(),
-            "Sobrecosto propio, mediana (ms)": propio.median(),
-            "Sobrecosto propio, p95 (ms)": propio.quantile(0.95),
-            "Suma de mecanismos, mediana (ms)": _suma_mecanismos_ms(g).median(),
+            COL_TOTAL_MEDIANA: g["latencia_ms"].median(),
+            COL_MODELO_MEDIANA: _ms(g["latencia_modelo_us"]).median(),
+            COL_PROPIO_MEDIANA: propio.median(),
+            COL_PROPIO_P95: propio.quantile(0.95),
+            COL_SUMA_MECANISMOS: _suma_mecanismos_ms(g).median(),
         }
         for pieza in PIEZAS_MECANISMO:
             columna = f"latencia_{pieza}_us"
@@ -164,11 +180,11 @@ def resumen_legitimas(df: pd.DataFrame) -> pd.DataFrame:
 def resumen_retenidas(df: pd.DataFrame) -> pd.DataFrame:
     """Peticiones retenidas antes de llegar al modelo (el costo de rechazar)."""
     columnas = [
-        "Configuración",
+        COL_CONFIGURACION,
         "Retuvo",
         "n",
-        "Total, mediana (ms)",
-        "Total, p95 (ms)",
+        COL_TOTAL_MEDIANA,
+        COL_TOTAL_P95,
     ]
     if df.empty:
         return pd.DataFrame(columns=columnas)
@@ -183,11 +199,11 @@ def resumen_retenidas(df: pd.DataFrame) -> pd.DataFrame:
         for mecanismo, g in sub.groupby("mecanismo_que_bloqueo"):
             filas.append(
                 {
-                    "Configuración": configuracion,
+                    COL_CONFIGURACION: configuracion,
                     "Retuvo": mecanismo,
                     "n": len(g),
-                    "Total, mediana (ms)": g["latencia_ms"].median(),
-                    "Total, p95 (ms)": g["latencia_ms"].quantile(0.95),
+                    COL_TOTAL_MEDIANA: g["latencia_ms"].median(),
+                    COL_TOTAL_P95: g["latencia_ms"].quantile(0.95),
                 }
             )
     return pd.DataFrame(filas, columns=columnas)

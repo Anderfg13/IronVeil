@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -57,9 +56,7 @@ class _OllamaFalso:
 
 
 @pytest.fixture
-def entorno(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> Iterator[dict[str, Any]]:
+def entorno(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
     monkeypatch.delenv(auth.ENV_USUARIOS, raising=False)
     for variable in CANALES:
         monkeypatch.delenv(variable, raising=False)
@@ -85,7 +82,7 @@ def entorno(
         lineas = archivos[0].read_text(encoding="utf-8").splitlines()
         return json.loads(lineas[-1])
 
-    yield {"usar": usar, "enviar": enviar}
+    return {"usar": usar, "enviar": enviar}
 
 
 def _piezas(evento: dict[str, Any]) -> dict[str, int]:

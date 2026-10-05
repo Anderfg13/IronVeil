@@ -122,6 +122,36 @@ function marcarEnvio(enCurso) {
   boton.textContent = enCurso ? "Enviando…" : "Enviar";
 }
 
+const pausa = (ms) => new Promise((fin) => setTimeout(fin, ms));
+
+/* Estado del turno segun el proxy (espera hasta 25 s a que cambie), o null si no hubo respuesta. */
+async function consultarTurno(turno, visto) {
+  try {
+    const r = await fetch(`/chat/revision/${encodeURIComponent(turno)}?espera=25&desde=${visto}`, { credentials: "same-origin" });
+    return r.ok ? await r.json() : null;
+  } catch {
+    return null; // sin conexion: quien llama reintenta
+  }
+}
+
+/* Si el turno ya termino, lo muestra y devuelve true; si sigue en curso, false. */
+function mostrarDesenlace(vista, datos) {
+  switch (datos?.estado) {
+    case "aprobada":
+      mostrar(vista, datos.respuesta || MENSAJES.vacio, !datos.respuesta);
+      return true;
+    case "rechazada":
+      mostrar(vista, MENSAJES.rechazada, true);
+      return true;
+    case "fallida":
+    case "desconocida":
+      mostrar(vista, MENSAJES.otro, true);
+      return true;
+    default:
+      return false;
+  }
+}
+
 /* Espera lo que decida la persona que revisa y actualiza el mensaje en pantalla.
    Dos fases: "en revision" (nadie ha decidido; el cuadro de texto sigue libre) y,
    al aprobarse, "preparando la respuesta" (con indicador de carga y sin aceptar
@@ -133,31 +163,18 @@ async function esperarDecision(vista, turno) {
   try {
     while (Date.now() - inicio < ESPERA_DECISION_MS) {
       const desde = Date.now();
-      let datos = null;
-      try {
-        const r = await fetch(`/chat/revision/${encodeURIComponent(turno)}?espera=25&desde=${visto}`, { credentials: "same-origin" });
-        if (r.ok) datos = await r.json();
-      } catch { /* sin conexion: se reintenta */ }
-      if (datos && datos.estado === "en_curso") {
-        if (visto !== "en_curso") {
-          visto = "en_curso";
-          ocupar();
-          ocupada = true;
-          pintarPensando(vista, MENSAJES.preparando);
-          continue;
-        }
-        // Ya estaba en curso y la consulta volvio enseguida: una pausa evita un bucle rapido.
-        if (Date.now() - desde < 1500) await new Promise((fin) => setTimeout(fin, PAUSA_ENTRE_CONSULTAS_MS));
+      const datos = await consultarTurno(turno, visto);
+      if (datos?.estado === "en_curso" && visto !== "en_curso") {
+        visto = "en_curso";
+        ocupar();
+        ocupada = true;
+        pintarPensando(vista, MENSAJES.preparando);
         continue;
       }
-      if (datos && datos.estado === "aprobada") {
-        mostrar(vista, datos.respuesta || MENSAJES.vacio, !datos.respuesta);
-        return;
-      }
-      if (datos && datos.estado === "rechazada") { mostrar(vista, MENSAJES.rechazada, true); return; }
-      if (datos && (datos.estado === "fallida" || datos.estado === "desconocida")) { mostrar(vista, MENSAJES.otro, true); return; }
-      // Sigue en revision (o no hubo conexion). Si la consulta volvio enseguida, una pausa evita un bucle rapido.
-      if (Date.now() - desde < 1500) await new Promise((fin) => setTimeout(fin, PAUSA_ENTRE_CONSULTAS_MS));
+      if (mostrarDesenlace(vista, datos)) return;
+      // Sigue en revision o en curso (o no hubo conexion). Si la consulta volvio
+      // enseguida, una pausa evita un bucle rapido.
+      if (Date.now() - desde < 1500) await pausa(PAUSA_ENTRE_CONSULTAS_MS);
     }
     mostrar(vista, MENSAJES.sinDecision, true);
   } finally {
@@ -182,14 +199,14 @@ async function enviar(texto) {
       if (turno) {
         // Quedo en revision: se espera la decision sin bloquear el cuadro de texto.
         mostrar(vista, MENSAJES.enRevision, true);
-        esperarDecision(vista, turno);
+        esperarDecision(vista, turno).catch(() => mostrar(vista, MENSAJES.otro, true));
       } else {
         mostrar(vista, MENSAJES[r.status] || MENSAJES.otro, true);
       }
       recuperar = r.status !== 429; // si quedo en revision, reenviarlo duplicaria la peticion
     } else {
       const datos = await r.json();
-      const respuesta = (datos.message && datos.message.content) || "";
+      const respuesta = datos.message?.content || "";
       mostrar(vista, respuesta || MENSAJES.vacio, !respuesta);
       recuperar = !respuesta;
     }
@@ -229,7 +246,7 @@ function iniciar() {
     if (!texto) { $("mensaje").focus(); return; }
     $("mensaje").value = "";
     ajustarAltura();
-    enviar(texto);
+    enviar(texto).catch(() => anunciar(MENSAJES.otro));
   });
   $("mensaje").addEventListener("input", ajustarAltura);
   $("mensaje").addEventListener("keydown", (ev) => {

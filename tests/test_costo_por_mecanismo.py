@@ -399,5 +399,8 @@ def test_main_escribe_csv_y_markdown_con_tres_decimales(
 
 
 def test_la_ruta_de_salida_no_puede_salir_del_repositorio(tmp_path: Path) -> None:
+    tabla = pd.DataFrame({"a": [1]})
+    destino = tmp_path / "fuera"
+
     with pytest.raises(ValueError):
-        costo._escribir(pd.DataFrame({"a": [1]}), tmp_path / "fuera", "x")
+        costo._escribir(tabla, destino, "x")

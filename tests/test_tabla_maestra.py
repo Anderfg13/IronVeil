@@ -400,7 +400,8 @@ def test_la_grafica_de_sobrecosto_se_genera_y_sin_csv_devuelve_none(tmp_path) ->
 
     png = graficar_sobrecosto_por_config(ruta, tmp_path / "g.png", dpi=50)
 
-    assert png is not None and png.exists()
+    assert png is not None
+    assert png.exists()
     assert (
         graficar_sobrecosto_por_config(tmp_path / "no.csv", tmp_path / "x.png") is None
     )

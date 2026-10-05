@@ -169,7 +169,8 @@ def test_aprobar_y_rechazar_tienen_el_mismo_estilo() -> None:
         x for x in CSS.splitlines() if x.startswith(".accion.aprobar, .accion.rechazar")
     )
 
-    assert "var(--ok)" not in regla and "var(--attack)" not in regla
+    assert "var(--ok)" not in regla
+    assert "var(--attack)" not in regla
     lineas = CSS.splitlines()
     assert not any(
         x.startswith((".accion.rechazar {", ".accion.aprobar {")) for x in lineas
@@ -201,7 +202,8 @@ def test_los_atajos_solo_actuan_con_el_foco_dentro_de_la_lista_o_el_expediente()
     None
 ):
     assert 'destino.closest(".lista, #expediente")' in JS
-    assert "evento.repeat" in JS and "evento.shiftKey" in JS
+    assert "evento.repeat" in JS
+    assert "evento.shiftKey" in JS
 
 
 def test_los_atajos_se_pueden_desactivar_y_su_ayuda_es_visible() -> None:
@@ -222,12 +224,14 @@ def test_el_dialogo_de_confirmacion_no_deja_un_boton_predeterminado() -> None:
 
 
 def test_las_pestanas_implementan_el_patron_tablist_completo() -> None:
-    assert 'role="tablist"' in HTML and 'aria-label="Vista de peticiones"' in HTML
+    assert 'role="tablist"' in HTML
+    assert 'aria-label="Vista de peticiones"' in HTML
     assert HTML.count('role="tab"') == 2
     assert 'role="tabpanel" id="panel-lista" aria-labelledby="tab-pendientes"' in HTML
     assert HTML.count('aria-controls="panel-lista"') == 2
     # tabindex itinerante: solo la pestana activa entra en el orden de tabulacion
-    assert 'id="tab-pendientes"' in HTML and 'tabindex="0"' in HTML
+    assert 'id="tab-pendientes"' in HTML
+    assert 'tabindex="0"' in HTML
     assert 'id="tab-historial" aria-selected="false"' in HTML
     assert re.search(r'id="tab-historial"[^>]*tabindex="-1"', HTML)
     for tecla in ("ArrowRight", "ArrowLeft", "Home", "End"):
@@ -264,7 +268,8 @@ def test_cada_pagina_tiene_un_unico_h1(pagina: str) -> None:
 
 def test_la_jerarquia_de_encabezados_no_salta_niveles() -> None:
     # revision.html: h1 > h2 (peticiones, dialogo). Los h3 los pinta el JS bajo un h2.
-    assert "<h3" not in HTML and "<h3" not in LOGIN_HTML
+    assert "<h3" not in HTML
+    assert "<h3" not in LOGIN_HTML
     assert 'id="titulo-lista"' in HTML
     assert 'h2", { tabindex: "-1" }, estado.pendientes.length' in JS
     assert '<h2 id="confirmar-titulo"' in HTML
@@ -279,26 +284,31 @@ def test_hay_reglas_para_colores_forzados_y_contraste_alto() -> None:
     bloque = CSS[CSS.index("@media (forced-colors: active)") :]
     for necesario in (".evidencia mark", ".elemento::before", ".pestana", ".espectro"):
         assert necesario in bloque, necesario
-    assert "Highlight" in bloque and "CanvasText" in bloque
+    assert "Highlight" in bloque
+    assert "CanvasText" in bloque
 
 
 def test_la_evidencia_distingue_el_tipo_sin_depender_del_color() -> None:
     assert re.search(r"mark\.codificado[^}]*text-decoration-style: dotted", CSS)
     assert re.search(r"mark\.patron[^}]*text-decoration-style: solid", CSS)
     assert "box-shadow: inset 0 -2px" not in CSS  # el subrayado ya no es una sombra
-    assert "Subrayado punteado" in JS and "Subrayado continuo" in JS
+    assert "Subrayado punteado" in JS
+    assert "Subrayado continuo" in JS
 
 
 def test_la_gravedad_tiene_forma_y_texto_ademas_de_color() -> None:
-    assert ".nivel-media::before" in CSS and ".nivel-baja::before" in CSS
-    assert "const GRAVEDAD" in JS and '"gravedad"' in JS
+    assert ".nivel-media::before" in CSS
+    assert ".nivel-baja::before" in CSS
+    assert "const GRAVEDAD" in JS
+    assert '"gravedad"' in JS
 
 
 # --- M6: color de la gravedad media ---
 
 
 def test_el_punto_de_gravedad_media_tiene_token_por_tema() -> None:
-    assert "media" in CLARO and "media" in OSCURO
+    assert "media" in CLARO
+    assert "media" in OSCURO
     assert CLARO["media"] != OSCURO["media"]
     assert "#d98c0a" not in CSS.split("@media (prefers-color-scheme: dark)")[0].replace(
         "--media: #b87400", ""
@@ -330,7 +340,8 @@ def test_los_botones_tienen_estado_de_pulsacion() -> None:
 
 
 def test_las_cuatro_tarjetas_numero_grande_se_sustituyeron_por_una_franja() -> None:
-    assert 'class="cifra' not in HTML and ".cifra" not in CSS
+    assert 'class="cifra' not in HTML
+    assert ".cifra" not in CSS
     assert 'id="franja"' in HTML
     assert "resumen-historial" in HTML  # Decididas y tiempo medio viven en Historial
 
@@ -339,7 +350,8 @@ def test_las_cuatro_tarjetas_numero_grande_se_sustituyeron_por_una_franja() -> N
 
 
 def test_no_hay_interruptor_de_tema_propio() -> None:
-    assert 'id="tema"' not in HTML and ">Tema<" not in HTML
+    assert 'id="tema"' not in HTML
+    assert ">Tema<" not in HTML
     assert "data-theme" not in CSS + JS + HTML + LOGIN_HTML
     assert "ironveil-tema" not in JS
     assert "color-scheme: light dark" in CSS
@@ -408,14 +420,16 @@ def test_el_logo_aparece_una_vez_por_pagina() -> None:
 def test_la_barra_de_decision_tiene_fondo_opaco_sin_transparencia() -> None:
     inicio = CSS.index("@media (prefers-reduced-transparency: reduce)")
     bloque = CSS[inicio : CSS.index("\n}", inicio)]
-    assert ".decision" in bloque and "backdrop-filter: none" in bloque
+    assert ".decision" in bloque
+    assert "backdrop-filter: none" in bloque
 
 
 # --- L5: login ---
 
 
 def test_el_login_permite_mostrar_la_contrasena_sin_romper_el_autocompletado() -> None:
-    assert 'id="ver-clave"' in LOGIN_HTML and 'aria-pressed="false"' in LOGIN_HTML
+    assert 'id="ver-clave"' in LOGIN_HTML
+    assert 'aria-pressed="false"' in LOGIN_HTML
     assert 'autocomplete="current-password"' in LOGIN_HTML
     assert 'type="password"' in LOGIN_HTML
     assert '"aria-pressed"' in LOGIN_JS

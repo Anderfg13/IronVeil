@@ -55,7 +55,7 @@
   </main>
 
   <dialog id="confirmar" aria-labelledby="confirmar-titulo" aria-describedby="confirmar-texto">
-    <h2 id="confirmar-titulo" tabindex="-1"></h2>
+    <h2 id="confirmar-titulo" tabindex="-1">Confirmar decisión</h2>
     <p id="confirmar-texto"></p>
     <div class="acciones">
       <button class="secundario" id="confirmar-cancelar" type="button">Cancelar</button>
@@ -64,8 +64,8 @@
   </dialog>
 
   <div class="avisos" id="avisos"></div>
-  <div class="solo-lectores" id="anuncios" role="status" aria-live="polite"></div>
+  <output class="solo-lectores" id="anuncios" aria-live="polite"></output>
 
-  <script src="/revision/static/revision.js"></script>
+  <script type="module" src="/revision/static/revision.js"></script>
 </body>
 </html>
