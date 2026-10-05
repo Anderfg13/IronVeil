@@ -75,20 +75,37 @@ curl ──► Proxy FastAPI :8000 ──► filtrado ► clasificación ► mí
 8. **Vacía la cola** si hay restos de pruebas: `docker compose restart proxy`
    (la cola vive en memoria).
 
-## Login de la consola (opcional, recomendado para la demo)
+## Login de la consola y de la pantalla de chat (activo en la demo)
 
-Sin configurar nada, la consola abre en «modo laboratorio» (sin login). Para
-mostrar el acceso por cuenta:
+Con cuentas definidas en `REVISION_USUARIOS`, **la consola de revisión y la
+pantalla `/demo` piden iniciar sesión** (sin cuentas abren en «modo laboratorio»,
+sin login). Para tener una cuenta lista para la demo:
 
 ```bash
-python -m proxy.auth demo revisor      # pide la clave sin mostrarla; imprime demo:revisor:<hash>
+python -m proxy.auth --demo        # crea el usuario «admin» (rol revisor)
+docker compose up -d proxy         # aplica el cambio
 ```
 
-Pega esa línea en el `.env` como `REVISION_USUARIOS=` (varias cuentas, separadas
-por comas; `observador` solo ve, no decide) y reinicia con
-`docker compose up -d proxy`. La clave la eliges tú y no se guarda en ningún
-archivo: solo su hash. Los scripts de ataque y el experimento **no** usan esta
-cuenta (la consola es aparte de `/chat`).
+- **Usuario:** `admin`. **Clave:** aleatoria, distinta en cada máquina; queda en
+  `credenciales-demo.local.txt` (en la raíz del repo, ignorado por Git). El
+  comando no la imprime, y en el `.env` solo se guarda su hash.
+- **Es el «superusuario» de la demo:** el rol `revisor` es el máximo que existe
+  (ve todo y aprueba o rechaza). No hay un rol «administrador» aparte porque no
+  hay nada más que administrar.
+- No hay una clave por defecto escrita en el código: una clave conocida en un
+  repositorio es una puerta abierta. Cada persona del equipo genera la suya.
+- `--forzar` reemplaza cuentas ya existentes. Para más cuentas (p. ej. un
+  `observador`, que solo ve): `python -m proxy.auth USUARIO observador` y pega la
+  línea en `REVISION_USUARIOS` (varias, separadas por comas, sin espacios).
+- Los scripts de ataque y el experimento **no** usan esta cuenta: `/chat` sigue
+  sin login (la consola y la pantalla son aparte del endpoint medido).
+
+**Tiempo real.** La consola ya no pregunta cada pocos segundos: mantiene un canal
+abierto con el proxy (`GET /revision/eventos`, SSE) y se actualiza en cuanto una
+petición queda retenida o alguien decide (medido: unos 40 ms de `POST /chat` a
+verla en pantalla). El encabezado dice «En vivo · tiempo real»; si el canal se
+cae, la consola vuelve a preguntar cada 3 s hasta reconectar. Si la sesión vence,
+el canal avisa y te lleva al login.
 
 ## Reglas para escribir los curl en esta máquina
 

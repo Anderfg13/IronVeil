@@ -21,8 +21,9 @@ proxy es un passthrough puro hacia Ollama (C0). La cola de revision humana
 peticion contra Ollama y devuelve la respuesta real, `POST
 /revision/{id}/rechazar` la descarta; `GET /revision/ui` es la **consola de
 revisión humana** (evidencia de cada petición, lectura orientativa falso
-positivo/ataque, historial) con **login opcional** (`REVISION_USUARIOS`, ver
-`.env.example` y `docs/DEMO.md`). El logo provisional es `proxy/static/logo.svg`:
+positivo/ataque, historial) en **tiempo real** (canal SSE) y con **login opcional**
+(`REVISION_USUARIOS`; `python -m proxy.auth --demo` crea la cuenta `admin` de demo,
+ver `.env.example` y `docs/DEMO.md`). El logo provisional es `proxy/static/logo.svg`:
 reemplázalo por el tuyo. El proxy calienta los modelos de Ollama (y el
 clasificador, si está activo) al arrancar, y mantiene cada modelo cargado
 en memoria `OLLAMA_KEEP_ALIVE` (default 30m) entre peticiones — pensado

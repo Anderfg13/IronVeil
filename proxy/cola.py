@@ -18,12 +18,16 @@ seccion 7).
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 import uuid
 from collections import deque
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # Constantes configurables (documentadas con su justificacion en
 # docs/FUENTE_DE_VERDAD.md, seccion 4). Una sola vez aqui, nunca repetidas
@@ -81,6 +85,37 @@ class ColaRevision:
         self._cola: deque[dict[str, Any]] = deque()
         self._peticiones_por_cliente: dict[str, deque[float]] = {}
         self._peticiones_globales: deque[float] = deque()
+        # Quien quiere enterarse al instante de que la cola cambio (la consola
+        # de revision en vivo). Lock propio: avisar nunca ocurre con el lock de
+        # la cola tomado, asi un aviso lento no frena a encolar()/retirar().
+        self._suscriptores: list[Callable[[], None]] = []
+        self._lock_suscriptores = threading.Lock()
+
+    def suscribir(self, aviso: Callable[[], None]) -> None:
+        """Registra `aviso()`, que se llama (sin argumentos) cada vez que la cola
+        cambia: una peticion se encola o se retira.
+
+        Se invoca desde el hilo que provoco el cambio, asi que debe ser rapido y
+        seguro entre hilos. No recibe datos a proposito: quien escucha vuelve a
+        leer la cola con `listar()` (y su autenticacion), nada sensible viaja aqui.
+        """
+        with self._lock_suscriptores:
+            self._suscriptores.append(aviso)
+
+    def cancelar(self, aviso: Callable[[], None]) -> None:
+        """Quita un aviso registrado con `suscribir()` (si ya no esta, no hace nada)."""
+        with self._lock_suscriptores:
+            if aviso in self._suscriptores:
+                self._suscriptores.remove(aviso)
+
+    def _avisar_cambio(self) -> None:
+        with self._lock_suscriptores:
+            avisos = list(self._suscriptores)
+        for aviso in avisos:
+            try:
+                aviso()
+            except Exception:  # noqa: BLE001 - un oyente roto no frena a la cola
+                logger.warning("un aviso de cambio de la cola fallo", exc_info=True)
 
     def excede_limite(self, cliente: str) -> bool:
         """True si `cliente` ya alcanzo `limite_por_minuto` peticiones en
@@ -159,6 +194,7 @@ class ColaRevision:
             if len(self._cola) >= self.tamano_maximo:
                 return False
             self._cola.append(item)
+        self._avisar_cambio()
         return True
 
     def tamano(self) -> int:
@@ -189,11 +225,16 @@ class ColaRevision:
         valido) -- no un default silencioso; quien la use decide como
         manejarlo (p. ej. "ya la resolvio otro revisor").
         """
+        retirada: dict[str, Any] | None = None
         with self._lock:
             for indice, item in enumerate(self._cola):
                 if item.get("id") == id_peticion:
                     del self._cola[indice]
-                    return item
+                    retirada = item
+                    break
+        if retirada is not None:
+            self._avisar_cambio()
+            return retirada
         raise KeyError(f"No hay ninguna peticion en cola con id={id_peticion!r}")
 
 

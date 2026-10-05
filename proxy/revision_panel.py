@@ -21,17 +21,24 @@ HTML; viaja como JSON y la pagina lo pinta con `textContent`.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
 import threading
 from collections import deque
+from collections.abc import AsyncIterator
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import (
+    FileResponse,
+    JSONResponse,
+    RedirectResponse,
+    StreamingResponse,
+)
 from pydantic import BaseModel, Field
 
 import proxy.auth as auth
@@ -44,6 +51,12 @@ DIRECTORIO_ESTATICO = Path(__file__).resolve().parent / "static"
 LONGITUD_MAXIMA_MOSTRADA = 8_000
 MAXIMO_HISTORIAL = 200
 DOMINIO_INTERNO = "@empresa.demo"
+# Canal en vivo (SSE): cada cuantos segundos se manda un latido (mantiene viva la
+# conexion y es cuando se revisa que la sesion siga vigente) y cuantas
+# consolas pueden estar conectadas a la vez (cada una es una conexion abierta).
+INTERVALO_LATIDO_S = 15.0
+MAXIMO_FLUJOS_EN_VIVO = 50
+REINTENTO_CLIENTE_MS = 3000
 MODO_LABORATORIO = "laboratorio"
 
 CABECERAS_SEGURIDAD = {
@@ -520,3 +533,101 @@ def historial_decisiones(
 ) -> Response:
     """Decisiones ya tomadas, la mas reciente primero."""
     return _json({"decisiones": historial.listar()})
+
+
+# --- Canal en vivo (SSE) ----------------------------------------------------
+#
+# La consola no pregunta cada pocos segundos: abre UNA conexion que el servidor
+# mantiene abierta y le avisa en cuanto la cola cambia. El aviso no lleva datos
+# (solo "cambio"): al recibirlo la consola vuelve a pedir `/revision/panel` por la
+# via de siempre, con su autenticacion. Asi por este canal nunca viaja el texto
+# de una peticion.
+
+_flujos_abiertos = 0
+_lock_flujos = threading.Lock()
+
+
+def _reservar_flujo() -> bool:
+    global _flujos_abiertos  # noqa: PLW0603 - contador compartido entre conexiones
+    with _lock_flujos:
+        if _flujos_abiertos >= MAXIMO_FLUJOS_EN_VIVO:
+            return False
+        _flujos_abiertos += 1
+        return True
+
+
+def _liberar_flujo() -> None:
+    global _flujos_abiertos  # noqa: PLW0603
+    with _lock_flujos:
+        _flujos_abiertos = max(0, _flujos_abiertos - 1)
+
+
+def flujos_en_vivo() -> int:
+    """Consolas conectadas ahora mismo al canal en vivo."""
+    with _lock_flujos:
+        return _flujos_abiertos
+
+
+def _evento_sse(nombre: str) -> bytes:
+    return f"event: {nombre}\ndata: {{}}\n\n".encode()
+
+
+async def flujo_eventos(
+    request: Request,
+    cola_revision: cola.ColaRevision,
+    token: str | None,
+    latido_s: float = INTERVALO_LATIDO_S,
+) -> AsyncIterator[bytes]:
+    """Eventos SSE de una consola: `cambio` cuando la cola cambia, `sesion` cuando
+    su sesion vencio (y se cierra), `lleno` si no hay cupo, y un latido si no pasa
+    nada. Al terminar (el navegador se fue, o vencio la sesion) deja de escuchar."""
+    if not _reservar_flujo():
+        yield _evento_sse("lleno")
+        return
+    bucle = asyncio.get_running_loop()
+    cambios: asyncio.Queue[None] = asyncio.Queue(maxsize=1)
+
+    def _marcar() -> None:
+        if cambios.empty():  # varios cambios seguidos se funden en un solo aviso
+            cambios.put_nowait(None)
+
+    def avisar() -> None:
+        # Lo llama el hilo que cambio la cola, no el del bucle de eventos.
+        try:
+            bucle.call_soon_threadsafe(_marcar)
+        except RuntimeError:  # el bucle ya se cerro (apagado del servidor)
+            pass
+
+    cola_revision.suscribir(avisar)
+    try:
+        yield f"retry: {REINTENTO_CLIENTE_MS}\n\n".encode()
+        while True:
+            if auth.auth_habilitada() and auth.sesiones.obtener(token, False) is None:
+                yield _evento_sse("sesion")
+                return
+            try:
+                await asyncio.wait_for(cambios.get(), timeout=latido_s)
+            except TimeoutError:
+                if await request.is_disconnected():
+                    return
+                yield b": latido\n\n"
+            else:
+                yield _evento_sse("cambio")
+    finally:
+        cola_revision.cancelar(avisar)
+        _liberar_flujo()
+
+
+@router.get("/revision/eventos", include_in_schema=False)
+async def eventos_en_vivo(
+    request: Request,
+    _: Annotated[auth.Identidad | None, Depends(auth.exigir_lector)],
+) -> StreamingResponse:
+    """Canal en vivo de la consola (SSE). Exige sesion si el login esta activo."""
+    return StreamingResponse(
+        flujo_eventos(
+            request, cola.cola_global, request.cookies.get(auth.NOMBRE_COOKIE)
+        ),
+        media_type="text/event-stream",
+        headers={**CABECERAS_SEGURIDAD, "X-Accel-Buffering": "no"},
+    )

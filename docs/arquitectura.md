@@ -429,7 +429,21 @@ con `json.dumps(evento, ensure_ascii=False)` + salto de línea.
   cuesta lo mismo exista o no el usuario. `ProveedorAutenticacion` (patrón
   Adapter, como `siem.py`) es el punto para conectar el LDAP, la base de datos
   de usuarios o el SSO de la organización sin tocar sesiones ni CSRF. Las
-  sesiones viven en memoria del proceso.
+  sesiones viven en memoria del proceso. `python -m proxy.auth --demo` crea la
+  cuenta `admin` (rol `revisor`) con una **clave aleatoria por máquina**: escribe
+  solo el hash en el `.env` y la clave en `credenciales-demo.local.txt` (ignorado
+  por Git); no hay ninguna clave por defecto en el código.
+- **Consola en tiempo real** (`GET /revision/eventos`, SSE, en `revision_panel.py`):
+  la cola (`ColaRevision.suscribir()/cancelar()`) avisa de cada cambio —encolar o
+  retirar— a quien esté escuchando; el generador `flujo_eventos()` lo convierte en
+  eventos `cambio`, funde ráfagas en un solo aviso y manda un latido cada 15 s.
+  **El canal no lleva datos** (solo «cambió»): la consola vuelve a pedir
+  `/revision/panel` por la vía autenticada de siempre, así que el texto de una
+  petición nunca viaja por él. Exige sesión; cada latido comprueba que la sesión
+  siga vigente **sin renovarla** (una pestaña abierta no mantiene viva una sesión
+  inactiva) y, si venció, manda `sesion` y cierra. Tope de 50 consolas
+  conectadas (`lleno` → la consola cae al sondeo). El cliente solo sondea como
+  respaldo (cada 3 s si el canal está caído, cada 30 s aunque esté vivo).
 - `config.yaml`: las 5 banderas existen; el estado por defecto del repo es
   todas en `false` (`C0`).
 - `proxy/Dockerfile` y `docker-compose.yml`: el build context es la raíz

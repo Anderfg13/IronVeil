@@ -3,7 +3,11 @@
    El texto de las peticiones puede ser un ataque: aqui NUNCA se inserta como
    HTML. Todo se pinta con textContent / nodos de texto (ver `h()`). */
 
+/* Tiempo real: el servidor avisa por un canal abierto (SSE) cuando la cola cambia.
+   El sondeo queda solo como red de seguridad: cada SONDEO_MS si el canal esta
+   caido, y cada RESPALDO_MS aunque este vivo (por si se perdiera un aviso). */
 const SONDEO_MS = 3000;
+const RESPALDO_MS = 30000;
 const AVISO_INFO_MS = 6000;
 const CLAVE_ATAJOS = "ironveil-atajos";
 
@@ -20,6 +24,7 @@ const estado = {
   moverFoco: false,
   cargado: false,
   enLinea: null,
+  enVivo: false,
   atajos: true,
 };
 
@@ -104,7 +109,7 @@ function pintarVivo(ok) {
   $("vivo").classList.toggle("caido", !ok);
   const segundos = Math.max(0, Math.round((Date.now() - estado.ultimaCarga) / 1000));
   $("vivo-estado").textContent = ok ? "En vivo" : "Sin conexión con el proxy";
-  $("vivo-detalle").textContent = ok ? ` · actualizado hace ${segundos} s` : "";
+  $("vivo-detalle").textContent = !ok ? "" : estado.enVivo ? " · tiempo real" : ` · actualizado hace ${segundos} s`;
   if (estado.cargado && estado.enLinea !== null && estado.enLinea !== ok) {
     anunciar(ok ? "Conexión con el proxy recuperada." : "Se perdió la conexión con el proxy.");
   }
@@ -360,7 +365,18 @@ async function decidir(p, accion) {
 function seleccionar(id) { estado.seleccion = id; estado.resultado = null; pintarLista(); pintarExpediente(); }
 function seleccionarPrimera() { estado.seleccion = estado.pendientes[0] ? estado.pendientes[0].id : null; pintarLista(); pintarExpediente(); }
 
+/* Varios avisos seguidos se funden: si ya hay una carga en curso, se repite una
+   sola vez al terminar, en vez de lanzar una peticion por aviso. */
+let cargando = false;
+let recargar = false;
 async function cargar() {
+  if (cargando) { recargar = true; return; }
+  cargando = true;
+  try { await cargarAhora(); } finally { cargando = false; }
+  if (recargar) { recargar = false; cargar(); }
+}
+
+async function cargarAhora() {
   try {
     const [panel, historial] = await Promise.all([api("/revision/panel").then((r) => r.json()), api("/revision/historial").then((r) => r.json())]);
     const vistoAntes = estado.pendientes.map((p) => p.id).join();
@@ -465,6 +481,20 @@ function teclasPestanas(evento) {
   cambiarPestana(PESTANAS[destino], true);
 }
 
+/* ---------- Canal en vivo ---------- */
+
+function conectarEnVivo() {
+  if (!("EventSource" in window)) return;
+  const fuente = new EventSource("/revision/eventos");
+  // Al abrir se carga una vez: cubre lo que cambio entre la primera carga y la conexion.
+  fuente.addEventListener("open", () => { estado.enVivo = true; cargar(); });
+  fuente.addEventListener("cambio", () => cargar());
+  fuente.addEventListener("sesion", () => { fuente.close(); window.location.assign("/revision/login"); });
+  fuente.addEventListener("lleno", () => { fuente.close(); estado.enVivo = false; });
+  // Si se cae, el navegador reintenta solo; mientras tanto manda el sondeo.
+  fuente.addEventListener("error", () => { estado.enVivo = false; });
+}
+
 /* ---------- Arranque ---------- */
 
 async function iniciar() {
@@ -482,7 +512,11 @@ async function iniciar() {
   document.querySelector('[role="tablist"]').addEventListener("keydown", teclasPestanas);
   await cargar();
   pintarExpediente();
-  setInterval(() => { if (!document.hidden) cargar(); }, SONDEO_MS);
+  conectarEnVivo();
+  setInterval(() => {
+    if (document.hidden) return;
+    if (!estado.enVivo || Date.now() - estado.ultimaCarga > RESPALDO_MS) cargar();
+  }, SONDEO_MS);
   setInterval(tictac, 1000);
 }
 

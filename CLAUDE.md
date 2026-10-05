@@ -176,7 +176,8 @@ Esta es la estructura **objetivo**. Lo marcado `[ya existe]` está en el repo ho
                         demo_chat.py (pantalla de chat /demo, solo la cara visible de /chat;
                         opt-in IRONVEIL_DEMO=1; no cambia /chat)
                         auth.py + revision_panel.py + static/ (consola de revision humana
-                        con login opcional REVISION_USUARIOS; logo en static/logo.svg)
+                        con login opcional REVISION_USUARIOS y canal en vivo SSE /revision/eventos;
+                        logo en static/logo.svg)
                         herramientas.py + notificaciones.py (EXTENSIONES opcionales:
                         herramientas SIMULADAS de rrhh-agente y avisos por webhook/
                         Slack/correo/WhatsApp cuando aprobacion humana encola;
