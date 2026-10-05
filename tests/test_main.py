@@ -1313,20 +1313,25 @@ def test_revision_aprobar_no_afecta_otras_peticiones_en_cola(
     assert restantes[0]["id"] == pendientes[1]["id"]
 
 
-def test_revision_ui_sirve_html_minimo(
+def test_revision_ui_sirve_la_consola(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """La pagina es estatica; la logica de aprobar/rechazar vive en su JS."""
     _preparar_entorno(
         monkeypatch, tmp_path, dict.fromkeys(mecanismos.FLAGS_REQUERIDAS, False), ""
     )
+    monkeypatch.delenv("REVISION_USUARIOS", raising=False)
 
-    respuesta = client.get("/revision/ui")
+    pagina = client.get("/revision/ui")
+    script = client.get("/revision/static/revision.js")
 
-    assert respuesta.status_code == 200
-    assert "text/html" in respuesta.headers["content-type"]
-    assert "/revision" in respuesta.text
-    assert "aprobar" in respuesta.text.lower()
-    assert "rechazar" in respuesta.text.lower()
+    assert pagina.status_code == 200
+    assert "text/html" in pagina.headers["content-type"]
+    assert "/revision/static/revision.js" in pagina.text
+    assert script.status_code == 200
+    assert "/revision/" in script.text
+    assert "aprobar" in script.text.lower()
+    assert "rechazar" in script.text.lower()
 
 
 # --- Integracion cruzada, semana de C6 (matriz-integracion) ---------------

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Revisión humana · IronVeil</title>
+  <link rel="icon" href="/revision/static/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/revision/static/consola.css">
+</head>
+<body>
+  <header class="barra">
+    <div class="marca">
+      <!-- Logo: reemplaza proxy/static/logo.svg para poner el definitivo. -->
+      <img src="/revision/static/logo.svg" alt="" width="34" height="34">
+      <div>IronVeil<small>Revisión humana</small></div>
+    </div>
+    <div class="relleno"></div>
+    <div class="vivo" id="vivo" role="status"><i></i><span id="vivo-texto">Conectando…</span></div>
+    <button class="boton-barra" id="tema" type="button" aria-label="Cambiar entre tema claro y oscuro">Tema</button>
+    <div class="usuario">
+      <div class="avatar" id="avatar" aria-hidden="true">·</div>
+      <div><b id="usuario-nombre">…</b><span id="usuario-rol"></span></div>
+      <button class="boton-barra" id="salir" type="button" hidden>Cerrar sesión</button>
+    </div>
+  </header>
+
+  <div class="aviso-laboratorio" id="aviso-lab" hidden>
+    Modo laboratorio: esta consola no pide inicio de sesión. Define REVISION_USUARIOS para activarlo.
+  </div>
+
+  <main>
+    <dl class="resumen" aria-label="Resumen de la cola">
+      <div class="cifra pendiente"><dt>Pendientes</dt><dd id="c-pendientes">0</dd></div>
+      <div class="cifra"><dt>Espera más larga</dt><dd id="c-espera">0<small>s</small></dd></div>
+      <div class="cifra"><dt>Decididas</dt><dd id="c-decididas">0<small id="c-detalle"></small></dd></div>
+      <div class="cifra"><dt>Tiempo medio de decisión</dt><dd id="c-tiempo">—</dd></div>
+    </dl>
+
+    <div class="cuerpo">
+      <aside class="tarjeta lista" aria-label="Peticiones">
+        <div class="pestanas" role="tablist">
+          <button class="pestana" role="tab" id="tab-pendientes" aria-selected="true" aria-controls="elementos" type="button">Pendientes<span class="cuenta" id="cuenta-pendientes">0</span></button>
+          <button class="pestana" role="tab" id="tab-historial" aria-selected="false" aria-controls="elementos" type="button">Historial</button>
+        </div>
+        <ul class="elementos" id="elementos"></ul>
+      </aside>
+
+      <section class="tarjeta expediente" id="expediente" aria-live="polite"></section>
+    </div>
+  </main>
+
+  <dialog id="confirmar" aria-labelledby="confirmar-titulo">
+    <h3 id="confirmar-titulo"></h3>
+    <p id="confirmar-texto"></p>
+    <div class="acciones">
+      <button class="secundario" id="confirmar-cancelar" type="button">Cancelar</button>
+      <button class="accion" id="confirmar-ok" type="button"></button>
+    </div>
+  </dialog>
+
+  <div class="avisos" id="avisos" role="status" aria-live="polite"></div>
+
+  <script src="/revision/static/revision.js"></script>
+</body>
+</html>

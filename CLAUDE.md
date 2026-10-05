@@ -173,6 +173,8 @@ Esta es la estructura **objetivo**. Lo marcado `[ya existe]` está en el repo ho
                         a /chat de forma opcional via SIEM_ARCHIVO_WAZUH;
                         incluye exportar_a_siem(evento, "json"|"cef"), funcion pura,
                         y docs/siem/wazuh/ con reglas y guia de despliegue)
+                        auth.py + revision_panel.py + static/ (consola de revision humana
+                        con login opcional REVISION_USUARIOS; logo en static/logo.svg)
                         herramientas.py + notificaciones.py (EXTENSIONES opcionales:
                         herramientas SIMULADAS de rrhh-agente y avisos por webhook/
                         Slack/correo/WhatsApp cuando aprobacion humana encola;

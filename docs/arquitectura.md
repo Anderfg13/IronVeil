@@ -398,10 +398,30 @@ con `json.dumps(evento, ensure_ascii=False)` + salto de línea.
   aprobación, `latencia_ms` es el tiempo **total** (espera en cola +
   tiempo de completar la petición), y `tiempo_revision_humana_ms` es solo
   la parte de espera — la métrica de costo que necesita Fiquitiva, sin
-  reemplazar el total (invariante 5 del esquema de log). `GET /revision/ui`
-  sirve una página HTML mínima (JS vanilla, sin plantillas ni dependencias
-  nuevas) sobre esos mismos 3 endpoints, para no depender de `curl` a mano
-  durante las pruebas del equipo.
+  reemplazar el total (invariante 5 del esquema de log).
+- `proxy/revision_panel.py` + `proxy/static/` (consola de revisión humana,
+  extensión de la interfaz de arriba): `GET /revision/ui` sirve una consola
+  (HTML/CSS/JS vanilla, sin dependencias nuevas, sin recursos externos) que
+  consume `GET /revision/panel` (la cola **analizada**: mecanismo que la
+  retuvo y por qué, fragmentos que coinciden con patrones conocidos, señales
+  y una lectura **orientativa** falso positivo / ataque; para herramientas
+  simuladas, las reglas de `rrhh-agente`) y `GET /revision/historial`
+  (decisiones: quién, cuándo, cuánto tardó; **nunca el texto**). El texto de
+  una petición puede ser un ataque: viaja como JSON y la página lo pinta con
+  `textContent`, sin `innerHTML` (lo verifica un test). El logo es
+  `proxy/static/logo.svg`, reemplazable.
+- `proxy/auth.py` (login de la consola): **opt-in** — con `REVISION_USUARIOS`
+  vacía todo se comporta como antes (scripts y tests del experimento
+  intactos); con cuentas definidas, `GET /revision`, `/revision/panel`,
+  `/revision/historial` y `POST /revision/{id}/aprobar|rechazar` exigen
+  sesión (cookie `HttpOnly` + `SameSite=Strict` + `Secure`, token aleatorio con
+  `secrets`, expiración por inactividad) y las decisiones exigen además rol
+  `revisor` y la cabecera `X-CSRF-Token`. Claves con scrypt (`python -m
+  proxy.auth USUARIO`), límite de intentos por usuario e IP, y la verificación
+  cuesta lo mismo exista o no el usuario. `ProveedorAutenticacion` (patrón
+  Adapter, como `siem.py`) es el punto para conectar el LDAP, la base de datos
+  de usuarios o el SSO de la organización sin tocar sesiones ni CSRF. Las
+  sesiones viven en memoria del proceso.
 - `config.yaml`: las 5 banderas existen; el estado por defecto del repo es
   todas en `false` (`C0`).
 - `proxy/Dockerfile` y `docker-compose.yml`: el build context es la raíz

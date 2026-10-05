@@ -26,18 +26,20 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 import httpx
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import proxy.auth as auth
 import proxy.cola as cola
 import proxy.herramientas as herramientas
 import proxy.mecanismos as mecanismos
 import proxy.notificaciones as notificaciones
+import proxy.revision_panel as revision_panel
 import proxy.siem as siem
 
 logger = logging.getLogger(__name__)
@@ -255,6 +257,16 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="IronVeil Proxy", version="0.1.0", lifespan=_lifespan)
+
+# Consola de revision humana (pagina, login, panel analizado, historial): ver
+# proxy/revision_panel.py. Los archivos estaticos (CSS/JS/logo) son publicos a
+# proposito: no contienen datos; los datos van por endpoints autenticados.
+app.include_router(revision_panel.router)
+app.mount(
+    "/revision/static",
+    StaticFiles(directory=revision_panel.DIRECTORIO_ESTATICO),
+    name="revision-static",
+)
 
 
 class ChatRequest(BaseModel):
@@ -1007,7 +1019,7 @@ def _obtener_pendiente_o_404(id_peticion: str) -> dict[str, Any]:
         ) from exc
 
 
-@app.get("/revision")
+@app.get("/revision", dependencies=[Depends(auth.exigir_lector)])
 def listar_revision() -> list[dict[str, Any]]:
     """Mecanismo 5: peticiones pendientes de revision humana ahora mismo.
 
@@ -1019,7 +1031,10 @@ def listar_revision() -> list[dict[str, Any]]:
 
 
 @app.post("/revision/{id_peticion}/rechazar", responses=_RESPUESTAS_RECHAZAR_REVISION)
-def rechazar_revision(id_peticion: str) -> dict[str, Any]:
+def rechazar_revision(
+    id_peticion: str,
+    revisor: Annotated[auth.Identidad | None, Depends(auth.exigir_revisor)] = None,
+) -> dict[str, Any]:
     """Mecanismo 5: descarta una peticion pendiente sin completarla.
 
     No vuelve a tocar Ollama ni la cadena de mecanismos: rechazar es
@@ -1051,6 +1066,9 @@ def rechazar_revision(id_peticion: str) -> dict[str, Any]:
         id_peticion,
         tiempo_revision_humana_ms,
         _sanear_para_log(item["modelo"]),
+    )
+    revision_panel.historial.registrar(
+        item, "rechazada", revisor, tiempo_revision_humana_ms
     )
     return {
         "id": id_peticion,
@@ -1108,7 +1126,10 @@ def _aprobar_herramienta(
 
 
 @app.post("/revision/{id_peticion}/aprobar", responses=_RESPUESTAS_APROBAR_REVISION)
-async def aprobar_revision(id_peticion: str) -> dict[str, Any]:
+async def aprobar_revision(
+    id_peticion: str,
+    revisor: Annotated[auth.Identidad | None, Depends(auth.exigir_revisor)] = None,
+) -> dict[str, Any]:
     """Mecanismo 5: completa una peticion pendiente y devuelve la respuesta real.
 
     NO vuelve a correr la cadena de bloqueo de ENTRADA (filtrado /
@@ -1129,7 +1150,13 @@ async def aprobar_revision(id_peticion: str) -> dict[str, Any]:
     metricas = _MetricasCadena()
 
     if item.get("tipo") == "herramienta":
-        return _aprobar_herramienta(item, config, activos, tiempo_revision_humana_ms)
+        resultado_herramienta = _aprobar_herramienta(
+            item, config, activos, tiempo_revision_humana_ms
+        )
+        revision_panel.historial.registrar(
+            item, "aprobada", revisor, tiempo_revision_humana_ms
+        )
+        return resultado_herramienta
 
     inicio_procesamiento = time.perf_counter()
     respuesta, mecanismo_bloqueo = await _completar_peticion(
@@ -1162,65 +1189,7 @@ async def aprobar_revision(id_peticion: str) -> dict[str, Any]:
         _sanear_para_log(item["modelo"]),
         mecanismo_bloqueo,
     )
+    revision_panel.historial.registrar(
+        item, "aprobada", revisor, tiempo_revision_humana_ms
+    )
     return respuesta
-
-
-# Pagina HTML minima, sin build step ni dependencias nuevas (ni siquiera
-# Jinja2: es una sola pagina estatica con JS vanilla) -- secundaria frente
-# a que los 3 endpoints de arriba funcionen bien (ver tarea de la semana).
-# Sirve para no depender de curl a mano durante las pruebas manuales del
-# equipo; no reemplaza los tests de integracion de los endpoints JSON.
-_PAGINA_REVISION_HTML = """<!doctype html>
-<html lang="es">
-<head>
-<meta charset="utf-8">
-<title>IronVeil - Revision humana</title>
-</head>
-<body>
-<h1>Cola de revision humana</h1>
-<button onclick="cargar()">Actualizar</button>
-<ul id="cola"></ul>
-<script>
-async function cargar() {
-  const resp = await fetch("/revision");
-  const items = await resp.json();
-  const ul = document.getElementById("cola");
-  ul.innerHTML = "";
-  if (items.length === 0) {
-    ul.innerHTML = "<li>(cola vacia)</li>";
-    return;
-  }
-  for (const item of items) {
-    const li = document.createElement("li");
-    li.textContent = `[${item.id}] ${item.modelo} (motivo: ${item.motivo}, `
-      + `encolado: ${item.encolado_en}) -- ${item.mensaje} `;
-    const aprobar = document.createElement("button");
-    aprobar.textContent = "Aprobar";
-    aprobar.onclick = () => decidir(item.id, "aprobar");
-    const rechazar = document.createElement("button");
-    rechazar.textContent = "Rechazar";
-    rechazar.onclick = () => decidir(item.id, "rechazar");
-    li.appendChild(aprobar);
-    li.appendChild(rechazar);
-    ul.appendChild(li);
-  }
-}
-async function decidir(id, accion) {
-  const resp = await fetch(`/revision/${id}/${accion}`, {method: "POST"});
-  const cuerpo = await resp.json();
-  alert(accion + ": " + JSON.stringify(cuerpo));
-  cargar();
-}
-cargar();
-</script>
-</body>
-</html>"""
-
-
-@app.get("/revision/ui", response_class=HTMLResponse)
-def interfaz_revision() -> str:
-    """Pagina HTML minima para aprobar/rechazar sin usar curl a mano.
-
-    Solo consume los 3 endpoints JSON de arriba; sin ellos no funciona.
-    """
-    return _PAGINA_REVISION_HTML

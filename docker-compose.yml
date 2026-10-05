@@ -62,6 +62,11 @@ services:
       # docs/siem/wazuh/LEEME.md). Vacio = apagada. La ruta es DENTRO del
       # contenedor; ./docs/siem/exportados se monta mas abajo.
       SIEM_ARCHIVO_WAZUH: ${SIEM_ARCHIVO_WAZUH:-}
+      # Login de la consola de revision humana (vacio = sin login, como antes).
+      # Genera cada cuenta con: python -m proxy.auth USUARIO [revisor|observador]
+      REVISION_USUARIOS: ${REVISION_USUARIOS:-}
+      REVISION_SESION_MINUTOS: ${REVISION_SESION_MINUTOS:-30}
+      REVISION_COOKIE_SECURE: ${REVISION_COOKIE_SECURE:-1}
       NOTIFICAR_WEBHOOK_URL: ${NOTIFICAR_WEBHOOK_URL:-}
       NOTIFICAR_SLACK_WEBHOOK_URL: ${NOTIFICAR_SLACK_WEBHOOK_URL:-}
       SMTP_HOST: ${SMTP_HOST:-}
