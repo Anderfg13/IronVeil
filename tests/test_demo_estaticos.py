@@ -361,3 +361,17 @@ def test_colores_forzados_dibujan_bordes_en_controles_y_puntos() -> None:
     assert "GrayText" in forzados  # estado "enviando"
     assert "forced-color-adjust: none" in forzados  # los puntos usaban currentcolor
     assert "background: CanvasText" in forzados
+
+
+def test_el_rotulo_oculto_del_asistente_no_escapa_del_hilo() -> None:
+    """`.solo-lectores` es absolute: sin un ancestro `position: relative` dentro del
+    hilo, su caja queda fuera del recorte del scroll y la pagina entera se
+    desplaza (medido en el navegador: 6247 px de alto con una ventana de 700)."""
+    assert "position: absolute" in CSS.split(".solo-lectores", 1)[1].split("}", 1)[0]
+    asistente = re.search(r"\.demo-asistente \{([^}]*)\}", CSS_DEMO)
+    assert asistente is not None
+    assert "position: relative" in asistente.group(1)
+    assert ".demo-burbuja" in CSS_DEMO  # la burbuja propia ya lo tiene
+    burbuja = re.search(r"\.demo-propio \.demo-burbuja \{([^}]*)\}", CSS_DEMO)
+    assert burbuja is not None
+    assert "position: relative" in burbuja.group(1)

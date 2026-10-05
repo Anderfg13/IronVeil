@@ -23,7 +23,10 @@
 .demo-msg { margin: 18px auto; display: flex; gap: 12px; min-width: 0; }
 .demo-msg.demo-propio { justify-content: flex-end; }
 .demo-msg.demo-propio .demo-burbuja { background: var(--veil-soft); border-radius: 18px 18px 4px 18px; max-width: 85%; padding: 10px 16px; white-space: pre-wrap; overflow-wrap: anywhere; position: relative; }
-.demo-asistente { min-width: 0; flex: 1; }
+/* `position: relative` es necesario: el rotulo oculto «Asistente:» (.solo-lectores)
+   es absolute, y sin un ancestro posicionado dentro del hilo su caja escapa del
+   recorte del scroll y la pagina entera se desplaza (un test lo vigila). */
+.demo-asistente { min-width: 0; flex: 1; position: relative; }
 .demo-texto { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 1rem; line-height: 1.6; max-width: 70ch; margin: 4px 0 0; }
 /* Un aviso se distingue por la forma (recuadro con borde), no solo por el color. */
 .demo-texto.demo-aviso { background: var(--panel-2); border: 1px solid var(--borde); border-radius: 12px; padding: 10px 14px; width: fit-content; max-width: 100%; }
