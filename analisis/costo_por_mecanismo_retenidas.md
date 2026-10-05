@@ -1,0 +1,6 @@
+| Configuración   | Retuvo            |   n |   Total, mediana (ms) |   Total, p95 (ms) |
+|:----------------|:------------------|----:|----------------------:|------------------:|
+| C1              | filtrado          |   8 |                 0.000 |             0.000 |
+| C3              | clasificacion     |  10 |                26.000 |            28.000 |
+| C4              | minimo_privilegio |   2 |                 0.000 |             0.000 |
+| C6              | aprobacion_humana |  12 |                 1.000 |            34.750 |
