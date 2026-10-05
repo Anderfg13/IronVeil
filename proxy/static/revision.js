@@ -13,6 +13,9 @@ const estado = {
   sesion: null,
   ultimaCarga: 0,
   resultado: null,
+  mostrado: null,
+  moverFoco: false,
+  cargado: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -60,6 +63,14 @@ async function api(ruta, opciones = {}) {
   return respuesta;
 }
 
+/* Region viva, oculta y pequena: anuncia solo lo importante (un resultado, una
+   peticion nueva), sin que el lector relea el expediente completo. */
+function anunciar(texto) {
+  const region = $("anuncios");
+  region.textContent = "";
+  setTimeout(() => { region.textContent = texto; }, 50);
+}
+
 function aviso(texto, error = false) {
   const nodo = h("div", { class: error ? "aviso error" : "aviso" }, texto);
   $("avisos").append(nodo);
@@ -87,6 +98,16 @@ function pintarEstadisticas(e) {
 /* ---------- Lista ---------- */
 
 function pintarLista() {
+  const activo = document.activeElement && document.activeElement.dataset
+    ? document.activeElement.dataset.pid : null;
+  construirLista();
+  if (activo) {
+    const mismo = document.querySelector(`[data-pid="${CSS.escape(activo)}"]`);
+    if (mismo) mismo.focus();
+  }
+}
+
+function construirLista() {
   const ul = $("elementos");
   ul.replaceChildren();
   if (estado.pestana === "historial") return pintarHistorial(ul);
@@ -105,6 +126,7 @@ function pintarLista() {
         h("button", {
             class: `elemento nivel-${p.sospecha.nivel}`,
             type: "button",
+            "data-pid": p.id,
             "aria-current": p.id === estado.seleccion ? "true" : "false",
             onclick: () => seleccionar(p.id),
           },
@@ -168,26 +190,29 @@ function lectura(p) {
 
 function pintarExpediente() {
   const caja = $("expediente");
-  if (estado.resultado) return pintarResultado(caja);
+  if (estado.resultado) { estado.mostrado = null; return pintarResultado(caja); }
   const p = estado.pendientes.find((x) => x.id === estado.seleccion);
+  estado.mostrado = p ? p.id : null;
   if (!p) {
     caja.replaceChildren(h("div", { class: "vacio" }, h("img", { src: "/revision/static/logo.svg", alt: "", width: 56, height: 56 }),
       h("h3", {}, estado.pendientes.length ? "Elige una petición" : "Todo en orden"),
       h("p", {}, estado.pendientes.length ? "Selecciónala en la lista para ver la evidencia y decidir." : "No hay peticiones esperando una decisión.")));
+    if (!estado.pendientes.length) caja.querySelector("img").remove();
+    enfocarTitulo(caja);
     return;
   }
   const puedeDecidir = estado.sesion && estado.sesion.rol === "revisor";
   caja.replaceChildren(
     h("header", {},
-      h("h2", {}, p.tipo === "herramienta" ? "Solicitud de herramienta" : "Petición retenida"),
+      h("h2", { tabindex: "-1" }, p.tipo === "herramienta" ? "Solicitud de herramienta" : "Petición retenida"),
       h("span", { class: "etiqueta" }, p.modelo),
       h("span", { class: "etiqueta mono" }, p.vector_probado || "sin vector"),
       p.tipo === "herramienta" && h("span", { class: "etiqueta simulada" }, "Simulada"),
       h("span", { class: "espera-grande", id: "espera-grande", "data-id": p.id }, `En cola hace ${duracion(p.espera_s)}`)),
-    h("div", { class: "bloque" }, h("h3", {}, "Lectura"), lectura(p)),
-    h("div", { class: "bloque" }, h("h3", {}, `Por qué se retuvo: ${p.motivo_titulo}`), h("p", {}, p.motivo_explicacion)),
     h("div", { class: "bloque" }, h("h3", {}, p.tipo === "herramienta" ? "Lo que el modelo quiere ejecutar" : "Lo que escribió el usuario"),
       p.tipo === "herramienta" ? evidenciaDeHerramienta(p) : evidenciaDeTexto(p)),
+    h("div", { class: "bloque" }, h("h3", {}, `Por qué se retuvo: ${p.motivo_titulo}`), h("p", {}, p.motivo_explicacion)),
+    h("div", { class: "bloque" }, h("h3", {}, "Lectura orientativa"), lectura(p)),
     h("div", { class: "bloque" }, h("h3", {}, "Contexto"),
       h("dl", { class: "contexto" },
         h("div", {}, h("dt", {}, "Cliente"), h("dd", {}, p.cliente)),
@@ -202,16 +227,27 @@ function pintarExpediente() {
   requestAnimationFrame(() => {
     const pin = $("pin");
     if (pin) pin.style.setProperty("--pos", `${p.sospecha.puntaje}%`);
+    enfocarTitulo(caja);
   });
+}
+
+/* Tras una decision el expediente se reemplaza: el foco pasa al titulo nuevo
+   para que quien usa teclado o lector de pantalla no se quede sin posicion. */
+function enfocarTitulo(caja) {
+  if (!estado.moverFoco) return;
+  estado.moverFoco = false;
+  const titulo = caja.querySelector("h2, h3");
+  if (titulo) { titulo.setAttribute("tabindex", "-1"); titulo.focus(); }
 }
 
 function pintarResultado(caja) {
   const r = estado.resultado;
   caja.replaceChildren(h("div", { class: "resultado" },
-    h("h2", { class: r.accion }, r.accion === "aprobada" ? "Aprobada: se reconoció como falso positivo" : "Rechazada: se confirmó el ataque"),
+    h("h2", { class: r.accion, tabindex: "-1" }, r.accion === "aprobada" ? "Aprobada: se reconoció como falso positivo" : "Rechazada: se confirmó el ataque"),
     h("p", {}, `Decisión de ${r.revisor} registrada en ${duracion(Math.round(r.tiempoMs / 1000))}.`),
     r.detalle && h("div", {}, h("h3", {}, r.tituloDetalle), h("pre", { tabindex: "0" }, r.detalle)),
-    h("button", { class: "siguiente", type: "button", onclick: () => { estado.resultado = null; seleccionarPrimera(); } }, "Ver siguiente")));
+    h("button", { class: "siguiente", type: "button", onclick: () => { estado.resultado = null; estado.moverFoco = true; seleccionarPrimera(); } }, "Ver siguiente")));
+  enfocarTitulo(caja);
 }
 
 /* ---------- Decidir ---------- */
@@ -224,7 +260,7 @@ function confirmar(p, accion) {
     ? (p.tipo === "herramienta" ? "Se ejecutará la versión simulada de la herramienta." : "La petición se enviará al modelo y recibirás su respuesta.")
     : "La petición se descarta y no llega al modelo. Esta acción queda registrada.";
   const ok = $("confirmar-ok");
-  ok.className = `accion ${aprobar ? "aprobar" : "rechazar"}`;
+  ok.className = "accion confirmar";
   ok.textContent = aprobar ? "Sí, aprobar" : "Sí, rechazar";
   ok.onclick = () => { dialogo.close(); decidir(p, accion); };
   $("confirmar-cancelar").onclick = () => dialogo.close();
@@ -250,7 +286,10 @@ async function decidir(p, accion) {
       tiempoMs: cuerpo.tiempo_revision_humana_ms ?? Date.now() - inicio,
       detalle, tituloDetalle,
     };
+    estado.moverFoco = true;
+    anunciar(aprobada ? "Petición aprobada como falso positivo." : "Petición rechazada como ataque.");
     await cargar();
+    pintarExpediente();
   } catch (e) {
     if (e.message !== "sesion") aviso("Sin conexión con el proxy.", true);
   }
@@ -265,6 +304,7 @@ async function cargar() {
   try {
     const [panel, historial] = await Promise.all([api("/revision/panel").then((r) => r.json()), api("/revision/historial").then((r) => r.json())]);
     const vistoAntes = estado.pendientes.map((p) => p.id).join();
+    const conocidas = new Set(estado.pendientes.map((p) => p.id));
     estado.pendientes = panel.pendientes;
     estado.decisiones = historial.decisiones;
     estado.ultimaCarga = Date.now();
@@ -272,7 +312,13 @@ async function cargar() {
     const existe = estado.pendientes.some((p) => p.id === estado.seleccion);
     if (!existe && !estado.resultado) estado.seleccion = estado.pendientes[0] ? estado.pendientes[0].id : null;
     const cambio = vistoAntes !== estado.pendientes.map((p) => p.id).join();
-    if (cambio || !existe) { pintarLista(); if (!document.querySelector("dialog[open]")) pintarExpediente(); }
+    if (cambio) pintarLista();
+    // El expediente solo se repinta si cambio la peticion mostrada: una llegada
+    // nueva no debe borrar el scroll, la seleccion de texto ni el foco.
+    if (!document.querySelector("dialog[open]") && !estado.resultado && estado.mostrado !== estado.seleccion) pintarExpediente();
+    const nuevas = estado.pendientes.filter((p) => !conocidas.has(p.id)).length;
+    if (estado.cargado && nuevas) anunciar(`${nuevas === 1 ? "Llegó 1 petición nueva" : `Llegaron ${nuevas} peticiones nuevas`}. Pendientes: ${estado.pendientes.length}.`);
+    estado.cargado = true;
     pintarVivo(true);
   } catch (e) {
     if (e.message !== "sesion") pintarVivo(false);
