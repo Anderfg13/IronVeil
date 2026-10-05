@@ -168,9 +168,9 @@ verificados y los problemas conocidos de esta máquina: `docs/DEMO.md`.
 
 ## Pantalla de chat de la demo
 
-`IRONVEIL_DEMO=1` activa **/demo**: una pantalla tipo chat que envía el mensaje por
-el pipeline real y muestra en vivo qué hace cada defensa. Apagada por defecto
-(revela qué mecanismo detuvo cada mensaje). Ver `docs/DEMO.md`.
+`IRONVEIL_DEMO=1` activa **/demo**: una pantalla tipo chat (escribes, recibes la
+respuesta) que usa `POST /chat`. Lo que hizo cada defensa queda en los logs y en el
+SIEM, no en la pantalla. Apagada por defecto. Ver `docs/DEMO.md`.
 
 ## Wazuh / SIEM (extensión opcional, **pesada**)
 

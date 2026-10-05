@@ -173,7 +173,7 @@ Esta es la estructura **objetivo**. Lo marcado `[ya existe]` está en el repo ho
                         a /chat de forma opcional via SIEM_ARCHIVO_WAZUH;
                         incluye exportar_a_siem(evento, "json"|"cef"), funcion pura,
                         y docs/siem/wazuh/ con reglas y guia de despliegue)
-                        demo_chat.py (pantalla de chat /demo con rastro del pipeline en vivo,
+                        demo_chat.py (pantalla de chat /demo, solo la cara visible de /chat;
                         opt-in IRONVEIL_DEMO=1; no cambia /chat)
                         auth.py + revision_panel.py + static/ (consola de revision humana
                         con login opcional REVISION_USUARIOS; logo en static/logo.svg)

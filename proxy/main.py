@@ -425,24 +425,7 @@ async def _ejecutar_cadena(
     for clave, paso in _CADENA_MECANISMOS:
         if not config[clave]:
             continue
-        inicio_paso = time.perf_counter()
-        texto_antes = texto
         texto, bloqueado = await paso(texto, direccion, modelo, metricas)
-        if not (clave == "minimo_privilegio" and direccion == "salida"):
-            # En SALIDA, filtrado "bloquea" cuando redacta una credencial pero la
-            # respuesta sigue su camino (ya redactada): para quien mira es una
-            # modificacion, no un bloqueo.
-            redacto = bloqueado and clave == "filtrado" and direccion == "salida"
-            demo_chat.traza(
-                "etapa",
-                etapa=f"{clave}:{direccion}",
-                estado=(
-                    "modificada"
-                    if redacto or texto != texto_antes
-                    else ("bloqueo" if bloqueado else "paso")
-                ),
-                ms=int((time.perf_counter() - inicio_paso) * 1000),
-            )
         if bloqueado:
             return texto, clave
     return texto, None
@@ -471,9 +454,6 @@ def _preparar_prompt(mensaje: str, modelo: str, config: dict[str, bool]) -> str:
         return mensaje
     instruccion = INSTRUCCIONES_CONFIABLES.get(modelo, _INSTRUCCION_CONFIABLE_GENERICA)
     prompt = mecanismos.delimitar(instruccion, mensaje)
-    demo_chat.traza(
-        "etapa", etapa="delimitacion", estado="modificada", prompt=prompt[:1500]
-    )
     # Trazabilidad del criterio de aceptacion: permite verificar en los logs
     # (nivel DEBUG) que el prompt final lleva el andamiaje de spotlighting.
     logger.debug("delimitacion activa, prompt enviado a Ollama:\n%s", prompt)
@@ -692,13 +672,8 @@ def _verificar_limite_de_tasa(
     excede_cliente = cola.cola_global.excede_limite(cliente)
     excede_global = cola.cola_global.excede_limite_global()
     if not (excede_cliente or excede_global):
-        demo_chat.traza("etapa", etapa="limite", estado="paso")
         return None
     motivo = "limite_de_peticiones" if excede_cliente else "limite_global_de_peticiones"
-    demo_chat.traza("etapa", etapa="limite", estado="bloqueo", motivo=motivo)
-    demo_chat.traza(
-        "etapa", etapa="aprobacion_humana", estado="encolada", motivo=motivo
-    )
     mecanismos.enviar_a_revision(
         {
             "modelo": request.modelo,
@@ -758,12 +733,6 @@ def _gestionar_aprobacion_humana(
             _sanear_para_log(request.modelo),
             mecanismo_bloqueo,
         )
-    demo_chat.traza(
-        "etapa",
-        etapa="aprobacion_humana",
-        estado="encolada" if en_cola else "bloqueo",
-        motivo=mecanismo_bloqueo,
-    )
     _notificar_en_revision(mecanismo_bloqueo, request.modelo, request.vector_probado)
     return "aprobacion_humana"
 
@@ -939,24 +908,12 @@ async def _completar_peticion(
     respuesta independientemente de por que se puso en duda la entrada.
     """
     prompt_ollama = _preparar_prompt(mensaje, modelo, config)
-    inicio_modelo = time.perf_counter()
     respuesta = await _llamar_ollama(modelo, prompt_ollama)
-    demo_chat.traza(
-        "etapa",
-        etapa="modelo",
-        estado="paso",
-        ms=int((time.perf_counter() - inicio_modelo) * 1000),
-    )
     mecanismo_herramienta = _gestionar_llamadas_a_herramientas(
         modelo, respuesta, config, cliente, vector_probado
     )
     if mecanismo_herramienta is not None:
-        demo_chat.traza(
-            "etapa", etapa="herramientas", estado="encolada", motivo="herramienta"
-        )
         return respuesta, mecanismo_herramienta
-    if respuesta.get("herramientas"):
-        demo_chat.traza("etapa", etapa="herramientas", estado="denegada")
     contenido = respuesta.get("message", {}).get("content", "")
     contenido, mecanismo_bloqueo = await _ejecutar_cadena(
         contenido, "salida", modelo, config, metricas

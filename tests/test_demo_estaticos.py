@@ -1,12 +1,9 @@
 """Guardas de la pantalla de chat de la demo (proxy/static/demo.*): seguridad del
-frontend, contraste de los colores que usa, y la logica del proceso en vivo."""
+frontend, contraste de los colores que usa y que solo hable con /chat."""
 
 from __future__ import annotations
 
-import json
 import re
-import shutil
-import subprocess
 
 import pytest
 
@@ -14,6 +11,7 @@ import proxy.revision_panel as panel
 
 ESTATICOS = panel.DIRECTORIO_ESTATICO
 ARCHIVOS = ["demo.html", "demo.css", "demo.js"]
+HTML = (ESTATICOS / "demo.html").read_text(encoding="utf-8")
 JS = (ESTATICOS / "demo.js").read_text(encoding="utf-8")
 CSS_DEMO = (ESTATICOS / "demo.css").read_text(encoding="utf-8")
 CSS = (ESTATICOS / "consola.css").read_text(encoding="utf-8")
@@ -74,7 +72,7 @@ def test_la_demo_no_carga_recursos_externos(archivo: str) -> None:
     assert "https://" not in codigo
 
 
-def test_los_ejemplos_no_incluyen_las_credenciales_reales_del_proyecto() -> None:
+def test_la_demo_no_incluye_las_credenciales_reales_del_proyecto() -> None:
     """CLAUDE.md, regla 2: los canarios viven en .env/Modelfiles, no en el codigo."""
     for archivo in ARCHIVOS:
         codigo = (ESTATICOS / archivo).read_text(encoding="utf-8")
@@ -95,30 +93,15 @@ def test_los_tamanos_de_la_demo_estan_en_rem_y_no_bajan_de_12_px() -> None:
 
 
 def test_el_cuadro_de_texto_tiene_etiqueta_y_la_conversacion_es_un_log() -> None:
-    html = (ESTATICOS / "demo.html").read_text(encoding="utf-8")
-
-    assert 'for="mensaje"' in html
-    assert 'role="log"' in html
-    assert "<h1" in html
-    assert 'id="anuncios"' in html
+    assert 'for="mensaje"' in HTML
+    assert 'role="log"' in HTML
+    assert "<h1" in HTML
+    assert 'id="anuncios"' in HTML
 
 
 def test_la_demo_define_alternativas_para_colores_forzados_y_poco_movimiento() -> None:
     assert "@media (forced-colors: active)" in CSS_DEMO
     assert "@media (prefers-reduced-motion: reduce)" in CSS_DEMO
-
-
-def test_el_estado_de_cada_etapa_se_dice_con_texto_y_no_solo_con_color() -> None:
-    for estado in (
-        "Pasó",
-        "Bloqueó",
-        "Modificó",
-        "En revisión",
-        "Desactivado",
-        "No llegó",
-        "En curso",
-    ):
-        assert f'"{estado}"' in JS
 
 
 # --- Contraste de los colores que usa la demo ---------------------------------
@@ -129,13 +112,6 @@ PARES = [
     ("ink-2", "panel"),
     ("ink-2", "panel-2"),
     ("ink-3", "panel"),
-    ("ok", "panel"),
-    ("ok", "ok-soft"),
-    ("attack", "panel"),
-    ("attack", "attack-soft"),
-    ("warn", "panel"),
-    ("warn", "warn-soft"),
-    ("veil", "panel"),
     ("on-veil", "veil"),
 ]
 
@@ -157,104 +133,20 @@ def test_la_demo_solo_usa_tokens_que_existen() -> None:
     assert usados <= definidos, usados - definidos
 
 
-# --- Logica del proceso en vivo (se ejecuta el JS real con node) -------------
-
-NODE = shutil.which("node")
+# --- Es solo un chat ----------------------------------------------------------
 
 
-def _ejecutar_js(guion: str) -> object:
-    """Corre las funciones puras del proceso (extraidas de demo.js) con node."""
-    nombres = ("marcarSiguiente", "aplicarEtapa", "cerrarProceso", "reiniciarProceso")
-    funciones = "\n".join(
-        re.search(rf"function {n}\(.*?\n\}}\n", JS, re.S).group(0)  # type: ignore[union-attr]
-        for n in nombres
-    )
-    preludio = (
-        'const ESTADOS = {pendiente:["",""],curso:["",""],paso:["",""],bloqueo:["",""],'
-        'modificada:["",""],encolada:["",""],denegada:["",""],desactivado:["",""],'
-        'omitida:["",""],error:["",""]};\n'
-        "const estado = { etapas: [], inicio: 0 };\n"
-        "const pintarEtapas = () => {};\n"
-        "const performance = { now: () => 0 };\n"
-        "const duracion = (ms) => String(ms);\n"
-        'const $ = () => ({ textContent: "" });\n'
-        "function resumenDelProceso() { return ''; }\n"
-    )
-    resultado = subprocess.run(  # noqa: S603
-        [NODE or "node", "-e", f"{preludio}{funciones}\n{guion}"],
-        capture_output=True,
-        encoding="utf-8",
-        check=True,
-        timeout=20,
-    )
-    return json.loads(resultado.stdout)
+def test_el_chat_solo_llama_a_chat_y_no_a_un_endpoint_propio() -> None:
+    assert re.findall(r'fetch\("([^"]+)"', JS) == ["/chat"]
 
 
-ETAPAS = (
-    '[{id:"limite",titulo:"L",activa:true},{id:"filtrado:entrada",titulo:"F",activa:true},'
-    '{id:"aprobacion_humana",titulo:"A",activa:true},{id:"delimitacion",titulo:"D",activa:false},'
-    '{id:"modelo",titulo:"M",activa:true}]'
-)
+def test_el_chat_no_muestra_nada_del_pipeline() -> None:
+    """Que mecanismo actuo es para quien opera el sistema: va a los logs, no aqui."""
+    for ajeno in ("proceso", "etapa", "filtro", "clasific", "delimit", "defensa"):
+        assert ajeno not in HTML.lower(), ajeno
+        assert ajeno not in JS.lower(), ajeno
 
 
-@pytest.mark.skipif(NODE is None, reason="node no esta instalado")
-def test_la_etapa_en_curso_avanza_y_la_aprobacion_humana_nunca_es_la_actual() -> None:
-    guion = f"""
-reiniciarProceso({ETAPAS});
-const fotos = [estado.etapas.map(e => e.estado).join()];
-aplicarEtapa({{etapa:"limite", estado:"paso", ms:0}});
-fotos.push(estado.etapas.map(e => e.estado).join());
-aplicarEtapa({{etapa:"filtrado:entrada", estado:"paso", ms:1}});
-fotos.push(estado.etapas.map(e => e.estado).join());
-console.log(JSON.stringify(fotos));
-"""
-
-    fotos = _ejecutar_js(guion)
-
-    assert fotos == [
-        "curso,pendiente,pendiente,desactivado,pendiente",
-        "paso,curso,pendiente,desactivado,pendiente",
-        "paso,paso,pendiente,desactivado,curso",
-    ]
-
-
-@pytest.mark.skipif(NODE is None, reason="node no esta instalado")
-def test_si_nada_se_retiene_la_aprobacion_humana_cierra_como_sin_trabajo() -> None:
-    guion = f"""
-reiniciarProceso({ETAPAS});
-aplicarEtapa({{etapa:"limite", estado:"paso"}});
-aplicarEtapa({{etapa:"filtrado:entrada", estado:"paso"}});
-aplicarEtapa({{etapa:"modelo", estado:"paso", ms:5}});
-cerrarProceso({{}});
-const filas = estado.etapas.map(e => [e.id, e.estado, e.detalle || null]);
-console.log(JSON.stringify(filas));
-"""
-
-    etapas = dict((e[0], e[1:]) for e in _ejecutar_js(guion))  # type: ignore[union-attr]
-
-    assert etapas["aprobacion_humana"][0] == "paso"
-    assert "Nada que revisar" in etapas["aprobacion_humana"][1]
-    assert etapas["delimitacion"][0] == "desactivado"
-
-
-@pytest.mark.skipif(NODE is None, reason="node no esta instalado")
-def test_tras_un_bloqueo_el_resto_de_etapas_activas_quedan_como_no_llego() -> None:
-    guion = f"""
-reiniciarProceso({ETAPAS});
-aplicarEtapa({{etapa:"limite", estado:"paso"}});
-aplicarEtapa({{etapa:"filtrado:entrada", estado:"bloqueo"}});
-aplicarEtapa({{etapa:"aprobacion_humana", estado:"encolada"}});
-cerrarProceso({{}});
-const pares = estado.etapas.map(e => [e.id, e.estado]);
-console.log(JSON.stringify(Object.fromEntries(pares)));
-"""
-
-    estados = _ejecutar_js(guion)
-
-    assert estados == {
-        "limite": "paso",
-        "filtrado:entrada": "bloqueo",
-        "aprobacion_humana": "encolada",
-        "delimitacion": "desactivado",
-        "modelo": "omitida",
-    }
+def test_los_avisos_al_usuario_son_genericos() -> None:
+    assert "No puedo ayudarte con ese mensaje." in JS
+    assert "pendiente de revisión" in JS

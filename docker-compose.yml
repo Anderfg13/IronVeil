@@ -64,8 +64,7 @@ services:
       SIEM_ARCHIVO_WAZUH: ${SIEM_ARCHIVO_WAZUH:-}
       # Login de la consola de revision humana (vacio = sin login, como antes).
       # Genera cada cuenta con: python -m proxy.auth USUARIO [revisor|observador]
-      # Pantalla de chat de la demo en /demo (vacio = apagada). Revela que
-      # mecanismo detuvo cada mensaje: solo para laboratorio y presentaciones.
+      # Pantalla de chat de la demo en /demo (vacio = apagada). Usa POST /chat.
       IRONVEIL_DEMO: ${IRONVEIL_DEMO:-}
       REVISION_USUARIOS: ${REVISION_USUARIOS:-}
       REVISION_SESION_MINUTOS: ${REVISION_SESION_MINUTOS:-30}
