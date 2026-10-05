@@ -430,3 +430,129 @@ def test_sin_id_el_chat_conserva_el_aviso_de_siempre() -> None:
         "Tu mensaje quedó pendiente de revisión. Vuelve a intentarlo más tarde." in JS
     )
     assert "Una persona revisó tu mensaje y no fue aprobado." in JS
+
+
+# --- Fase "preparando la respuesta" (desde=...) --------------------------------
+
+
+def _pasar_a_en_curso(entorno: dict[str, Any], id_revision: str) -> None:
+    """Lo mismo que hace aprobar al empezar: reservar y sacar de la cola."""
+    cola.resultados_global.reservar(id_revision)
+    entorno["cola"].retirar(id_revision)
+
+
+def test_con_desde_pendiente_vuelve_en_cuanto_se_aprueba_y_empieza_a_generar(
+    entorno: dict[str, Any],
+) -> None:
+    id_revision = _encolar(entorno)
+
+    def aprobar_pronto() -> None:
+        time.sleep(0.4)
+        _pasar_a_en_curso(entorno, id_revision)
+
+    hilo = threading.Thread(target=aprobar_pronto)
+    hilo.start()
+    inicio = time.perf_counter()
+    r = entorno["cliente"].get(
+        f"/chat/revision/{id_revision}?espera=15&desde=pendiente"
+    )
+    demora = time.perf_counter() - inicio
+    hilo.join()
+
+    assert r.json()["estado"] == "en_curso"
+    assert demora < 5, f"debio volver al pasar a en_curso, tardo {demora:.1f} s"
+
+
+def test_sin_desde_en_curso_no_corta_la_espera(entorno: dict[str, Any]) -> None:
+    id_revision = _encolar(entorno)
+    _pasar_a_en_curso(entorno, id_revision)
+
+    inicio = time.perf_counter()
+    r = entorno["cliente"].get(f"/chat/revision/{id_revision}?espera=0.4")
+
+    assert r.json()["estado"] == "en_curso"
+    assert time.perf_counter() - inicio >= 0.3  # espero: no es un estado final
+
+
+def test_con_desde_en_curso_espera_hasta_el_resultado(entorno: dict[str, Any]) -> None:
+    id_revision = _encolar(entorno)
+    _pasar_a_en_curso(entorno, id_revision)
+
+    def terminar_pronto() -> None:
+        time.sleep(0.4)
+        cola.resultados_global.registrar(id_revision, "aprobada", "listo")
+
+    hilo = threading.Thread(target=terminar_pronto)
+    hilo.start()
+    r = entorno["cliente"].get(f"/chat/revision/{id_revision}?espera=15&desde=en_curso")
+    hilo.join()
+
+    assert r.json() == {"estado": "aprobada", "respuesta": "listo"}
+
+
+def test_si_ya_cambio_antes_de_preguntar_vuelve_de_inmediato(
+    entorno: dict[str, Any],
+) -> None:
+    id_revision = _encolar(entorno)
+    _pasar_a_en_curso(entorno, id_revision)
+
+    inicio = time.perf_counter()
+    r = entorno["cliente"].get(
+        f"/chat/revision/{id_revision}?espera=20&desde=pendiente"
+    )
+
+    assert r.json()["estado"] == "en_curso"
+    assert time.perf_counter() - inicio < 2
+
+
+def test_desde_solo_acepta_pendiente_o_en_curso(entorno: dict[str, Any]) -> None:
+    for valor in ("aprobada", "cualquier-cosa", ""):
+        r = entorno["cliente"].get(f"/chat/revision/{'a' * 32}?desde={valor}")
+        assert r.status_code == 422, valor
+
+
+# --- El cliente: indicador de carga y bloqueo del envio ------------------------
+
+
+def test_al_aprobarse_el_chat_muestra_que_prepara_la_respuesta_con_indicador() -> None:
+    assert "Una persona aprobó tu mensaje. Preparando la respuesta…" in JS
+    assert "&desde=${visto}" in JS
+    assert re.search(r'estado === "en_curso"', JS)
+    # el mismo indicador de carga que "Escribiendo", y se anuncia
+    assert "function pintarPensando(vista, texto)" in JS
+    assert re.search(r'class: "demo-pensando"', JS.split("function pintarPensando")[1])
+
+
+def test_mientras_se_prepara_la_respuesta_no_se_acepta_otro_mensaje() -> None:
+    en_curso = JS.split('datos.estado === "en_curso"')[1].split("return;")[0]
+
+    assert "ocupar();" in en_curso
+    assert "if (estado.ocupados > 0)" in JS  # el envio se rechaza mientras haya algo
+    assert "if (ocupada) liberar();" in JS  # y se libera pase lo que pase
+
+
+def test_mientras_una_persona_revisa_el_cuadro_de_texto_sigue_libre() -> None:
+    """Revisar puede tardar minutos: solo se bloquea al generarse la respuesta."""
+    antes_de_en_curso = JS.split("async function esperarDecision")[1].split(
+        'datos.estado === "en_curso"'
+    )[0]
+
+    assert "ocupar()" not in antes_de_en_curso
+
+
+def test_el_bloqueo_usa_un_contador_y_no_un_booleano() -> None:
+    """Varias respuestas a la vez: liberar una no desbloquea el envio."""
+    assert "ocupados: 0" in JS
+    assert "estado.ocupados += 1" in JS
+    assert "if (estado.ocupados === 0) marcarEnvio(false);" in JS
+    assert "estado.enCurso" not in JS
+
+
+def test_el_cliente_no_entra_en_un_bucle_rapido_si_el_proxy_responde_de_inmediato() -> (
+    None
+):
+    en_curso = JS.split('datos.estado === "en_curso"')[1].split(
+        'datos.estado === "aprobada"'
+    )[0]
+
+    assert "Date.now() - desde < 1500" in en_curso

@@ -253,7 +253,7 @@ def test_cada_mensaje_dice_quien_habla_para_lectores_de_pantalla() -> None:
 def test_enter_mientras_responde_no_borra_el_texto_escrito() -> None:
     """Antes se vaciaba el cuadro y enviar() descartaba el mensaje en silencio."""
     envio = JS[JS.index('$("formulario").addEventListener("submit"') :]
-    assert envio.index("estado.enCurso") < envio.index('$("mensaje").value = ""')
+    assert envio.index("estado.ocupados") < envio.index('$("mensaje").value = ""')
     assert "MENSAJES.espera" in envio
 
 

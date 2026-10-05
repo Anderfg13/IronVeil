@@ -17,6 +17,7 @@ const MENSAJES = {
   vacio: "El asistente no devolvió ningún texto. Inténtalo de nuevo.",
   espera: "Espera la respuesta antes de enviar otro mensaje.",
   enRevision: "Tu mensaje está en revisión. Una persona lo revisará y la respuesta aparecerá aquí.",
+  preparando: "Una persona aprobó tu mensaje. Preparando la respuesta…",
   rechazada: "Una persona revisó tu mensaje y no fue aprobado.",
   sinDecision: "Todavía no hay una decisión sobre tu mensaje. Vuelve a intentarlo más tarde.",
 };
@@ -31,7 +32,10 @@ const AVISO_LENTO_MS = 8000;
 const ESPERA_DECISION_MS = 30 * 60 * 1000;
 const PAUSA_ENTRE_CONSULTAS_MS = 2000;
 
-const estado = { enCurso: false };
+/* Cuantas respuestas se estan generando ahora. Mientras haya alguna, el boton
+   Enviar queda en "Enviando..." y no se acepta otro mensaje. Mientras una persona
+   REVISA un mensaje (puede tardar minutos) no cuenta: se puede seguir escribiendo. */
+const estado = { ocupados: 0 };
 
 /* En pantalla tactil Enter es un salto de linea y no se enfoca solo el cuadro
    (abriria el teclado y taparia la pantalla). */
@@ -86,10 +90,29 @@ function agregarMensaje(texto) {
   return { cuerpo, rotulo, mensaje };
 }
 
+/* El mismo indicador de "escribiendo", con otro texto (y anunciado). */
+function pintarPensando(vista, texto) {
+  vista.cuerpo.replaceChildren(h("span", { class: "demo-pensando" },
+    h("span", { class: "demo-puntos", "aria-hidden": "true" }, h("i"), h("i"), h("i")),
+    h("span", {}, texto)));
+  anunciar(texto);
+  verDesdeArriba(vista.mensaje);
+}
+
 function mostrar(vista, texto, esAviso) {
   vista.cuerpo.replaceChildren(h("p", { class: esAviso ? "demo-texto demo-aviso" : "demo-texto" }, texto));
   anunciar(texto);
   verDesdeArriba(vista.mensaje);
+}
+
+function ocupar() {
+  estado.ocupados += 1;
+  marcarEnvio(true);
+}
+
+function liberar() {
+  estado.ocupados = Math.max(0, estado.ocupados - 1);
+  if (estado.ocupados === 0) marcarEnvio(false);
 }
 
 function marcarEnvio(enCurso) {
@@ -99,31 +122,51 @@ function marcarEnvio(enCurso) {
   boton.textContent = enCurso ? "Enviando…" : "Enviar";
 }
 
-/* Espera lo que decida la persona que revisa y actualiza el mensaje en pantalla. */
+/* Espera lo que decida la persona que revisa y actualiza el mensaje en pantalla.
+   Dos fases: "en revision" (nadie ha decidido; el cuadro de texto sigue libre) y,
+   al aprobarse, "preparando la respuesta" (con indicador de carga y sin aceptar
+   otro mensaje, como cualquier respuesta que se esta generando). */
 async function esperarDecision(vista, turno) {
   const inicio = Date.now();
-  while (Date.now() - inicio < ESPERA_DECISION_MS) {
-    const desde = Date.now();
-    let datos = null;
-    try {
-      const r = await fetch(`/chat/revision/${encodeURIComponent(turno)}?espera=25`, { credentials: "same-origin" });
-      if (r.ok) datos = await r.json();
-    } catch { /* sin conexion: se reintenta */ }
-    if (datos && datos.estado === "aprobada") {
-      mostrar(vista, datos.respuesta || MENSAJES.vacio, !datos.respuesta);
-      return;
+  let visto = "pendiente"; // ultimo estado que se le mostro a la persona
+  let ocupada = false;
+  try {
+    while (Date.now() - inicio < ESPERA_DECISION_MS) {
+      const desde = Date.now();
+      let datos = null;
+      try {
+        const r = await fetch(`/chat/revision/${encodeURIComponent(turno)}?espera=25&desde=${visto}`, { credentials: "same-origin" });
+        if (r.ok) datos = await r.json();
+      } catch { /* sin conexion: se reintenta */ }
+      if (datos && datos.estado === "en_curso") {
+        if (visto !== "en_curso") {
+          visto = "en_curso";
+          ocupar();
+          ocupada = true;
+          pintarPensando(vista, MENSAJES.preparando);
+          continue;
+        }
+        // Ya estaba en curso y la consulta volvio enseguida: una pausa evita un bucle rapido.
+        if (Date.now() - desde < 1500) await new Promise((fin) => setTimeout(fin, PAUSA_ENTRE_CONSULTAS_MS));
+        continue;
+      }
+      if (datos && datos.estado === "aprobada") {
+        mostrar(vista, datos.respuesta || MENSAJES.vacio, !datos.respuesta);
+        return;
+      }
+      if (datos && datos.estado === "rechazada") { mostrar(vista, MENSAJES.rechazada, true); return; }
+      if (datos && (datos.estado === "fallida" || datos.estado === "desconocida")) { mostrar(vista, MENSAJES.otro, true); return; }
+      // Sigue en revision (o no hubo conexion). Si la consulta volvio enseguida, una pausa evita un bucle rapido.
+      if (Date.now() - desde < 1500) await new Promise((fin) => setTimeout(fin, PAUSA_ENTRE_CONSULTAS_MS));
     }
-    if (datos && datos.estado === "rechazada") { mostrar(vista, MENSAJES.rechazada, true); return; }
-    if (datos && (datos.estado === "fallida" || datos.estado === "desconocida")) { mostrar(vista, MENSAJES.otro, true); return; }
-    // Sigue en revision (o no hubo conexion). Si la consulta volvio enseguida, una pausa evita un bucle rapido.
-    if (Date.now() - desde < 1500) await new Promise((fin) => setTimeout(fin, PAUSA_ENTRE_CONSULTAS_MS));
+    mostrar(vista, MENSAJES.sinDecision, true);
+  } finally {
+    if (ocupada) liberar();
   }
-  mostrar(vista, MENSAJES.sinDecision, true);
 }
 
 async function enviar(texto) {
-  estado.enCurso = true;
-  marcarEnvio(true);
+  ocupar();
   const vista = agregarMensaje(texto);
   const control = new AbortController();
   const corte = setTimeout(() => control.abort(), TIEMPO_MAXIMO_MS);
@@ -156,8 +199,7 @@ async function enviar(texto) {
   } finally {
     clearTimeout(corte);
     clearTimeout(lento);
-    estado.enCurso = false;
-    marcarEnvio(false);
+    liberar();
     if (recuperar && !$("mensaje").value) {
       $("mensaje").value = texto;
       ajustarAltura();
@@ -182,7 +224,7 @@ function iniciar() {
   $("formulario").addEventListener("submit", (ev) => {
     ev.preventDefault();
     // Mientras responde, el texto escrito se conserva: no se borra ni se descarta.
-    if (estado.enCurso) { anunciar(MENSAJES.espera); return; }
+    if (estado.ocupados > 0) { anunciar(MENSAJES.espera); return; }
     const texto = $("mensaje").value.trim();
     if (!texto) { $("mensaje").focus(); return; }
     $("mensaje").value = "";

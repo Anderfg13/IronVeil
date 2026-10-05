@@ -429,7 +429,10 @@ con `json.dumps(evento, ensure_ascii=False)` + salto de línea.
   salida, `rechazada` o `fallida`) en un registro en memoria con caducidad de
   30 min y tope de 500. `GET /chat/revision/{id}?espera=25` dice el estado y
   **espera hasta 25 s a que cambie** (long polling; se despierta al instante, no
-  sondea). Estados: `pendiente`, `en_curso`, `aprobada`, `rechazada`, `fallida`,
+  sondea). Con `desde=pendiente|en_curso` vuelve en cuanto el estado sea otro: así
+  el chat se entera de que ya se aprobó y se está generando la respuesta
+  (`en_curso`) y puede mostrar «Preparando la respuesta…» y bloquear el envío.
+  Estados: `pendiente`, `en_curso`, `aprobada`, `rechazada`, `fallida`,
   `desconocida`. Sin login, como `/chat` (el id es la llave); nunca devuelve el
   texto de la petición; tope de 100 esperas abiertas. Quien decide marca
   `en_curso` **antes** de sacar la petición de la cola, así quien espera nunca

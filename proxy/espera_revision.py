@@ -8,7 +8,9 @@ al REVISOR) nunca le llegaba a quien escribio. Aqui esta el otro lado:
   (el cuerpo del 429 no cambia: el experimento y sus scripts ven lo mismo).
 - `GET /chat/revision/{id}` dice en que estado esta ese turno y, si hace falta,
   ESPERA hasta `espera` segundos a que cambie (long polling): el chat repite la
-  llamada y se entera apenas se decide, sin sondeo rapido.
+  llamada y se entera apenas se decide, sin sondeo rapido. Con `desde=<estado>`
+  vuelve en cuanto el estado sea otro (p. ej. de `pendiente` a `en_curso`: ya se
+  aprobo y se esta generando la respuesta); sin `desde`, solo al decidirse.
 
 El identificador (uuid4, 128 bits) funciona como llave: solo lo tiene quien envio el
 mensaje y el revisor. Por eso este endpoint no pide login, igual que `/chat`. Nunca
@@ -36,6 +38,7 @@ ESPERA_MAXIMA_S = 30.0
 # inmediato (quien llama vuelve a preguntar), asi no se agotan las conexiones.
 MAXIMO_ESPERAS = 100
 _PATRON_ID = r"^[0-9a-f]{32}$"
+_PATRON_DESDE = r"^(pendiente|en_curso)$"
 
 router = APIRouter()
 _esperas_abiertas = 0
@@ -62,6 +65,12 @@ def _es_final(dato: dict[str, Any]) -> bool:
     )
 
 
+def _debe_volver(dato: dict[str, Any], desde: str | None) -> bool:
+    """True si ya hay algo que contarle a quien pregunta: un estado final, o (si
+    dijo desde que estado mira) un estado distinto de ese."""
+    return _es_final(dato) or (desde is not None and dato["estado"] != desde)
+
+
 def _reservar_espera() -> bool:
     global _esperas_abiertas  # noqa: PLW0603 - contador compartido entre conexiones
     with _lock_esperas:
@@ -77,14 +86,17 @@ def _liberar_espera() -> None:
         _esperas_abiertas = max(0, _esperas_abiertas - 1)
 
 
-async def esperar_cambio(id_revision: str, espera_s: float) -> dict[str, Any]:
-    """Estado del turno; si aun no esta decidido, espera hasta `espera_s`.
+async def esperar_cambio(
+    id_revision: str, espera_s: float, desde: str | None = None
+) -> dict[str, Any]:
+    """Estado del turno; si aun no hay novedad, espera hasta `espera_s`.
 
+    Novedad = un estado final o, si se indica `desde`, uno distinto de ese.
     Despierta apenas la cola o los resultados cambian (no sondea). Devuelve el
-    estado vigente al terminar, sea final o no.
+    estado vigente al terminar, haya novedad o no.
     """
     dato = estado_de(id_revision)
-    if _es_final(dato) or espera_s <= 0 or not _reservar_espera():
+    if _debe_volver(dato, desde) or espera_s <= 0 or not _reservar_espera():
         return dato
     bucle = asyncio.get_running_loop()
     despertar = asyncio.Event()
@@ -106,7 +118,7 @@ async def esperar_cambio(id_revision: str, espera_s: float) -> dict[str, Any]:
             despertar.clear()  # antes de mirar: un cambio entre medias no se pierde
             dato = estado_de(id_revision)
             restante = limite - bucle.time()
-            if _es_final(dato) or restante <= 0:
+            if _debe_volver(dato, desde) or restante <= 0:
                 return dato
             try:
                 await asyncio.wait_for(despertar.wait(), timeout=restante)
@@ -122,9 +134,10 @@ async def esperar_cambio(id_revision: str, espera_s: float) -> dict[str, Any]:
 async def estado_de_la_revision(
     id_revision: Annotated[str, Path(pattern=_PATRON_ID)],
     espera: Annotated[float, Query(ge=0, le=ESPERA_MAXIMA_S)] = ESPERA_DEFECTO_S,
+    desde: Annotated[str | None, Query(pattern=_PATRON_DESDE)] = None,
 ) -> JSONResponse:
-    """Estado de la revision de un turno; con `espera` aguarda a que se decida."""
-    dato = await esperar_cambio(id_revision, espera)
+    """Estado de la revision de un turno; con `espera` aguarda a que haya novedad."""
+    dato = await esperar_cambio(id_revision, espera, desde)
     return JSONResponse(
         {"estado": dato["estado"], "respuesta": dato.get("respuesta")},
         headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},

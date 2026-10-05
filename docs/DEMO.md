@@ -136,8 +136,12 @@ de `POST /chat`: el mismo pipeline y la misma configuración (C0..C6) de siempre
 - **Si un mensaje queda en revisión humana**, el chat muestra «Tu mensaje está en
   revisión…» y **se actualiza solo** cuando la persona decide en la consola:
   si aprueba, aparece la respuesta del asistente en ese mismo mensaje; si
-  rechaza, «Una persona revisó tu mensaje y no fue aprobado». Mientras tanto
-  puedes seguir escribiendo. Si recargas la página o pulsas «Nueva conversación»
+  rechaza, «Una persona revisó tu mensaje y no fue aprobado». **Mientras una
+  persona revisa** (puede tardar minutos) puedes seguir escribiendo. **En cuanto
+  aprueba**, el mensaje pasa a «Preparando la respuesta…» con el indicador de
+  carga y el botón queda en «Enviando…» sin aceptar otro mensaje hasta que llegue
+  la respuesta (como cualquier respuesta que se está generando; en CPU puede
+  tardar de 10 s a casi un minuto). Si recargas la página o pulsas «Nueva conversación»
   se pierde la espera (la decisión se conserva 30 min en el proxy).
 - Cada mensaje se responde por separado: IronVeil no guarda el contexto.
 - Si hay login activo, la pantalla pide sesión (la misma cuenta de la consola).
