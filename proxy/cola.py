@@ -58,6 +58,41 @@ LIMITE_GLOBAL_PETICIONES_POR_MINUTO: int = 50
 MAX_TAMANO_COLA: int = 200
 
 
+class Avisos:
+    """Lista de oyentes que se avisan (sin datos) cuando algo cambia.
+
+    La comparten la cola y el registro de resultados. Se avisa desde el hilo que
+    provoco el cambio, SIN tener tomado el lock de quien cambio: un oyente lento
+    nunca frena a `encolar()` ni a `retirar()`. Un oyente que falla se registra y
+    no impide avisar a los demas.
+    """
+
+    def __init__(self) -> None:
+        self.oyentes: list[Callable[[], None]] = []
+        self._lock = threading.Lock()
+
+    def suscribir(self, aviso: Callable[[], None]) -> None:
+        """Registra `aviso()`; debe ser rapido y seguro entre hilos."""
+        with self._lock:
+            self.oyentes.append(aviso)
+
+    def cancelar(self, aviso: Callable[[], None]) -> None:
+        """Quita un aviso (si ya no esta, no hace nada)."""
+        with self._lock:
+            if aviso in self.oyentes:
+                self.oyentes.remove(aviso)
+
+    def avisar(self) -> None:
+        """Llama a todos los oyentes registrados."""
+        with self._lock:
+            copia = list(self.oyentes)
+        for aviso in copia:
+            try:
+                aviso()
+            except Exception:  # noqa: BLE001 - un oyente roto no frena a los demas
+                logger.warning("un aviso de cambio fallo", exc_info=True)
+
+
 class ColaRevision:
     """Cola de peticiones pendientes + rate limiter por cliente.
 
@@ -86,10 +121,12 @@ class ColaRevision:
         self._peticiones_por_cliente: dict[str, deque[float]] = {}
         self._peticiones_globales: deque[float] = deque()
         # Quien quiere enterarse al instante de que la cola cambio (la consola
-        # de revision en vivo). Lock propio: avisar nunca ocurre con el lock de
-        # la cola tomado, asi un aviso lento no frena a encolar()/retirar().
-        self._suscriptores: list[Callable[[], None]] = []
-        self._lock_suscriptores = threading.Lock()
+        # de revision en vivo, y quien espera una decision).
+        self._avisos = Avisos()
+
+    @property
+    def _suscriptores(self) -> list[Callable[[], None]]:
+        return self._avisos.oyentes
 
     def suscribir(self, aviso: Callable[[], None]) -> None:
         """Registra `aviso()`, que se llama (sin argumentos) cada vez que la cola
@@ -99,23 +136,19 @@ class ColaRevision:
         seguro entre hilos. No recibe datos a proposito: quien escucha vuelve a
         leer la cola con `listar()` (y su autenticacion), nada sensible viaja aqui.
         """
-        with self._lock_suscriptores:
-            self._suscriptores.append(aviso)
+        self._avisos.suscribir(aviso)
 
     def cancelar(self, aviso: Callable[[], None]) -> None:
         """Quita un aviso registrado con `suscribir()` (si ya no esta, no hace nada)."""
-        with self._lock_suscriptores:
-            if aviso in self._suscriptores:
-                self._suscriptores.remove(aviso)
+        self._avisos.cancelar(aviso)
 
     def _avisar_cambio(self) -> None:
-        with self._lock_suscriptores:
-            avisos = list(self._suscriptores)
-        for aviso in avisos:
-            try:
-                aviso()
-            except Exception:  # noqa: BLE001 - un oyente roto no frena a la cola
-                logger.warning("un aviso de cambio de la cola fallo", exc_info=True)
+        self._avisos.avisar()
+
+    def contiene(self, id_peticion: str) -> bool:
+        """True si hay una peticion pendiente con ese `id`."""
+        with self._lock:
+            return any(item.get("id") == id_peticion for item in self._cola)
 
     def excede_limite(self, cliente: str) -> bool:
         """True si `cliente` ya alcanzo `limite_por_minuto` peticiones en
@@ -238,8 +271,103 @@ class ColaRevision:
         raise KeyError(f"No hay ninguna peticion en cola con id={id_peticion!r}")
 
 
+# --- Resultado de una revision humana, para quien esta esperando -----------
+#
+# Cuando una peticion se encola, /chat responde 429 y cierra la conexion: quien
+# escribio no recibe nunca lo que decida el revisor (aprobar devuelve la
+# respuesta al REVISOR). Este registro guarda el resultado un rato, por el
+# identificador del turno, para que el chat pueda preguntarlo y mostrarlo.
+
+ESTADO_EN_CURSO = "en_curso"  # el revisor ya decidio y se esta completando
+ESTADO_APROBADA = "aprobada"
+ESTADO_RECHAZADA = "rechazada"
+ESTADO_FALLIDA = "fallida"  # aprobada, pero no se pudo completar
+ESTADOS_FINALES = (ESTADO_APROBADA, ESTADO_RECHAZADA, ESTADO_FALLIDA)
+# 30 min: lo que tarda en irse el interes de quien espera, y poca retencion del
+# texto de una respuesta en memoria. 500: tope para que no crezca sin limite.
+TTL_RESULTADO_S: float = 1800.0
+MAX_RESULTADOS: int = 500
+
+
+class ResultadosRevision:
+    """Resultado de cada revision, por id, con caducidad y tope de tamano.
+
+    El id es un uuid4 (128 bits) que solo conoce quien envio el mensaje (viaja en
+    la respuesta 429) y el revisor: funciona como llave. Todo en memoria del
+    proceso y detras de un lock; nada se escribe a disco.
+    """
+
+    def __init__(
+        self, ttl_s: float = TTL_RESULTADO_S, maximo: int = MAX_RESULTADOS
+    ) -> None:
+        self.ttl_s = ttl_s
+        self.maximo = maximo
+        self._lock = threading.Lock()
+        self._datos: dict[str, tuple[float, dict[str, Any]]] = {}
+        self._avisos = Avisos()
+
+    def suscribir(self, aviso: Callable[[], None]) -> None:
+        """Registra `aviso()` para cuando cambie algun resultado."""
+        self._avisos.suscribir(aviso)
+
+    def cancelar(self, aviso: Callable[[], None]) -> None:
+        """Quita un aviso registrado con `suscribir()`."""
+        self._avisos.cancelar(aviso)
+
+    def _guardar(self, id_peticion: str, dato: dict[str, Any]) -> None:
+        with self._lock:
+            ahora = time.monotonic()
+            self._datos.pop(id_peticion, None)  # reinsertar la deja como la mas nueva
+            self._datos[id_peticion] = (ahora, dato)
+            vencidos = [
+                k for k, (t, _) in self._datos.items() if ahora - t > self.ttl_s
+            ]
+            for clave in vencidos:
+                del self._datos[clave]
+            while len(self._datos) > self.maximo:
+                del self._datos[next(iter(self._datos))]  # la mas vieja
+        self._avisos.avisar()
+
+    def reservar(self, id_peticion: str) -> None:
+        """Marca la revision como `en_curso` (ya se decidio, falta completarla).
+
+        Se llama ANTES de sacarla de la cola: asi, quien espera nunca ve un
+        instante en que no esta ni pendiente ni en curso.
+        """
+        self._guardar(id_peticion, {"estado": ESTADO_EN_CURSO})
+
+    def olvidar(self, id_peticion: str) -> None:
+        """Descarta una reserva (la peticion no existia)."""
+        with self._lock:
+            self._datos.pop(id_peticion, None)
+
+    def registrar(
+        self, id_peticion: str, estado: str, respuesta: str | None = None
+    ) -> None:
+        """Guarda el resultado final de una revision y avisa a quien espera."""
+        if estado not in ESTADOS_FINALES:
+            raise ValueError(f"estado final invalido: {estado!r}")
+        dato: dict[str, Any] = {"estado": estado}
+        if respuesta is not None:
+            dato["respuesta"] = respuesta
+        self._guardar(id_peticion, dato)
+
+    def consultar(self, id_peticion: str) -> dict[str, Any] | None:
+        """Estado guardado de `id_peticion`, o None si no hay (o ya caduco)."""
+        with self._lock:
+            hallado = self._datos.get(id_peticion)
+            if hallado is None:
+                return None
+            if time.monotonic() - hallado[0] > self.ttl_s:
+                del self._datos[id_peticion]
+                return None
+            return dict(hallado[1])
+
+
 # Instancia compartida por proxy/main.py (rate limiting) y
 # mecanismos.enviar_a_revision() (encolar). Un solo proceso de uvicorn por
 # contenedor (ver docker-compose.yml): un lock en memoria de proceso es
 # suficiente, no hace falta coordinacion entre procesos.
 cola_global = ColaRevision()
+
+resultados_global = ResultadosRevision()

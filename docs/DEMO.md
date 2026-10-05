@@ -133,6 +133,12 @@ de `POST /chat`: el mismo pipeline y la misma configuración (C0..C6) de siempre
 - Los mensajes de la pantalla no se etiquetan como ataque: en el log salen como
   `permitido_normal` aunque sean un ataque. Para un «ataque exitoso» en el SIEM
   usa `curl` con `vector_probado` (escenas 2 y 3).
+- **Si un mensaje queda en revisión humana**, el chat muestra «Tu mensaje está en
+  revisión…» y **se actualiza solo** cuando la persona decide en la consola:
+  si aprueba, aparece la respuesta del asistente en ese mismo mensaje; si
+  rechaza, «Una persona revisó tu mensaje y no fue aprobado». Mientras tanto
+  puedes seguir escribiendo. Si recargas la página o pulsas «Nueva conversación»
+  se pierde la espera (la decisión se conserva 30 min en el proxy).
 - Cada mensaje se responde por separado: IronVeil no guarda el contexto.
 - Si hay login activo, la pantalla pide sesión (la misma cuenta de la consola).
 

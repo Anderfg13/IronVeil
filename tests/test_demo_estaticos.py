@@ -143,8 +143,11 @@ def test_la_demo_solo_usa_tokens_que_existen() -> None:
 # --- Es solo un chat ----------------------------------------------------------
 
 
-def test_el_chat_solo_llama_a_chat_y_no_a_un_endpoint_propio() -> None:
-    assert re.findall(r'fetch\("([^"]+)"', JS) == ["/chat"]
+def test_el_chat_solo_llama_a_chat_y_a_la_espera_de_su_propio_turno() -> None:
+    """/chat y, si queda en revision, /chat/revision/{turno}: nada mas."""
+    llamadas = re.findall(r"fetch\((?:\"|`)(/[^\"`$?]*)", JS)
+
+    assert sorted(llamadas) == ["/chat", "/chat/revision/"]
 
 
 def test_el_chat_no_muestra_nada_del_pipeline() -> None:

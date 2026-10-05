@@ -417,7 +417,23 @@ con `json.dumps(evento, ensure_ascii=False)` + salto de línea.
   toca el pipeline: lo que hizo cada mecanismo no se muestra en pantalla y queda
   en el log JSONL, los logs del proxy y el SIEM, para quien opera el sistema.
   Con login activo exige sesión. Un test impide que la pantalla nombre
-  mecanismos o llame a otro endpoint que `/chat`.
+  mecanismos o llame a otro endpoint que `/chat` (y, si el mensaje queda en
+  revisión, `GET /chat/revision/{id}`, abajo).
+- **Espera de la decisión humana** (`proxy/espera_revision.py`, `ResultadosRevision`
+  en `proxy/cola.py`): al encolar, `/chat` sigue respondiendo 429 de inmediato
+  (**el cuerpo no cambia**) pero agrega la cabecera `X-Revision-Id` con el id del
+  turno (uuid4, 128 bits: es la llave); solo si la petición quedó de verdad en
+  la cola. Antes, lo que decidiera el revisor nunca le llegaba a quien escribió
+  (`aprobar` devuelve la respuesta al revisor). Ahora la consola, al decidir,
+  deja el resultado (`aprobada` con la respuesta ya filtrada por la cadena de
+  salida, `rechazada` o `fallida`) en un registro en memoria con caducidad de
+  30 min y tope de 500. `GET /chat/revision/{id}?espera=25` dice el estado y
+  **espera hasta 25 s a que cambie** (long polling; se despierta al instante, no
+  sondea). Estados: `pendiente`, `en_curso`, `aprobada`, `rechazada`, `fallida`,
+  `desconocida`. Sin login, como `/chat` (el id es la llave); nunca devuelve el
+  texto de la petición; tope de 100 esperas abiertas. Quien decide marca
+  `en_curso` **antes** de sacar la petición de la cola, así quien espera nunca
+  ve un hueco entre `pendiente` y el resultado.
 - `proxy/auth.py` (login de la consola): **opt-in** — con `REVISION_USUARIOS`
   vacía todo se comporta como antes (scripts y tests del experimento
   intactos); con cuentas definidas, `GET /revision`, `/revision/panel`,

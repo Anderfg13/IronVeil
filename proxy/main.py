@@ -21,6 +21,7 @@ import logging
 import os
 import threading
 import time
+import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -37,6 +38,7 @@ from pydantic import BaseModel
 import proxy.auth as auth
 import proxy.cola as cola
 import proxy.demo_chat as demo_chat
+import proxy.espera_revision as espera_revision
 import proxy.herramientas as herramientas
 import proxy.mecanismos as mecanismos
 import proxy.notificaciones as notificaciones
@@ -265,6 +267,8 @@ app = FastAPI(title="IronVeil Proxy", version="0.1.0", lifespan=_lifespan)
 app.include_router(revision_panel.router)
 # Pantalla de chat de la demo (opt-in con IRONVEIL_DEMO=1, ver proxy/demo_chat.py).
 app.include_router(demo_chat.router)
+# Espera de la decision humana (long polling), ver proxy/espera_revision.py.
+app.include_router(espera_revision.router)
 app.mount(
     "/revision/static",
     StaticFiles(directory=revision_panel.DIRECTORIO_ESTATICO),
@@ -647,7 +651,7 @@ def _notificar_en_revision(
 
 
 def _verificar_limite_de_tasa(
-    request: ChatRequest, http_request: Request
+    request: ChatRequest, http_request: Request, id_revision: str | None = None
 ) -> str | None:
     """Mecanismo 5, disparador 1: limite de tasa, por cliente y global.
 
@@ -666,7 +670,8 @@ def _verificar_limite_de_tasa(
       docs/FUENTE_DE_VERDAD.md).
 
     Devuelve "aprobacion_humana" si cualquiera de los dos se excedio (y ya
-    encolo la peticion), None si ninguno.
+    encolo la peticion), None si ninguno. `id_revision` (opcional) es el id con
+    el que queda en la cola, para que quien escribio pueda esperar la decision.
     """
     cliente = _identificar_cliente(http_request)
     excede_cliente = cola.cola_global.excede_limite(cliente)
@@ -681,6 +686,7 @@ def _verificar_limite_de_tasa(
             "vector_probado": request.vector_probado,
             "cliente": cliente,
             "motivo": motivo,
+            **({"id": id_revision} if id_revision else {}),
         }
     )
     _notificar_en_revision(motivo, request.modelo, request.vector_probado)
@@ -691,6 +697,7 @@ def _gestionar_aprobacion_humana(
     request: ChatRequest,
     http_request: Request,
     mecanismo_bloqueo: str | None,
+    id_revision: str | None = None,
 ) -> str | None:
     """Mecanismo 5. Convierte un bloqueo (o exceso de tasa) en cola de revision.
 
@@ -723,6 +730,7 @@ def _gestionar_aprobacion_humana(
             "vector_probado": request.vector_probado,
             "cliente": _identificar_cliente(http_request),
             "motivo": mecanismo_bloqueo,
+            **({"id": id_revision} if id_revision else {}),
         }
     )
     if not en_cola:
@@ -932,9 +940,14 @@ async def chat(request: ChatRequest, http_request: Request) -> dict[str, Any]:
 
     mecanismo_bloqueo: str | None = None
     mensaje = request.mensaje
+    # Identificador del turno si termina en cola de revision: viaja en la
+    # cabecera X-Revision-Id del 429 (el cuerpo no cambia), ver espera_revision.py.
+    id_revision = uuid.uuid4().hex if config["aprobacion_humana"] else None
 
     if config["aprobacion_humana"]:
-        mecanismo_bloqueo = _verificar_limite_de_tasa(request, http_request)
+        mecanismo_bloqueo = _verificar_limite_de_tasa(
+            request, http_request, id_revision
+        )
 
     if mecanismo_bloqueo is None:
         mensaje, mecanismo_bloqueo = await _ejecutar_cadena(
@@ -946,7 +959,7 @@ async def chat(request: ChatRequest, http_request: Request) -> dict[str, Any]:
         # _gestionar_aprobacion_humana()).
         if config["aprobacion_humana"]:
             mecanismo_bloqueo = _gestionar_aprobacion_humana(
-                request, http_request, mecanismo_bloqueo
+                request, http_request, mecanismo_bloqueo, id_revision
             )
 
     respuesta: dict[str, Any] | None = None
@@ -981,8 +994,16 @@ async def chat(request: ChatRequest, http_request: Request) -> dict[str, Any]:
                 "peticion puesta en revision humana (modelo=%s)",
                 _sanear_para_log(request.modelo),
             )
+            # Solo si de verdad quedo en la cola (con la cola llena se rechaza).
+            en_cola = id_revision is not None and cola.cola_global.contiene(id_revision)
             raise HTTPException(
-                status_code=_STATUS_EN_REVISION, detail=_DETALLE_EN_REVISION
+                status_code=_STATUS_EN_REVISION,
+                detail=_DETALLE_EN_REVISION,
+                headers=(
+                    {espera_revision.CABECERA_ID_REVISION: id_revision}
+                    if en_cola and id_revision
+                    else None
+                ),
             )
         logger.warning(
             "peticion bloqueada en entrada por %s (modelo=%s)",
@@ -1013,9 +1034,13 @@ def _obtener_pendiente_o_404(id_peticion: str) -> dict[str, Any]:
     de esta semana, y ademas ColaRevision.retirar() ya lanza KeyError
     exactamente para este caso.
     """
+    # Se reserva ANTES de retirar: quien espera nunca ve un instante en que la
+    # peticion no esta ni en la cola ni en curso (ver espera_revision.estado_de()).
+    cola.resultados_global.reservar(id_peticion)
     try:
         return cola.cola_global.retirar(id_peticion)
     except KeyError as exc:
+        cola.resultados_global.olvidar(id_peticion)  # nunca existio
         raise HTTPException(
             status_code=404,
             detail=f"No hay ninguna peticion en revision con id={id_peticion!r}.",
@@ -1073,6 +1098,7 @@ def rechazar_revision(
     revision_panel.historial.registrar(
         item, "rechazada", revisor, tiempo_revision_humana_ms
     )
+    cola.resultados_global.registrar(id_peticion, cola.ESTADO_RECHAZADA)
     return {
         "id": id_peticion,
         "estado": "rechazada",
@@ -1146,6 +1172,24 @@ async def aprobar_revision(
     metrica de costo que Fiquitiva necesita reportar por separado.
     """
     item = _obtener_pendiente_o_404(id_peticion)
+    try:
+        resultado = await _aprobar_item(item, revisor)
+    except Exception:
+        # Aprobada pero no se pudo completar (Ollama caido, herramienta invalida):
+        # quien espera debe enterarse, no quedarse esperando para siempre.
+        cola.resultados_global.registrar(id_peticion, cola.ESTADO_FALLIDA)
+        raise
+    mensaje = resultado.get("message")
+    contenido = mensaje.get("content") if isinstance(mensaje, dict) else None
+    cola.resultados_global.registrar(id_peticion, cola.ESTADO_APROBADA, contenido)
+    return resultado
+
+
+async def _aprobar_item(
+    item: dict[str, Any], revisor: auth.Identidad | None
+) -> dict[str, Any]:
+    """Completa la peticion ya retirada de la cola (ver `aprobar_revision`)."""
+    id_peticion = item["id"]
     tiempo_revision_humana_ms = _ms_transcurridos_desde(item["encolado_en"])
 
     config = mecanismos.cargar_config(mecanismos.CONFIG_PATH)

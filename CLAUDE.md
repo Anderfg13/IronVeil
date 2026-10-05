@@ -175,6 +175,9 @@ Esta es la estructura **objetivo**. Lo marcado `[ya existe]` está en el repo ho
                         y docs/siem/wazuh/ con reglas y guia de despliegue)
                         demo_chat.py (pantalla de chat /demo, solo la cara visible de /chat;
                         opt-in IRONVEIL_DEMO=1; no cambia /chat)
+                        espera_revision.py (GET /chat/revision/{id}: quien escribio se
+                        entera de la decision humana; /chat solo suma la cabecera
+                        X-Revision-Id al 429, su cuerpo no cambia)
                         auth.py + revision_panel.py + static/ (consola de revision humana
                         con login opcional REVISION_USUARIOS y canal en vivo SSE /revision/eventos;
                         logo en static/logo.svg)

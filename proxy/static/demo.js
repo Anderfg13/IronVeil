@@ -3,7 +3,9 @@
    Lo que escribe el usuario y lo que responde el modelo pueden ser un ataque:
    aqui NUNCA se inserta como HTML; todo se pinta con nodos de texto (`h()`).
    No hay atajos de una sola tecla: Enter envia solo dentro del cuadro de texto.
-   Solo se llama a POST /chat: lo que paso por dentro vive en los logs, no aqui. */
+   Solo se llama a POST /chat y, si el mensaje queda en revision, a
+   GET /chat/revision/{turno} para enterarse de la decision: lo que paso por
+   dentro vive en los logs, no aqui. */
 
 const $ = (id) => document.getElementById(id);
 
@@ -14,6 +16,9 @@ const MENSAJES = {
   otro: "No pude responder en este momento. Inténtalo de nuevo.",
   vacio: "El asistente no devolvió ningún texto. Inténtalo de nuevo.",
   espera: "Espera la respuesta antes de enviar otro mensaje.",
+  enRevision: "Tu mensaje está en revisión. Una persona lo revisará y la respuesta aparecerá aquí.",
+  rechazada: "Una persona revisó tu mensaje y no fue aprobado.",
+  sinDecision: "Todavía no hay una decisión sobre tu mensaje. Vuelve a intentarlo más tarde.",
 };
 const ESCRIBIENDO = "Escribiendo…";
 const LENTO = "Sigo trabajando en tu respuesta…";
@@ -21,6 +26,10 @@ const LIMITE = 12000; // igual que maxlength del cuadro de texto
 const AVISAR_DESDE = 10800; // 90 %: a partir de aqui se muestra el contador
 const TIEMPO_MAXIMO_MS = 120000;
 const AVISO_LENTO_MS = 8000;
+/* El proxy conserva la decision 30 min: pasado ese tiempo ya no hay nada que esperar.
+   Cada consulta espera hasta 25 s a que se decida (long polling), sin sondeo rapido. */
+const ESPERA_DECISION_MS = 30 * 60 * 1000;
+const PAUSA_ENTRE_CONSULTAS_MS = 2000;
 
 const estado = { enCurso: false };
 
@@ -90,6 +99,28 @@ function marcarEnvio(enCurso) {
   boton.textContent = enCurso ? "Enviando…" : "Enviar";
 }
 
+/* Espera lo que decida la persona que revisa y actualiza el mensaje en pantalla. */
+async function esperarDecision(vista, turno) {
+  const inicio = Date.now();
+  while (Date.now() - inicio < ESPERA_DECISION_MS) {
+    const desde = Date.now();
+    let datos = null;
+    try {
+      const r = await fetch(`/chat/revision/${encodeURIComponent(turno)}?espera=25`, { credentials: "same-origin" });
+      if (r.ok) datos = await r.json();
+    } catch { /* sin conexion: se reintenta */ }
+    if (datos && datos.estado === "aprobada") {
+      mostrar(vista, datos.respuesta || MENSAJES.vacio, !datos.respuesta);
+      return;
+    }
+    if (datos && datos.estado === "rechazada") { mostrar(vista, MENSAJES.rechazada, true); return; }
+    if (datos && (datos.estado === "fallida" || datos.estado === "desconocida")) { mostrar(vista, MENSAJES.otro, true); return; }
+    // Sigue en revision (o no hubo conexion). Si la consulta volvio enseguida, una pausa evita un bucle rapido.
+    if (Date.now() - desde < 1500) await new Promise((fin) => setTimeout(fin, PAUSA_ENTRE_CONSULTAS_MS));
+  }
+  mostrar(vista, MENSAJES.sinDecision, true);
+}
+
 async function enviar(texto) {
   estado.enCurso = true;
   marcarEnvio(true);
@@ -104,7 +135,14 @@ async function enviar(texto) {
       body: JSON.stringify({ modelo: $("modelo").value, mensaje: texto }), credentials: "same-origin",
     });
     if (!r.ok) {
-      mostrar(vista, MENSAJES[r.status] || MENSAJES.otro, true);
+      const turno = r.status === 429 ? r.headers.get("X-Revision-Id") : null;
+      if (turno) {
+        // Quedo en revision: se espera la decision sin bloquear el cuadro de texto.
+        mostrar(vista, MENSAJES.enRevision, true);
+        esperarDecision(vista, turno);
+      } else {
+        mostrar(vista, MENSAJES[r.status] || MENSAJES.otro, true);
+      }
       recuperar = r.status !== 429; // si quedo en revision, reenviarlo duplicaria la peticion
     } else {
       const datos = await r.json();
