@@ -47,6 +47,7 @@ Se pueden agregar campos nuevos. **Nunca se renombran ni se eliminan los 8 base.
 | `paso_bloqueado` | `1` \| `2` \| null | V4 (movimiento lateral) |
 | `nivel_carga` | int | V5 (peticiones concurrentes) |
 | `es_extension` | bool | resultados fuera del núcleo de 7 configuraciones |
+| `latencia_<pieza>_us` | int | solo en el `eventos.jsonl` del proxy (no en el CSV): microsegundos de cada pieza que se ejecutó (`filtrado`, `delimitacion`, `clasificacion`, `minimo_privilegio`, `limite`, `aprobacion_humana`) y del `modelo`. Una pieza que no corrió no deja campo |
 
 **Antes de inventar un campo nuevo:** revisa si uno de estos ya cubre el caso, y avisa al equipo. Un campo que solo entiende quien lo escribió es ruido en el dataset.
 

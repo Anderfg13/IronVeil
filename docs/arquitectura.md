@@ -437,6 +437,15 @@ con `json.dumps(evento, ensure_ascii=False)` + salto de línea.
   texto de la petición; tope de 100 esperas abiertas. Quien decide marca
   `en_curso` **antes** de sacar la petición de la cola, así quien espera nunca
   ve un hueco entre `pendiente` y el resultado.
+- **Costo por pieza** (`_MetricasCadena.tiempos_ns` en `proxy/main.py`): cada
+  mecanismo que corre, y el modelo, se cronometran con `perf_counter_ns` y salen
+  en el `eventos.jsonl` como `latencia_<pieza>_us` (microsegundos; ver
+  `CLAUDE.md`, sección 4). Restar `latencia_modelo_us` a `latencia_ms` da el
+  costo propio del proxy sin compararse contra C0. Solo se registra lo que se
+  ejecutó; los 8 campos base no cambian. `ataques/medir_costo_mecanismos.py`
+  genera la carga (mensajes legítimos de tres tamaños y algunos que algún
+  mecanismo retiene; el calentamiento lleva `vector_probado="CALENTAMIENTO"`) y
+  `analisis/costo_por_mecanismo.py` resume por configuración.
 - `proxy/auth.py` (login de la consola): **opt-in** — con `REVISION_USUARIOS`
   vacía todo se comporta como antes (scripts y tests del experimento
   intactos); con cuentas definidas, `GET /revision`, `/revision/panel`,

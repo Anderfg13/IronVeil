@@ -24,7 +24,7 @@ import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
@@ -306,9 +306,21 @@ class _MetricasCadena:
     `mecanismos.clasificar()` en esta peticion (entrada + salida). Es el
     unico dato que un paso no puede devolver por su firma congelada
     (`clasificar() -> bool`), asi que se acumula aqui por referencia.
+
+    `tiempos_ns`: tiempo (ns) que esta peticion paso en cada pieza, por nombre
+    (`filtrado`, `clasificacion`, `minimo_privilegio`, `delimitacion`, `limite`,
+    `aprobacion_humana` y `modelo`). Solo aparecen las piezas que SI se
+    ejecutaron: un mecanismo que no corrio (apagado, o la cadena se corto antes)
+    no tiene entrada, para no confundir "no corrio" con "fue rapido". Alimenta
+    los campos extendidos `latencia_<pieza>_us` del evento.
     """
 
     latencia_clasificador_ms: int = 0
+    tiempos_ns: dict[str, int] = field(default_factory=dict)
+
+    def sumar(self, pieza: str, ns: int) -> None:
+        """Suma `ns` al tiempo de `pieza` (entrada y salida van al mismo total)."""
+        self.tiempos_ns[pieza] = self.tiempos_ns.get(pieza, 0) + ns
 
 
 # Un paso de la cadena: recibe (texto, direccion, modelo, metricas) y
@@ -429,13 +441,20 @@ async def _ejecutar_cadena(
     for clave, paso in _CADENA_MECANISMOS:
         if not config[clave]:
             continue
+        inicio_ns = time.perf_counter_ns()
         texto, bloqueado = await paso(texto, direccion, modelo, metricas)
+        metricas.sumar(clave, time.perf_counter_ns() - inicio_ns)
         if bloqueado:
             return texto, clave
     return texto, None
 
 
-def _preparar_prompt(mensaje: str, modelo: str, config: dict[str, bool]) -> str:
+def _preparar_prompt(
+    mensaje: str,
+    modelo: str,
+    config: dict[str, bool],
+    metricas: _MetricasCadena | None = None,
+) -> str:
     """Aplica el mecanismo 2 (delimitacion) al texto que se enviara a Ollama.
 
     Segundo paso de la cadena, despues de filtrado. No bloquea: la
@@ -457,7 +476,10 @@ def _preparar_prompt(mensaje: str, modelo: str, config: dict[str, bool]) -> str:
     if not config["delimitacion"]:
         return mensaje
     instruccion = INSTRUCCIONES_CONFIABLES.get(modelo, _INSTRUCCION_CONFIABLE_GENERICA)
+    inicio_ns = time.perf_counter_ns()
     prompt = mecanismos.delimitar(instruccion, mensaje)
+    if metricas is not None:
+        metricas.sumar("delimitacion", time.perf_counter_ns() - inicio_ns)
     # Trazabilidad del criterio de aceptacion: permite verificar en los logs
     # (nivel DEBUG) que el prompt final lleva el andamiaje de spotlighting.
     logger.debug("delimitacion activa, prompt enviado a Ollama:\n%s", prompt)
@@ -771,7 +793,9 @@ def _construir_evento(
 
     Agrega el campo extendido `latencia_clasificador_ms` siempre que el
     mecanismo 3 este activo (aunque haya bloqueado antes de llamarlo: en ese
-    caso vale 0). Agrega `tiempo_revision_humana_ms` solo si se pasa
+    caso vale 0). Agrega `latencia_<pieza>_us` por cada pieza que corrio (los
+    mecanismos y `modelo`, el tiempo del modelo protegido). Agrega
+    `tiempo_revision_humana_ms` solo si se pasa
     explicitamente (peticion que paso por la cola de revision): es un
     evento aparte del que ya escribio `/chat` al encolar, nunca lo
     reemplaza (JSONL es append-only). Los 8 campos base nunca se renombran
@@ -789,6 +813,10 @@ def _construir_evento(
     }
     if config["clasificacion"]:
         evento["latencia_clasificador_ms"] = metricas.latencia_clasificador_ms
+    # Costo por pieza, en microsegundos (campos extendidos `latencia_<pieza>_us`):
+    # solo las piezas que se ejecutaron en esta peticion.
+    for pieza, ns in metricas.tiempos_ns.items():
+        evento[f"latencia_{pieza}_us"] = round(ns / 1000)
     if tiempo_revision_humana_ms is not None:
         evento["tiempo_revision_humana_ms"] = tiempo_revision_humana_ms
     if es_extension:
@@ -915,8 +943,11 @@ async def _completar_peticion(
     cadena de SALIDA si sigue actuando en ambos casos: protege la
     respuesta independientemente de por que se puso en duda la entrada.
     """
-    prompt_ollama = _preparar_prompt(mensaje, modelo, config)
+    prompt_ollama = _preparar_prompt(mensaje, modelo, config, metricas)
+    inicio_modelo_ns = time.perf_counter_ns()
     respuesta = await _llamar_ollama(modelo, prompt_ollama)
+    # Tiempo del modelo protegido: restarlo a `latencia_ms` deja el costo propio.
+    metricas.sumar("modelo", time.perf_counter_ns() - inicio_modelo_ns)
     mecanismo_herramienta = _gestionar_llamadas_a_herramientas(
         modelo, respuesta, config, cliente, vector_probado
     )
@@ -945,9 +976,11 @@ async def chat(request: ChatRequest, http_request: Request) -> dict[str, Any]:
     id_revision = uuid.uuid4().hex if config["aprobacion_humana"] else None
 
     if config["aprobacion_humana"]:
+        inicio_ns = time.perf_counter_ns()
         mecanismo_bloqueo = _verificar_limite_de_tasa(
             request, http_request, id_revision
         )
+        metricas.sumar("limite", time.perf_counter_ns() - inicio_ns)
 
     if mecanismo_bloqueo is None:
         mensaje, mecanismo_bloqueo = await _ejecutar_cadena(
@@ -958,9 +991,11 @@ async def chat(request: ChatRequest, http_request: Request) -> dict[str, Any]:
         # en cola en vez de rechazo automatico (ver
         # _gestionar_aprobacion_humana()).
         if config["aprobacion_humana"]:
+            inicio_ns = time.perf_counter_ns()
             mecanismo_bloqueo = _gestionar_aprobacion_humana(
                 request, http_request, mecanismo_bloqueo, id_revision
             )
+            metricas.sumar("aprobacion_humana", time.perf_counter_ns() - inicio_ns)
 
     respuesta: dict[str, Any] | None = None
 
