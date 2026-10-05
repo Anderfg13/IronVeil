@@ -1,6 +1,8 @@
 | Configuración   | Mecanismo     | Tipo de variante   |   ASR (%) |   Tasa de bloqueo (%) |   Número de intentos |
 |:----------------|:--------------|:-------------------|----------:|----------------------:|---------------------:|
-| C1              | filtrado      | original           |      87.5 |                  12.5 |                    8 |
-| C2              | delimitacion  | original           |     100   |                   0   |                    8 |
-| C3              | clasificacion | original           |      75   |                  12.5 |                    8 |
-| C3              | clasificacion | nueva              |      75   |                  25   |                    4 |
+| C1              | filtrado      | original           |       0   |                  19.2 |                   73 |
+| C1              | filtrado      | nueva              |       0   |                   2.5 |                   40 |
+| C2              | delimitacion  | original           |       6.2 |                   0   |                   80 |
+| C2              | delimitacion  | nueva              |       0   |                   0   |                   40 |
+| C3              | clasificacion | original           |       5   |                  31.2 |                   80 |
+| C3              | clasificacion | nueva              |       2.5 |                  25   |                   40 |

@@ -396,3 +396,77 @@ Cómo se mantienen separadas:
 - Un intento previo de la corrida C0 se interrumpió y se descartó antes de
   ingestar (criterio de `resultado` aún sin definir); no está en el CSV.
 
+
+## 8. 4.ª corrida de Colab (2026-10-05): V1-V4 ingestados y costo por mecanismo
+
+El notebook `resultados/RECORRIDA_GPU_C0_C6.ipynb` (con la sección 8c nueva)
+dejó un zip con V1-V4 (C0-C6 × 3 repeticiones), V7 (C0/C5/C6) y la medición del
+costo por mecanismo. **Qué se hizo y qué no:**
+
+**Ingestado (V1-V4).** 588 filas nuevas (`resultados/2026-10-05/vectores_1_2_3_C*`
+y `vector4_movimiento_lateral_C*`: 22 filas por archivo de V1-V3 y 6 de V4, igual
+que en la corrida anterior) con
+`analisis/agregar_resultados_desde_jsonl.py`; `limpiar_dataset.py` corrigió 28
+`mecanismo_que_bloqueo` «desconocido» (configuraciones de un solo mecanismo) y no
+encontró duplicados; `fusionar_latencia_clasificador.py` recuperó 108
+`latencia_clasificador_ms` (ver más abajo cómo); `validar_dataset.py` termina con
+exit 0 y los mismos avisos esperados de siempre. Antes de ingestar se comprobó que
+C5 no tiene bloqueos (sin saturación del límite de tasa) y que los tamaños de
+archivo coinciden con la corrida anterior.
+
+**Decisión: se SUMAN a las anteriores, no las reemplazan** (ninguna fila pasó a
+`descartados.csv`). Motivo: el proxy decide igual frente a V1-V4 que en la
+3.ª corrida; los cambios de código desde entonces son la instrumentación de
+costo, la pantalla de chat, la consola en vivo y la espera de la decisión
+humana, y ninguno altera lo que un mecanismo bloquea. Es el mismo criterio de
+la sección 6.2 («mismo código → se suman»). Resultado: **C0-C4 con 10
+repeticiones (antes 7) y C5/C6 con 6 (antes 3)**. Si se prefiriera reemplazar,
+bastaría mover las filas anteriores con
+`analisis/mover_a_descartados.py --vector-base V1 V2 V3 V4` y regenerar.
+
+**Qué cambió en las cifras** (detalle en `analisis/matriz_real_vs_hipotesis.md`,
+sección 0): ASR promedio C0 32.4→32.2, C1 15.0, C2 19.2→18.9, C3 26.1→27.7,
+C4 29.9→29.8, C5 34.2→31.9, C6 15.0. Dos celdas pasan a ser significativas
+(V3 × Filtrado, p=0.12→0.003; V4 × Mín. Privilegio agregado, p=0.07→0.032);
+las demás se mueven sin cambiar de lectura. **Variabilidad entre corridas:** el
+ASR de C0 en V3 fue 0/12, 4/72 y 5/36 en tres corridas de la misma
+configuración (p=0.16 entre las dos últimas): se declara como limitación.
+La latencia contra C0 de la tabla maestra se movió mucho (C3: +230→+155 ms)
+solo por sumar datos, lo que confirma que ese método es ruidoso y por qué se
+midió el costo directamente.
+
+**Cómo se fusionó la latencia del clasificador.** `fusionar_latencia_clasificador.py`
+agrupa por fecha UTC y lee `resultados/<fecha>/eventos.jsonl`, pero el
+`eventos.jsonl` de `2026-10-05` del repo es de la **laptop** (pruebas de la demo).
+Los eventos de Colab se guardaron como `eventos_colab.jsonl` y se fusionó con
+una carpeta temporal dentro del repo que contenía solo ese archivo (el script
+rechaza rutas fuera del repo), borrada después. 6 filas no cruzan porque el
+`mecanismo_que_bloqueo` difiere (bloqueos en *salida*, ya documentado en 6.1) y
+3 grupos por conteo distinto; el script se abstiene, como está diseñado.
+
+**Costo por mecanismo (no pasa por el CSV).** Los eventos con
+`latencia_<pieza>_us` están en `resultados/2026-10-05/eventos_colab.jsonl`; la
+carga enviada, en `costo_mecanismos_C*_*.jsonl` (60 legítimos por configuración,
+todos 200). Se resume con `analisis/costo_por_mecanismo.py`; las tablas se
+recalcularon localmente y coinciden con las del notebook. Resultados e
+interpretación: `docs/FUENTE_DE_VERDAD.md` (entradas del 2026-10-05) y
+`analisis/resultados_finales.md`, 5.8.
+
+**V7 (Excessive Agency): archivado, NO integrado.** La corrida trae 4 intentos
+por configuración (1 por prompt), con `llama3.2:1b`, sin receptor de webhook
+(las notificaciones no se verificaron) y con C6, que el estudio principal no
+tiene. El estudio principal (`analisis/resultados_excessive_agency.md`) usó
+`llama3.2` 3B local, 20 intentos por condición y notificaciones verificadas.
+Mezclarlos habría combinado modelos distintos. Se generó un resumen **aparte**
+(`analisis/extension_agencia_excesiva_colab_2026-10-05.md`, con nota manual al
+inicio) sin `--agregar-al-csv`; el CSV sigue teniendo las mismas 40 filas de
+extensión.
+
+**Cosas que NO se tocaron, a propósito:**
+- `analisis/tiempo_revision_humana.*`: al regenerarlo recogió 14 decisiones
+  humanas de las **pruebas de la demo** de ese día (no del experimento); se
+  restauró la versión con n=0.
+- `analisis/tabla_v5_punto_degradacion.md`: V5 no cambió; el script solo
+  reformateaba la tabla.
+- `analisis/comparar_v4_movimiento_lateral.py`: obsoleto desde el 2026-09-13 (ver
+  `docs/DE_DONDE_SALE_CADA_TABLA.md`, sección 7).

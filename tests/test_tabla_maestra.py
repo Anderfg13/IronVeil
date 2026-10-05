@@ -313,3 +313,94 @@ def test_latencia_peticiones_que_llegan_al_modelo_excluye_bloqueadas_y_v5() -> N
     assert tabla["Peticiones de chat (V2-V4)"] == 3
     assert tabla["Llegan al modelo"] == 2
     assert tabla["Latencia mediana, solo las que llegan (ms)"] == 500.0
+
+
+# --- Sobrecosto propio (medido directamente, no contra C0) ----------------
+
+COLUMNAS_COSTO = [
+    "Configuración",
+    "n",
+    "Sobrecosto propio, mediana (ms)",
+    "Sobrecosto propio, p95 (ms)",
+]
+
+
+def _csv_costo(ruta, filas):  # type: ignore[no-untyped-def]
+    pd.DataFrame(filas, columns=COLUMNAS_COSTO).to_csv(ruta, index=False)
+    return ruta
+
+
+def test_el_sobrecosto_se_lee_del_csv_de_costo_con_su_p95(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from analisis.tabla_maestra import sobrecosto_propio_por_config
+
+    ruta = _csv_costo(
+        tmp_path / "c.csv", [["C0", 72, 0.184, 0.628], ["C3", 62, 80.7725, 133.16]]
+    )
+
+    assert sobrecosto_propio_por_config(ruta) == {
+        "C0": "0.18 (p95 0.63)",  # menos de 10 ms: dos decimales
+        "C3": "80.8 (p95 133.2)",  # de 10 ms en adelante: uno
+    }
+
+
+def test_sin_el_csv_de_costo_no_se_inventa_ningun_numero(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from analisis.tabla_maestra import sobrecosto_propio_por_config
+
+    assert sobrecosto_propio_por_config(tmp_path / "no_existe.csv") == {}
+
+
+def test_la_tabla_maestra_trae_la_columna_y_dice_sin_dato_si_falta() -> None:
+    df = _df(
+        [
+            {
+                "configuracion": c,
+                "mecanismos_activos": "",
+                "vector_probado": "V2-A",
+                "resultado": "permitido_normal",
+                "latencia_ms": "100",
+            }
+            for c in ("C0", "C1")
+        ]
+    )
+
+    tabla = calcular_tabla_maestra(df, sobrecostos={"C0": "0.18 (p95 0.63)"})
+
+    assert (
+        list(tabla.columns).index("Sobrecosto propio (ms)")
+        == list(tabla.columns).index("Latencia mediana (ms)") + 1
+    )
+    assert tabla["Sobrecosto propio (ms)"].tolist() == ["0.18 (p95 0.63)", "Sin dato"]
+
+
+def test_la_columna_antigua_de_latencia_sigue_igual() -> None:
+    """El sobrecosto se AGREGA: la latencia contra C0 no cambia de formato."""
+    df = _df(
+        [
+            {
+                "configuracion": "C0",
+                "mecanismos_activos": "",
+                "vector_probado": "V2-A",
+                "resultado": "permitido_normal",
+                "latencia_ms": "100",
+            }
+        ]
+    )
+
+    tabla = calcular_tabla_maestra(df, sobrecostos={})
+
+    assert tabla["Latencia mediana (ms)"].tolist() == ["100.0 (baseline)"]
+
+
+def test_la_grafica_de_sobrecosto_se_genera_y_sin_csv_devuelve_none(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from analisis.graficas_finales import graficar_sobrecosto_por_config
+
+    ruta = _csv_costo(
+        tmp_path / "c.csv", [["C0", 72, 0.18, 0.6], ["C6", 57, 76.0, 160.0]]
+    )
+
+    png = graficar_sobrecosto_por_config(ruta, tmp_path / "g.png", dpi=50)
+
+    assert png is not None and png.exists()
+    assert (
+        graficar_sobrecosto_por_config(tmp_path / "no.csv", tmp_path / "x.png") is None
+    )

@@ -46,6 +46,14 @@ ya calculados por vector, no sobre los conteos crudos).
   Todas las configuraciones corrieron en la misma GPU T4 y con el mismo
   código del proxy; aun así, diferencias de ~100 ms no se distinguen del
   ruido de generación del LLM.
+- `Sobrecosto propio (ms)`: lo que el proxy agrega a una petición que llegó al
+  modelo = latencia total MENOS el tiempo del modelo, medido dentro de cada
+  petición (mediana y p95), de `analisis/costo_por_mecanismo.csv`
+  (`analisis/costo_por_mecanismo.py`, corrida de Colab del 2026-10-05). Es
+  la cifra que debe citarse como costo de latencia: NO depende de C0, así
+  que no hereda el ruido de la mediana del modelo (la columna anterior sí:
+  restando contra C0, C1 y C2 salen "más rápidas" que el baseline).
+  C0 es el proxy en passthrough (HTTP + JSON + log), sin mecanismos.
 - `Costo (líneas/horas)`: suma de `analisis/costo_mecanismos.py` (medición
   retrospectiva, no acoplada a este módulo) sobre los mecanismos activos de
   esa configuración -- C0 da "0 líneas / 0h" (baseline, ningún mecanismo),
@@ -93,6 +101,8 @@ VECTORES_COMPARABLES = ("V1", "V2", "V3", "V4")
 SIN_DATOS = "Sin datos"
 VECTORES_CON_PETICION_DE_CHAT = ("V2", "V3", "V4")
 COL_LATENCIA_MEDIANA = "Latencia mediana (ms)"
+COL_SOBRECOSTO = "Sobrecosto propio (ms)"
+RUTA_COSTO_POR_MECANISMO = _REPO_ROOT / "analisis" / "costo_por_mecanismo.csv"
 COL_FALSOS_POSITIVOS = "Falsos positivos"
 COL_COSTO = "Costo (líneas/horas)"
 
@@ -241,6 +251,30 @@ def latencia_peticiones_que_llegan_al_modelo(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(filas)
 
 
+def sobrecosto_propio_por_config(
+    ruta_csv: Path = RUTA_COSTO_POR_MECANISMO,
+) -> dict[str, str]:
+    """Sobrecosto propio por configuracion, como texto `mediana (p95 X)`.
+
+    Lee `analisis/costo_por_mecanismo.csv` (lo genera
+    `analisis/costo_por_mecanismo.py` a partir del `eventos.jsonl` del proxy).
+    Devuelve {} si el archivo no existe: la columna sale como "Sin dato", nunca
+    con un numero inventado.
+    """
+    if not ruta_csv.exists():
+        return {}
+    tabla = pd.read_csv(ruta_csv)
+    mediana = "Sobrecosto propio, mediana (ms)"
+    p95 = "Sobrecosto propio, p95 (ms)"
+    resultado: dict[str, str] = {}
+    for _, fila in tabla.iterrows():
+        decimales = 2 if fila[mediana] < 10 else 1
+        resultado[str(fila[COL_CONFIGURACION])] = (
+            f"{fila[mediana]:.{decimales}f} (p95 {fila[p95]:.{decimales}f})"
+        )
+    return resultado
+
+
 def _formatear_latencia_mediana(
     config: str, latencia: float | None, latencia_c0: float | None
 ) -> str | None:
@@ -264,6 +298,7 @@ def _construir_fila(
     asr_v5: dict[str, float],
     latencias: dict[str, float | None],
     latencia_c0: float | None,
+    sobrecostos: dict[str, str] | None = None,
 ) -> dict[str, object]:
     """Arma una fila de la tabla maestra para una sola configuracion."""
     fila: dict[str, object] = {COL_CONFIGURACION: config}
@@ -275,6 +310,7 @@ def _construir_fila(
     fila[COL_LATENCIA_MEDIANA] = _formatear_latencia_mediana(
         config, latencias.get(config), latencia_c0
     )
+    fila[COL_SOBRECOSTO] = (sobrecostos or {}).get(config, "Sin dato")
     fila[COL_FALSOS_POSITIVOS] = FALSOS_POSITIVOS_POR_CONFIG.get(config, "Sin dato")
 
     lineas_costo, horas_costo = costo_por_configuracion(activos)
@@ -286,8 +322,16 @@ def _construir_fila(
     return fila
 
 
-def calcular_tabla_maestra(df: pd.DataFrame) -> pd.DataFrame:
-    """Arma la tabla maestra de 1 fila por configuracion presente en `df`."""
+def calcular_tabla_maestra(
+    df: pd.DataFrame, sobrecostos: dict[str, str] | None = None
+) -> pd.DataFrame:
+    """Arma la tabla maestra de 1 fila por configuracion presente en `df`.
+
+    `sobrecostos` (config -> texto) viene de `sobrecosto_propio_por_config()`;
+    si no se pasa, se lee de `analisis/costo_por_mecanismo.csv`.
+    """
+    if sobrecostos is None:
+        sobrecostos = sobrecosto_propio_por_config()
     tabla_asr = calcular_asr(df)
     mecanismos = mecanismos_activos_por_config(df)
     asr_prom = asr_promedio_por_config(tabla_asr, VECTORES_COMPARABLES)
@@ -297,7 +341,13 @@ def calcular_tabla_maestra(df: pd.DataFrame) -> pd.DataFrame:
 
     filas = [
         _construir_fila(
-            config, mecanismos[config], asr_prom, asr_v5, latencias, latencia_c0
+            config,
+            mecanismos[config],
+            asr_prom,
+            asr_v5,
+            latencias,
+            latencia_c0,
+            sobrecostos,
         )
         for config in ORDEN_CONFIGURACIONES
         if config in mecanismos
@@ -311,6 +361,7 @@ def calcular_tabla_maestra(df: pd.DataFrame) -> pd.DataFrame:
             COL_ASR_V5,
             COL_FALSOS_POSITIVOS,
             COL_LATENCIA_MEDIANA,
+            COL_SOBRECOSTO,
             COL_COSTO,
         ]
     )

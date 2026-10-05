@@ -137,9 +137,64 @@ def graficar_latencia_por_config(
         0.5,
         -0.24,
         "Mediana de latencia_ms, excluyendo filas de V5 (ráfaga de carga).\n"
-        "Limitación real, no oculta: mezcla hardware distinto entre semanas\n"
-        "(laptop CPU en C0-C5, GPU T4 de Colab en la mayoría de C6) -- no\n"
-        "aísla limpiamente el costo de los mecanismos (ver tabla_maestra.py).",
+        "Limitación real, no oculta: incluye el tiempo del modelo, que varía\n"
+        "entre configuraciones; diferencias de ~100 ms no se distinguen del\n"
+        "ruido. Para el costo propio usar sobrecosto_propio_por_configuracion.png.",
+        transform=ax.transAxes,
+        ha="center",
+        va="top",
+        fontsize=8,
+        color="dimgray",
+    )
+    fig.tight_layout()
+    ruta_png.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(ruta_png, dpi=dpi)
+    plt.close(fig)
+    return ruta_png
+
+
+def graficar_sobrecosto_por_config(
+    ruta_csv: Path, ruta_png: Path, dpi: int = DPI_FINAL
+) -> Path | None:
+    """Barras del sobrecosto propio (mediana) con su p95, por configuracion.
+
+    Sale de `analisis/costo_por_mecanismo.csv`: latencia total menos el tiempo
+    del modelo, medido dentro de cada peticion (ver `costo_por_mecanismo.py`).
+    Escala logaritmica: sin clasificacion el costo es de decimas de ms; con
+    ella, de decenas. Devuelve None si el CSV no existe.
+    """
+    if not ruta_csv.exists():
+        return None
+    tabla = pd.read_csv(ruta_csv).set_index(COL_CONFIGURACION)
+    configs = [c for c in ORDEN_CONFIGURACIONES if c in tabla.index]
+    mediana = [tabla.loc[c, "Sobrecosto propio, mediana (ms)"] for c in configs]
+    p95 = [tabla.loc[c, "Sobrecosto propio, p95 (ms)"] for c in configs]
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    barras = ax.bar(configs, mediana, color="#2c7fb8", label="Mediana")
+    ax.scatter(configs, p95, color="#d95f0e", zorder=3, marker="D", label="p95")
+    ax.set_yscale("log")
+    ax.set_ylim(min(mediana) * 0.5, max(p95) * 2.5)
+    for barra, valor in zip(barras, mediana, strict=True):
+        ax.text(
+            barra.get_x() + barra.get_width() / 2,
+            valor * 1.15,
+            f"{valor:.2f} ms",
+            ha="center",
+            va="bottom",
+            fontsize=9,
+        )
+    ax.set_xlabel(COL_CONFIGURACION)
+    ax.set_ylabel("Sobrecosto propio (ms, escala logarítmica)")
+    ax.set_title("Costo propio del proxy por configuración")
+    ax.legend(loc="upper left")
+    ax.text(
+        0.5,
+        -0.2,
+        "Latencia total menos el tiempo del modelo, medido dentro de cada petición\n"
+        "(peticiones que llegaron al modelo; Colab, GPU T4).\n"
+        "C0 = proxy sin mecanismos. La clasificación (Prompt Guard + Llama Guard)\n"
+        "es casi todo el costo.",
         transform=ax.transAxes,
         ha="center",
         va="top",
@@ -254,8 +309,14 @@ def main() -> None:
     ruta_heatmap = graficar_heatmap_cobertura(
         matriz_hipotesis, matriz_real, output_dir / "matriz_cobertura_heatmap.png"
     )
+    ruta_sobrecosto = graficar_sobrecosto_por_config(
+        _REPO_ROOT / "analisis" / "costo_por_mecanismo.csv",
+        output_dir / "sobrecosto_propio_por_configuracion.png",
+    )
 
-    for ruta in (ruta_asr, ruta_latencia, ruta_heatmap):
+    for ruta in (ruta_asr, ruta_latencia, ruta_heatmap, ruta_sobrecosto):
+        if ruta is None:
+            continue
         logger.info("Gráfica final escrita en %s (dpi=%d)", ruta, DPI_FINAL)
 
 

@@ -24,8 +24,10 @@
   `docs/LIMPIEZA_DATOS.md`, sección 6.
 - **2.ª corrida (2026-10-03, C0-C6 × 3 repeticiones): ingestada.** Ver
   `docs/LIMPIEZA_DATOS.md`, sección 6.1. **3.ª corrida (2026-10-03/04): ingestada.**
-  Ver `docs/LIMPIEZA_DATOS.md`, sección 6.2. Pendiente aparte: V5 en GPU con el
-  código actual.
+  Ver `docs/LIMPIEZA_DATOS.md`, sección 6.2. **4.ª corrida (2026-10-05, con la
+  sección 8c de costo por mecanismo): ingestada** (V1-V4 sumados; V7 archivado
+  aparte). Ver `docs/LIMPIEZA_DATOS.md`, sección 8, y `docs/DE_DONDE_SALE_CADA_TABLA.md`.
+  Pendiente aparte: V5 en GPU con el código actual.
 
 ## Después de correr el notebook (lo hace Claude)
 

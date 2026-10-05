@@ -167,6 +167,14 @@ repositorio):
 Guion paso a paso (curl → defensas → logs → avisos → SIEM), con comandos
 verificados y los problemas conocidos de esta máquina: `docs/DEMO.md`.
 
+## Resultados y tablas del informe
+
+**Si vas a escribir o terminar el informe, empieza por `docs/DE_DONDE_SALE_CADA_TABLA.md`**: dice,
+para cada tabla y figura, de qué archivo sale, qué script la genera, con qué datos y qué
+documentos son texto escrito a mano. Las cifras finales y la respuesta a la pregunta de
+investigación están en `analisis/resultados_finales.md`; el costo de latencia por mecanismo,
+medido directamente, en `analisis/costo_por_mecanismo.md`.
+
 ## Pantalla de chat de la demo
 
 `IRONVEIL_DEMO=1` activa **/demo**: una pantalla tipo chat (escribes, recibes la
