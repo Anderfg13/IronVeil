@@ -86,8 +86,11 @@ Lo que se ve:
   (aprobación apagada) no hubo ninguna, como se esperaba.
 - El aviso incluye mecanismo/motivo, vector, configuración activa y timestamp;
   nunca el texto de la petición.
-- **No verificado:** la entrega en Slack, correo o WhatsApp (requiere
-  credenciales propias); solo se probó el canal de webhook local.
+- **Slack verificado a mano (2026-10-05):** el aviso de una petición encolada
+  llegó al canal de Slack (prueba aislada y prueba con el proxy y
+  `filtrado` + `aprobacion_humana`). **No verificado:** correo y WhatsApp
+  (requieren credenciales propias); las 16 notificaciones de V7 se contaron con
+  el webhook local, no en Slack.
 
 ## Integración SIEM (misma extensión)
 
