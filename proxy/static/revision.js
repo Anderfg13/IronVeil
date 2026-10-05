@@ -4,10 +4,13 @@
    HTML. Todo se pinta con textContent / nodos de texto (ver `h()`). */
 
 const SONDEO_MS = 3000;
+const AVISO_INFO_MS = 6000;
+const CLAVE_ATAJOS = "ironveil-atajos";
 
 const estado = {
   pendientes: [],
   decisiones: [],
+  estadisticas: null,
   seleccion: null,
   pestana: "pendientes",
   sesion: null,
@@ -16,6 +19,8 @@ const estado = {
   mostrado: null,
   moverFoco: false,
   cargado: false,
+  enLinea: null,
+  atajos: true,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -34,6 +39,10 @@ function h(etiqueta, atributos, ...hijos) {
     nodo.append(hijo instanceof Node ? hijo : document.createTextNode(String(hijo)));
   }
   return nodo;
+}
+
+function plural(n, uno, varios) {
+  return n === 1 ? uno : varios;
 }
 
 function duracion(segundos) {
@@ -64,35 +73,76 @@ async function api(ruta, opciones = {}) {
 }
 
 /* Region viva, oculta y pequena: anuncia solo lo importante (un resultado, una
-   peticion nueva), sin que el lector relea el expediente completo. */
+   peticion nueva, un cambio de conexion), sin que el lector relea la pagina. */
 function anunciar(texto) {
   const region = $("anuncios");
   region.textContent = "";
   setTimeout(() => { region.textContent = texto; }, 50);
 }
 
+/* Los errores se quedan hasta que la persona los cierra (role="alert"); los
+   informativos son temporales (role="status"). */
 function aviso(texto, error = false) {
-  const nodo = h("div", { class: error ? "aviso error" : "aviso" }, texto);
-  $("avisos").append(nodo);
-  setTimeout(() => nodo.remove(), 5000);
+  const contenedor = $("avisos");
+  if (error) {
+    for (const previo of contenedor.querySelectorAll(".aviso.error")) {
+      if (previo.dataset.texto === texto) previo.remove();
+    }
+  }
+  const nodo = h("div", { class: error ? "aviso error" : "aviso", role: error ? "alert" : "status", "data-texto": texto },
+    h("p", {}, texto),
+    error && h("button", { class: "cerrar-aviso", type: "button", onclick: () => nodo.remove() }, "Cerrar", h("span", { class: "solo-lectores" }, " aviso")));
+  contenedor.append(nodo);
+  if (!error) setTimeout(() => nodo.remove(), AVISO_INFO_MS);
 }
 
 /* ---------- Encabezado ---------- */
 
+/* El texto de estado cambia cada segundo, asi que NO es una region viva: solo
+   se anuncia cuando la conexion cambia de estado. */
 function pintarVivo(ok) {
-  const caja = $("vivo");
-  caja.classList.toggle("caido", !ok);
+  $("vivo").classList.toggle("caido", !ok);
   const segundos = Math.max(0, Math.round((Date.now() - estado.ultimaCarga) / 1000));
-  $("vivo-texto").textContent = ok ? `En vivo · actualizado hace ${segundos} s` : "Sin conexión con el proxy";
+  $("vivo-estado").textContent = ok ? "En vivo" : "Sin conexión con el proxy";
+  $("vivo-detalle").textContent = ok ? ` · actualizado hace ${segundos} s` : "";
+  if (estado.cargado && estado.enLinea !== null && estado.enLinea !== ok) {
+    anunciar(ok ? "Conexión con el proxy recuperada." : "Se perdió la conexión con el proxy.");
+  }
+  estado.enLinea = ok;
+}
+
+function esperaMaxima() {
+  const e = estado.estadisticas;
+  if (!e || !e.pendientes) return 0;
+  return e.espera_maxima_s + Math.round((Date.now() - estado.ultimaCarga) / 1000);
+}
+
+function pintarFranja() {
+  const e = estado.estadisticas;
+  if (!e) return;
+  $("f-pendientes").replaceChildren(
+    ...(e.pendientes
+      ? [h("b", {}, String(e.pendientes)), ` ${plural(e.pendientes, "petición pendiente", "peticiones pendientes")}`]
+      : ["No hay peticiones pendientes"]));
+  $("f-espera").hidden = !e.pendientes;
+  $("f-espera-valor").textContent = duracion(esperaMaxima());
+}
+
+function resumenHistorial(e) {
+  const total = e.aprobadas + e.rechazadas;
+  if (!total) return "";
+  const tiempo = e.tiempo_medio_decision_s === null ? "" : ` · tiempo medio de decisión: ${duracion(e.tiempo_medio_decision_s)}`;
+  return `${total} ${plural(total, "decidida", "decididas")}: ${e.aprobadas} ${plural(e.aprobadas, "aprobada", "aprobadas")} · ${e.rechazadas} ${plural(e.rechazadas, "rechazada", "rechazadas")}${tiempo}`;
 }
 
 function pintarEstadisticas(e) {
-  $("c-pendientes").textContent = e.pendientes;
-  $("c-espera").replaceChildren(duracion(e.espera_maxima_s));
-  const total = e.aprobadas + e.rechazadas;
-  $("c-decididas").replaceChildren(String(total), h("small", {}, total ? `${e.aprobadas} aprobadas · ${e.rechazadas} rechazadas` : ""));
-  $("c-tiempo").textContent = e.tiempo_medio_decision_s === null ? "—" : duracion(e.tiempo_medio_decision_s);
+  estado.estadisticas = e;
+  pintarFranja();
   $("cuenta-pendientes").textContent = e.pendientes;
+  const resumen = $("resumen-historial");
+  resumen.textContent = resumenHistorial(e);
+  resumen.hidden = estado.pestana !== "historial" || !resumen.textContent;
+  document.title = `${e.pendientes ? `(${e.pendientes}) ` : ""}Revisión humana · IronVeil`;
 }
 
 /* ---------- Lista ---------- */
@@ -110,13 +160,14 @@ function pintarLista() {
 function construirLista() {
   const ul = $("elementos");
   ul.replaceChildren();
+  $("resumen-historial").hidden = estado.pestana !== "historial" || !$("resumen-historial").textContent;
   if (estado.pestana === "historial") return pintarHistorial(ul);
   if (!estado.pendientes.length) {
     ul.append(
       h("li", { class: "vacio" },
-        h("img", { src: "/revision/static/logo.svg", alt: "", width: 56, height: 56 }),
         h("h3", {}, "No hay nada por revisar"),
-        h("p", {}, "Cuando un mecanismo retenga una petición, aparecerá aquí.")));
+        h("p", {}, "Cuando un mecanismo retenga una petición, aparecerá aquí. La página se actualiza sola."),
+        estado.decisiones.length > 0 && h("button", { class: "secundario", type: "button", onclick: () => cambiarPestana("historial") }, "Ver historial")));
     return;
   }
   for (const p of estado.pendientes) {
@@ -138,7 +189,10 @@ function construirLista() {
 
 function pintarHistorial(ul) {
   if (!estado.decisiones.length) {
-    ul.append(h("li", { class: "vacio" }, h("h3", {}, "Aún no hay decisiones"), h("p", {}, "Las que tomes aparecerán aquí, con quién y cuánto tardó.")));
+    ul.append(h("li", { class: "vacio" },
+      h("h3", {}, "Aún no hay decisiones"),
+      h("p", {}, "Las que tomes aparecerán aquí, con quién y cuánto tardó."),
+      estado.pendientes.length > 0 && h("button", { class: "secundario", type: "button", onclick: () => cambiarPestana("pendientes") }, "Ver pendientes")));
     return;
   }
   for (const d of estado.decisiones) {
@@ -163,8 +217,8 @@ function evidenciaDeTexto(p) {
   return h("div", {},
     bloque,
     (hayPatron || hayCodificado) && h("div", { class: "leyenda" },
-      hayPatron && h("span", {}, h("b", { class: "l-patron" }), "Coincide con un patrón de ataque"),
-      hayCodificado && h("span", {}, h("b", { class: "l-codificado" }), "Texto que parece codificado")),
+      hayPatron && h("span", {}, h("b", { class: "l-patron" }), "Subrayado continuo: coincide con un patrón de ataque"),
+      hayCodificado && h("span", {}, h("b", { class: "l-codificado" }), "Subrayado punteado: texto que parece codificado")),
     p.truncado && h("div", { class: "nota-truncado" }, "Se muestran los primeros 8 000 caracteres."));
 }
 
@@ -175,6 +229,8 @@ function evidenciaDeHerramienta(p) {
     h("div", { class: "banner-simulada" }, "Herramienta SIMULADA: aunque la apruebes no envía correos ni consulta datos reales; solo escribe en el log."));
 }
 
+const GRAVEDAD = { alta: "Alta", media: "Media", info: "Info" };
+
 function lectura(p) {
   const s = p.sospecha;
   return h("div", { class: "lectura" },
@@ -184,7 +240,9 @@ function lectura(p) {
         h("div", { class: "marcas" }), h("div", { class: "pin", id: "pin" })),
       h("div", { class: "extremos" }, h("span", {}, "Falso positivo"), h("span", {}, "Ataque"))),
     p.senales.length
-      ? h("ul", { class: "senales" }, p.senales.map((x) => h("li", { class: `senal ${x.nivel}` }, h("i", {}), h("div", {}, h("b", {}, x.titulo), h("span", {}, x.detalle)))))
+      ? h("ul", { class: "senales" }, p.senales.map((x) => h("li", { class: `senal ${x.nivel}` },
+        h("span", { class: "gravedad" }, GRAVEDAD[x.nivel] || x.nivel),
+        h("div", {}, h("b", {}, x.titulo), h("span", {}, x.detalle)))))
       : h("p", { class: "sin-senales" }, "No se encontraron señales en el contenido. Mira la razón por la que se retuvo."));
 }
 
@@ -194,10 +252,9 @@ function pintarExpediente() {
   const p = estado.pendientes.find((x) => x.id === estado.seleccion);
   estado.mostrado = p ? p.id : null;
   if (!p) {
-    caja.replaceChildren(h("div", { class: "vacio" }, h("img", { src: "/revision/static/logo.svg", alt: "", width: 56, height: 56 }),
-      h("h3", {}, estado.pendientes.length ? "Elige una petición" : "Todo en orden"),
+    caja.replaceChildren(h("div", { class: "vacio" },
+      h("h2", { tabindex: "-1" }, estado.pendientes.length ? "Elige una petición" : "Todo en orden"),
       h("p", {}, estado.pendientes.length ? "Selecciónala en la lista para ver la evidencia y decidir." : "No hay peticiones esperando una decisión.")));
-    if (!estado.pendientes.length) caja.querySelector("img").remove();
     enfocarTitulo(caja);
     return;
   }
@@ -242,16 +299,19 @@ function enfocarTitulo(caja) {
 
 function pintarResultado(caja) {
   const r = estado.resultado;
+  const quedan = estado.pendientes.length > 0;
   caja.replaceChildren(h("div", { class: "resultado" },
     h("h2", { class: r.accion, tabindex: "-1" }, r.accion === "aprobada" ? "Aprobada: se reconoció como falso positivo" : "Rechazada: se confirmó el ataque"),
     h("p", {}, `Decisión de ${r.revisor} registrada en ${duracion(Math.round(r.tiempoMs / 1000))}.`),
     r.detalle && h("div", {}, h("h3", {}, r.tituloDetalle), h("pre", { tabindex: "0" }, r.detalle)),
-    h("button", { class: "siguiente", type: "button", onclick: () => { estado.resultado = null; estado.moverFoco = true; seleccionarPrimera(); } }, "Ver siguiente")));
+    h("button", { class: "siguiente", type: "button", onclick: () => { estado.resultado = null; estado.moverFoco = true; seleccionarPrimera(); } }, quedan ? "Ver siguiente petición" : "Volver a la lista")));
   enfocarTitulo(caja);
 }
 
 /* ---------- Decidir ---------- */
 
+/* El foco va al titulo, no a un boton: ninguna opcion queda como predeterminada,
+   asi una tecla suelta (A, R) no confirma por accidente (HIG: alerts.md). */
 function confirmar(p, accion) {
   const dialogo = $("confirmar");
   const aprobar = accion === "aprobar";
@@ -261,20 +321,20 @@ function confirmar(p, accion) {
     : "La petición se descarta y no llega al modelo. Esta acción queda registrada.";
   const ok = $("confirmar-ok");
   ok.className = "accion confirmar";
-  ok.textContent = aprobar ? "Sí, aprobar" : "Sí, rechazar";
+  ok.textContent = aprobar ? "Aprobar" : "Rechazar";
   ok.onclick = () => { dialogo.close(); decidir(p, accion); };
   $("confirmar-cancelar").onclick = () => dialogo.close();
   dialogo.showModal();
-  ok.focus();
+  $("confirmar-titulo").focus();
 }
 
 async function decidir(p, accion) {
   const inicio = Date.now();
   try {
     const respuesta = await api(`/revision/${encodeURIComponent(p.id)}/${accion}`, { method: "POST" });
-    if (respuesta.status === 404) { aviso("Otra persona ya resolvió esta petición.", true); await cargar(); return; }
-    if (respuesta.status === 403) { aviso("Tu sesión no puede decidir. Vuelve a iniciar sesión.", true); return; }
-    if (!respuesta.ok) { aviso("No se pudo registrar la decisión. Inténtalo otra vez.", true); return; }
+    if (respuesta.status === 404) { aviso("Otra persona ya resolvió esta petición. La lista se actualizó con las que siguen pendientes.", true); await cargar(); return; }
+    if (respuesta.status === 403) { aviso("Tu cuenta no puede decidir, o la sesión caducó. Inicia sesión de nuevo con una cuenta de revisor.", true); return; }
+    if (!respuesta.ok) { aviso("No se pudo registrar la decisión. Comprueba que la petición siga en la lista e inténtalo otra vez.", true); return; }
     const cuerpo = await respuesta.json();
     const aprobada = accion === "aprobar";
     let detalle = null, tituloDetalle = "";
@@ -291,7 +351,7 @@ async function decidir(p, accion) {
     await cargar();
     pintarExpediente();
   } catch (e) {
-    if (e.message !== "sesion") aviso("Sin conexión con el proxy.", true);
+    if (e.message !== "sesion") aviso("No hay conexión con el proxy y la decisión no se registró. Comprueba que el proxy esté en marcha e inténtalo otra vez.", true);
   }
 }
 
@@ -312,14 +372,14 @@ async function cargar() {
     const existe = estado.pendientes.some((p) => p.id === estado.seleccion);
     if (!existe && !estado.resultado) estado.seleccion = estado.pendientes[0] ? estado.pendientes[0].id : null;
     const cambio = vistoAntes !== estado.pendientes.map((p) => p.id).join();
-    if (cambio) pintarLista();
+    if (cambio || estado.pestana === "historial") pintarLista();
     // El expediente solo se repinta si cambio la peticion mostrada: una llegada
     // nueva no debe borrar el scroll, la seleccion de texto ni el foco.
     if (!document.querySelector("dialog[open]") && !estado.resultado && estado.mostrado !== estado.seleccion) pintarExpediente();
     const nuevas = estado.pendientes.filter((p) => !conocidas.has(p.id)).length;
     if (estado.cargado && nuevas) anunciar(`${nuevas === 1 ? "Llegó 1 petición nueva" : `Llegaron ${nuevas} peticiones nuevas`}. Pendientes: ${estado.pendientes.length}.`);
-    estado.cargado = true;
     pintarVivo(true);
+    estado.cargado = true;
   } catch (e) {
     if (e.message !== "sesion") pintarVivo(false);
   }
@@ -333,46 +393,82 @@ function tictac() {
       nodo.textContent = nodo.id === "espera-grande" ? `En cola hace ${duracion(p.espera_s + pasados)}` : duracion(p.espera_s + pasados);
     }
   }
+  pintarFranja();
   if (estado.ultimaCarga) pintarVivo(!$("vivo").classList.contains("caido"));
+}
+
+/* ---------- Atajos de teclado ---------- */
+
+/* Una tecla suelta puede dispararse por dictado por voz o por tecnologia de
+   apoyo. Por eso solo actuan con el foco dentro de la lista o del expediente,
+   nunca con modificadores ni repeticion, y se pueden desactivar (criterio
+   propio; la HIG pide pocos atajos propios y con Command en keyboards.md). */
+function atajos(evento) {
+  if (!estado.atajos || evento.repeat || evento.isComposing) return;
+  if (evento.ctrlKey || evento.metaKey || evento.altKey || evento.shiftKey) return;
+  const destino = evento.target;
+  if (!destino.closest || destino.closest("input, textarea, select, dialog, [contenteditable]")) return;
+  if (!destino.closest(".lista, #expediente")) return;
+  const tecla = evento.key.toLowerCase();
+  const idx = estado.pendientes.findIndex((p) => p.id === estado.seleccion);
+  const actual = estado.pendientes[idx];
+  const revisor = estado.sesion.rol === "revisor" && !estado.resultado;
+  if (tecla === "j" && estado.pendientes[idx + 1]) seleccionar(estado.pendientes[idx + 1].id);
+  else if (tecla === "k" && idx > 0) seleccionar(estado.pendientes[idx - 1].id);
+  else if (tecla === "a" && actual && revisor) confirmar(actual, "aprobar");
+  else if (tecla === "r" && actual && revisor) confirmar(actual, "rechazar");
+}
+
+function aplicarAtajos(activos) {
+  estado.atajos = activos;
+  document.body.classList.toggle("sin-atajos", !activos);
+  $("atajos-activos").checked = activos;
+}
+
+function iniciarAtajos() {
+  let guardado = null;
+  try { guardado = localStorage.getItem(CLAVE_ATAJOS); } catch { /* sin almacenamiento: se ignora */ }
+  aplicarAtajos(guardado !== "no");
+  $("atajos-activos").addEventListener("change", (evento) => {
+    aplicarAtajos(evento.target.checked);
+    try { localStorage.setItem(CLAVE_ATAJOS, evento.target.checked ? "si" : "no"); } catch { /* idem */ }
+  });
+  document.addEventListener("keydown", atajos);
+}
+
+/* ---------- Pestanas (patron tablist) ---------- */
+
+const PESTANAS = ["pendientes", "historial"];
+
+function cambiarPestana(nombre, enfocar = false) {
+  estado.pestana = nombre;
+  for (const id of PESTANAS) {
+    const tab = $(`tab-${id}`);
+    const activa = id === nombre;
+    tab.setAttribute("aria-selected", String(activa));
+    tab.setAttribute("tabindex", activa ? "0" : "-1");
+  }
+  $("panel-lista").setAttribute("aria-labelledby", `tab-${nombre}`);
+  pintarLista();
+  if (enfocar) $(`tab-${nombre}`).focus();
+}
+
+function teclasPestanas(evento) {
+  const idx = PESTANAS.indexOf(estado.pestana);
+  let destino = null;
+  if (evento.key === "ArrowRight") destino = (idx + 1) % PESTANAS.length;
+  else if (evento.key === "ArrowLeft") destino = (idx - 1 + PESTANAS.length) % PESTANAS.length;
+  else if (evento.key === "Home") destino = 0;
+  else if (evento.key === "End") destino = PESTANAS.length - 1;
+  if (destino === null) return;
+  evento.preventDefault();
+  cambiarPestana(PESTANAS[destino], true);
 }
 
 /* ---------- Arranque ---------- */
 
-function aplicarTema(tema) {
-  document.documentElement.setAttribute("data-theme", tema);
-  try { localStorage.setItem("ironveil-tema", tema); } catch { /* sin almacenamiento: se ignora */ }
-}
-
-function iniciarTema() {
-  let guardado = null;
-  try { guardado = localStorage.getItem("ironveil-tema"); } catch { /* idem */ }
-  if (guardado) document.documentElement.setAttribute("data-theme", guardado);
-  $("tema").addEventListener("click", () => {
-    const actual = document.documentElement.getAttribute("data-theme")
-      || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-    aplicarTema(actual === "dark" ? "light" : "dark");
-  });
-}
-
-function atajos(evento) {
-  if (evento.target.closest("input, textarea, dialog") || evento.ctrlKey || evento.metaKey || evento.altKey) return;
-  const idx = estado.pendientes.findIndex((p) => p.id === estado.seleccion);
-  const actual = estado.pendientes[idx];
-  if (evento.key === "j" && estado.pendientes[idx + 1]) seleccionar(estado.pendientes[idx + 1].id);
-  else if (evento.key === "k" && idx > 0) seleccionar(estado.pendientes[idx - 1].id);
-  else if (actual && estado.sesion.rol === "revisor" && !estado.resultado && evento.key === "a") confirmar(actual, "aprobar");
-  else if (actual && estado.sesion.rol === "revisor" && !estado.resultado && evento.key === "r") confirmar(actual, "rechazar");
-}
-
-function cambiarPestana(nombre) {
-  estado.pestana = nombre;
-  $("tab-pendientes").setAttribute("aria-selected", String(nombre === "pendientes"));
-  $("tab-historial").setAttribute("aria-selected", String(nombre === "historial"));
-  pintarLista();
-}
-
 async function iniciar() {
-  iniciarTema();
+  iniciarAtajos();
   const respuesta = await api("/revision/sesion");
   estado.sesion = await respuesta.json();
   $("usuario-nombre").textContent = estado.sesion.usuario;
@@ -382,13 +478,12 @@ async function iniciar() {
   const salir = $("salir");
   salir.hidden = !estado.sesion.autenticacion;
   salir.addEventListener("click", async () => { await fetch("/revision/logout", { method: "POST", credentials: "same-origin" }); window.location.assign("/revision/login"); });
-  $("tab-pendientes").addEventListener("click", () => cambiarPestana("pendientes"));
-  $("tab-historial").addEventListener("click", () => cambiarPestana("historial"));
-  document.addEventListener("keydown", atajos);
+  for (const id of PESTANAS) $(`tab-${id}`).addEventListener("click", () => cambiarPestana(id));
+  document.querySelector('[role="tablist"]').addEventListener("keydown", teclasPestanas);
   await cargar();
   pintarExpediente();
   setInterval(() => { if (!document.hidden) cargar(); }, SONDEO_MS);
   setInterval(tictac, 1000);
 }
 
-iniciar().catch((e) => { if (e.message !== "sesion") $("vivo-texto").textContent = "No se pudo iniciar la consola"; });
+iniciar().catch((e) => { if (e.message !== "sesion") $("vivo-estado").textContent = "No se pudo iniciar la consola"; });
