@@ -385,7 +385,7 @@ def test_el_resumen_del_historial_usa_el_plural_correcto(
             f"{funciones}\nconsole.log(resumenHistorial({entrada}))",
         ],  # noqa: S607
         capture_output=True,
-        text=True,
+        encoding="utf-8",  # node escribe UTF-8; sin esto Windows decodifica con cp1252
         check=True,
         timeout=20,
     )
