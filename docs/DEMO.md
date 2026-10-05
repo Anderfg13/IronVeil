@@ -175,6 +175,8 @@ aprobar** / **Es un ataque · rechazar** (atajos `A` y `R`). Di: «encolar no es
 rechazar: es una demora que se mide como costo», y que la lectura es
 orientativa: la decisión es de la persona.
 
+**Dónde se revisa:** la consola está en **http://localhost:8000/revision/ui**. Si defines `REVISION_URL_BASE=http://localhost:8000` en el `.env`, el aviso de Slack (y el de correo/WhatsApp) termina con un enlace a esa página: un clic y estás en la consola. Es solo un enlace a la consola, no a la petición concreta ni uno que apruebe por sí solo: decidir exige (si hay login) iniciar sesión y confirmar. Un enlace `localhost` solo abre en la máquina donde corre el proxy.
+
 **Escena 5 · Los registros.**
 ```bash
 tail -n 1 "$(ls -t resultados/*/eventos.jsonl | head -1)" | python -m json.tool

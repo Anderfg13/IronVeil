@@ -27,6 +27,12 @@ El mensaje NO incluye el texto de la peticion (puede traer una credencial
 -- el experimento las maneja a proposito), solo metadatos: que mecanismo/
 motivo detecto el riesgo, vector, configuracion activa, modelo y timestamp.
 La verificacion TLS nunca se desactiva.
+
+**Enlace a la consola.** Con `REVISION_URL_BASE` (p. ej. `http://localhost:8000`)
+el aviso termina con un enlace a `/revision/ui`, la consola donde un revisor
+aprueba o rechaza. Es solo un enlace: decidir exige iniciar sesion y confirmar
+en la consola (nunca hay una URL que apruebe por si sola). Sin la variable, o
+si no es una URL http(s) valida, el aviso sale sin enlace.
 """
 
 from __future__ import annotations
@@ -47,6 +53,8 @@ import httpx
 logger = logging.getLogger(__name__)
 
 TIMEOUT_NOTIFICACION_S: float = 5.0
+ENV_URL_BASE = "REVISION_URL_BASE"
+_RUTA_CONSOLA = "/revision/ui"
 _URL_TWILIO = "https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json"
 # Texto plano (sin TLS) solo hacia el propio laboratorio: el receptor local de
 # la demo o el host de Docker. Cualquier otro destino debe ser HTTPS.
@@ -83,8 +91,27 @@ def construir_evento_notificacion(
     return evento
 
 
-def formatear_texto(evento: dict[str, Any]) -> str:
-    """Texto legible para Slack / correo / WhatsApp."""
+def url_consola() -> str | None:
+    """URL de la consola de revision, o None si `REVISION_URL_BASE` no sirve.
+
+    Solo acepta http/https con host; rechaza espacios y los caracteres que
+    cambian el significado de un enlace de Slack (`<`, `>`, `|`).
+    """
+    base = os.environ.get(ENV_URL_BASE, "").strip().rstrip("/")
+    if not base or any(c in base for c in " <>|\"'"):
+        return None
+    partes = urlsplit(base)
+    if partes.scheme not in ("http", "https") or not partes.hostname:
+        return None
+    return base + _RUTA_CONSOLA
+
+
+def formatear_texto(evento: dict[str, Any], formato: str = "texto") -> str:
+    """Texto legible para Slack / correo / WhatsApp.
+
+    `formato="slack"` escribe el enlace a la consola en la sintaxis de Slack
+    (`<url|texto>`); en cualquier otro caso va la URL tal cual.
+    """
     lineas = [
         "IronVeil: una peticion quedo en la cola de revision humana",
         f"Detectado por: {evento['motivo']}",
@@ -95,6 +122,12 @@ def formatear_texto(evento: dict[str, Any]) -> str:
     ]
     if evento.get("herramienta"):
         lineas.insert(2, f"Herramienta SIMULADA solicitada: {evento['herramienta']}")
+    enlace = url_consola()
+    if enlace is not None:
+        if formato == "slack":
+            lineas.append(f"<{enlace}|Abrir la consola de revision>")
+        else:
+            lineas.append(f"Revisar y decidir: {enlace}")
     return "\n".join(lineas)
 
 
@@ -120,7 +153,9 @@ def _enviar_slack(evento: dict[str, Any]) -> None:
     if not url.startswith("https://"):
         raise ValueError("NOTIFICAR_SLACK_WEBHOOK_URL debe empezar por https://")
     httpx.post(
-        url, json={"text": formatear_texto(evento)}, timeout=TIMEOUT_NOTIFICACION_S
+        url,
+        json={"text": formatear_texto(evento, "slack")},
+        timeout=TIMEOUT_NOTIFICACION_S,
     ).raise_for_status()
 
 

@@ -439,3 +439,93 @@ def test_smtps_usa_un_contexto_que_verifica_certificado(
     assert contexto.verify_mode == ssl.CERT_REQUIRED
     assert contexto.check_hostname is True
     assert contexto.minimum_version >= ssl.TLSVersion.TLSv1_2
+
+
+# --- Enlace a la consola de revision ------------------------------------------
+
+
+@pytest.fixture
+def _sin_url_base(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(notificaciones.ENV_URL_BASE, raising=False)
+
+
+@pytest.mark.usefixtures("_sin_url_base")
+def test_sin_url_base_el_aviso_no_lleva_enlace() -> None:
+    texto = notificaciones.formatear_texto(_evento())
+
+    assert notificaciones.url_consola() is None
+    assert "/revision" not in texto
+    assert "http" not in texto
+
+
+def test_con_url_base_el_aviso_termina_en_la_consola(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(notificaciones.ENV_URL_BASE, "http://localhost:8000")
+
+    texto = notificaciones.formatear_texto(_evento())
+
+    assert texto.splitlines()[-1] == (
+        "Revisar y decidir: http://localhost:8000/revision/ui"
+    )
+
+
+def test_la_barra_final_de_la_url_base_no_duplica_la_ruta(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(notificaciones.ENV_URL_BASE, " https://iron.example.org// ")
+
+    assert notificaciones.url_consola() == "https://iron.example.org/revision/ui"
+
+
+@pytest.mark.parametrize(
+    "invalida",
+    [
+        "javascript:alert(1)",
+        "ftp://host/x",
+        "localhost:8000",
+        "http://",
+        "http://a b",
+        "http://host/<x>",
+        "http://host/a|b",
+        'http://host/"x',
+    ],
+)
+def test_una_url_base_invalida_se_ignora(
+    monkeypatch: pytest.MonkeyPatch, invalida: str
+) -> None:
+    monkeypatch.setenv(notificaciones.ENV_URL_BASE, invalida)
+
+    assert notificaciones.url_consola() is None
+    assert "http" not in notificaciones.formatear_texto(_evento())
+
+
+def test_slack_recibe_el_enlace_con_su_sintaxis(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NOTIFICAR_SLACK_WEBHOOK_URL", "https://hooks.slack.test/X")
+    monkeypatch.setenv(notificaciones.ENV_URL_BASE, "http://localhost:8000")
+    enviados: list[dict[str, Any]] = []
+
+    def _post(url: str, **kwargs: Any) -> httpx.Response:
+        enviados.append(kwargs["json"])
+        return httpx.Response(200, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(notificaciones.httpx, "post", _post)
+
+    assert notificaciones.enviar_notificaciones(_evento()) == {"slack": True}
+    assert enviados[0]["text"].splitlines()[-1] == (
+        "<http://localhost:8000/revision/ui|Abrir la consola de revision>"
+    )
+
+
+def test_el_enlace_no_expone_el_texto_de_la_peticion_ni_ningun_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(notificaciones.ENV_URL_BASE, "http://localhost:8000")
+
+    texto = notificaciones.formatear_texto(_evento())
+
+    assert "SPT-DEMO" not in texto
+    assert "token" not in texto.lower()
+    assert "?" not in notificaciones.url_consola()  # type: ignore[operator]
