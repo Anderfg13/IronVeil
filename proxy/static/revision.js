@@ -65,8 +65,8 @@ function hora(iso) {
 /* ---------- Red ---------- */
 
 async function api(ruta, opciones = {}) {
-  const cabeceras = { ...(opciones.headers || {}) };
-  if (opciones.method === "POST" && estado.sesion && estado.sesion.csrf) {
+  const cabeceras = { ...opciones.headers };
+  if (opciones.method === "POST" && estado.sesion?.csrf) {
     cabeceras["X-CSRF-Token"] = estado.sesion.csrf;
   }
   const respuesta = await fetch(ruta, { credentials: "same-origin", ...opciones, headers: cabeceras });
@@ -119,7 +119,7 @@ function pintarVivo(ok) {
 
 function esperaMaxima() {
   const e = estado.estadisticas;
-  if (!e || !e.pendientes) return 0;
+  if (!e?.pendientes) return 0;
   return e.espera_maxima_s + Math.round((Date.now() - estado.ultimaCarga) / 1000);
 }
 
@@ -155,8 +155,7 @@ function pintarEstadisticas(e) {
 /* ---------- Lista ---------- */
 
 function pintarLista() {
-  const activo = document.activeElement && document.activeElement.dataset
-    ? document.activeElement.dataset.pid : null;
+  const activo = document.activeElement?.dataset?.pid ?? null;
   construirLista();
   if (activo) {
     const mismo = document.querySelector(`[data-pid="${CSS.escape(activo)}"]`);
@@ -265,7 +264,7 @@ function pintarExpediente() {
     enfocarTitulo(caja);
     return;
   }
-  const puedeDecidir = estado.sesion && estado.sesion.rol === "revisor";
+  const puedeDecidir = estado.sesion?.rol === "revisor";
   caja.replaceChildren(
     h("header", {},
       h("h2", { tabindex: "-1" }, p.tipo === "herramienta" ? "Solicitud de herramienta" : "Petición retenida"),

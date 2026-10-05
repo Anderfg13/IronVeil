@@ -315,7 +315,8 @@ def test_en_pantalla_tactil_enter_es_salto_de_linea_y_no_hay_autofoco() -> None:
 
 def test_enter_ignora_la_confirmacion_de_una_composicion_ime() -> None:
     assert "ev.isComposing" in JS
-    assert "ev.keyCode !== 229" in JS
+    assert "compositionend" in JS  # Safari: compositionend llega antes del Enter
+    assert "keyCode" not in JS  # propiedad obsoleta
 
 
 def test_los_controles_se_parten_en_lineas_en_vez_de_desbordar() -> None:

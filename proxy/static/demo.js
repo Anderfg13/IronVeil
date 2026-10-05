@@ -27,6 +27,7 @@ const LIMITE = 12000; // igual que maxlength del cuadro de texto
 const AVISAR_DESDE = 10800; // 90 %: a partir de aqui se muestra el contador
 const TIEMPO_MAXIMO_MS = 120000;
 const AVISO_LENTO_MS = 8000;
+const VENTANA_COMPOSICION_MS = 50; // tras compositionend, un Enter sigue siendo de la composicion
 /* El proxy conserva la decision 30 min: pasado ese tiempo ya no hay nada que esperar.
    Cada consulta espera hasta 25 s a que se decida (long polling), sin sondeo rapido. */
 const ESPERA_DECISION_MS = 30 * 60 * 1000;
@@ -35,7 +36,7 @@ const PAUSA_ENTRE_CONSULTAS_MS = 2000;
 /* Cuantas respuestas se estan generando ahora. Mientras haya alguna, el boton
    Enviar queda en "Enviando..." y no se acepta otro mensaje. Mientras una persona
    REVISA un mensaje (puede tardar minutos) no cuenta: se puede seguir escribiendo. */
-const estado = { ocupados: 0 };
+const estado = { ocupados: 0, finComposicion: 0 };
 
 /* En pantalla tactil Enter es un salto de linea y no se enfoca solo el cuadro
    (abriria el teclado y taparia la pantalla). */
@@ -237,7 +238,7 @@ function ajustarAltura() {
   }
 }
 
-function iniciar() {
+function iniciarChat() {
   $("formulario").addEventListener("submit", (ev) => {
     ev.preventDefault();
     // Mientras responde, el texto escrito se conserva: no se borra ni se descarta.
@@ -249,9 +250,12 @@ function iniciar() {
     enviar(texto).catch(() => anunciar(MENSAJES.otro));
   });
   $("mensaje").addEventListener("input", ajustarAltura);
+  // Safari dispara compositionend ANTES del keydown del Enter que confirma una
+  // composicion (IME), y con isComposing en false: ese Enter no es de envio.
+  $("mensaje").addEventListener("compositionend", () => { estado.finComposicion = performance.now(); });
   $("mensaje").addEventListener("keydown", (ev) => {
-    // keyCode 229: Safari confirma una composicion (IME) con un Enter que no es de envio.
-    if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing && ev.keyCode !== 229 && !tactil()) {
+    const componiendo = ev.isComposing || performance.now() - estado.finComposicion < VENTANA_COMPOSICION_MS;
+    if (ev.key === "Enter" && !ev.shiftKey && !componiendo && !tactil()) {
       ev.preventDefault();
       $("formulario").requestSubmit();
     }
@@ -261,4 +265,4 @@ function iniciar() {
   if (!tactil()) $("mensaje").focus();
 }
 
-iniciar();
+iniciarChat();
