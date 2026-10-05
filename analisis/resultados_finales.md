@@ -139,9 +139,10 @@ con Llama Guard; no se pueden separar). La versión anterior atribuía +230 ms a
 C3 y decía que ~160 ms no estaban explicados: **era ruido de la mediana del
 modelo**, no un costo del proxy; con la medición directa el sobrecosto es el
 tiempo del clasificador. Pasar Prompt Guard a GPU no cambió la cifra (≈ 68 ms
-antes, ≈ 76-80 ms ahora con la instrumentación nueva); si el cambio a
-`device=0` se aplicó, la mayor parte del tiempo no es de Prompt Guard sino de
-la llamada a Llama Guard por Ollama (pendiente de confirmar, sección 8).
+antes, ≈ 76-80 ms ahora con la instrumentación nueva); el usuario confirmó que la
+corrida usó `device=0` y `100% GPU` (no consta en los logs), así que la mayor
+parte del tiempo no es de Prompt Guard sino, muy probablemente, de la llamada
+a Llama Guard por Ollama (no medido por separado, sección 8).
 
 **5.8. Costo propio medido directamente (corrida de Colab del 2026-10-05).**
 El proxy cronometra cada mecanismo y el modelo dentro de cada petición
@@ -227,11 +228,10 @@ pero este experimento no puede demostrar ese beneficio.
 
 1. Re-correr V5 en GPU con el código actual y los mismos niveles de carga en
    las 7 configuraciones.
-2. Confirmar en la salida del notebook que Prompt Guard cargó en `device=0` y
-   `ollama ps` mostró `100% GPU` (no consta en los datos), y separar el tiempo
-   de la clasificación de entrada y de salida para saber cuánto es Prompt
-   Guard y cuánto Llama Guard. De eso depende evaluar un clasificador
-   alternativo.
+2. Separar el tiempo de la clasificación de entrada y de salida para saber
+   cuánto es Prompt Guard y cuánto Llama Guard (la GPU ya está confirmada:
+   `device=0` y `100% GPU`, dicho por el usuario; no consta en los logs). De
+   eso depende evaluar un clasificador alternativo.
 3. Ejecutar filtrado + delimitación + mínimo privilegio como configuración
    propia, para convertir la recomendación en una medición.
 4. Verificar la causa del efecto de delimitación sobre V4 y V2 con más
