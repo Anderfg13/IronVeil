@@ -100,6 +100,29 @@ cuenta (la consola es aparte de `/chat`).
 - Añade «Responde en una frase» a las peticiones legítimas: en CPU, una
   respuesta larga tarda ~1 minuto; una corta, ~10 s.
 
+## La pantalla de chat (recomendada para mostrarlo)
+
+Además de los `curl`, hay una pantalla tipo chat en **http://localhost:8000/demo**:
+escribes el mensaje, viaja por el pipeline real y, a la derecha, ves **en vivo**
+qué hace cada defensa (pasó, bloqueó, modificó, quedó en revisión) y cuánto
+tarda. Es la misma lógica que `/chat`: no es una simulación.
+
+- Actívala con `IRONVEIL_DEMO=1` en el `.env` y `docker compose up -d proxy`. Está
+  apagada por defecto porque revela qué mecanismo detuvo cada mensaje.
+- Trae 5 ejemplos (una pregunta normal y 4 ataques) que rellenan el cuadro y el
+  modelo; no se envían solos.
+- «Registrar como ataque en el SIEM» etiqueta el mensaje con un vector, para que
+  un mensaje que nadie bloquea aparezca como «ataque exitoso» en Wazuh.
+- La configuración (C0..C6) se muestra arriba del panel y se cambia como siempre,
+  en `config.yaml` (la escena 3 explica cómo); la pantalla no la modifica.
+- Cada mensaje es independiente: IronVeil no guarda el contexto de la conversación.
+- Si hay login activo, la pantalla pide sesión (la misma cuenta de la consola).
+
+Orden sugerido: C0 con «Extraer el system prompt» (filtra el secreto), luego C1
+(el filtro de salida lo redacta), luego `filtrado` + `aprobacion_humana` con
+«Ignorar las instrucciones» (queda en revisión: abre la consola desde el enlace
+de la tarjeta), y al final «Herramienta peligrosa» con `rrhh-agente`.
+
 ## Escenas (≈ 15 min)
 
 **Escena 1 · Una petición normal (qué hace el sistema sin atacantes).**

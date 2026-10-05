@@ -410,6 +410,21 @@ con `json.dumps(evento, ensure_ascii=False)` + salto de línea.
   una petición puede ser un ataque: viaja como JSON y la página lo pinta con
   `textContent`, sin `innerHTML` (lo verifica un test). El logo es
   `proxy/static/logo.svg`, reemplazable.
+- `proxy/demo_chat.py` + `proxy/static/demo.*` (pantalla de chat de la demo,
+  **opt-in** con `IRONVEIL_DEMO=1`, apagada por defecto): `GET /demo` es una
+  pantalla tipo chat; `POST /demo/chat` llama a **`main.chat()`, la misma
+  función que atiende `/chat`**, con un *rastro* activado, y devuelve NDJSON en
+  vivo (`inicio` con la configuración y las etapas, una `etapa` por cada paso
+  que se ejecuta, `fin` con cómo terminó). El rastro son llamadas a
+  `demo_chat.traza()` en `_ejecutar_cadena()`, `_verificar_limite_de_tasa()`,
+  `_gestionar_aprobacion_humana()`, `_preparar_prompt()` y
+  `_completar_peticion()`; sin nadie escuchando (`ContextVar` por petición) no
+  hacen nada y **no cambian ningún resultado** (`/chat` y sus tests intactos).
+  Es opt-in porque revela qué mecanismo detuvo un mensaje, justo el oráculo
+  del vector V6-C; con login activo exige sesión. En SALIDA, `filtrado` que
+  redacta se muestra como «modificó», no como bloqueo (aunque la cadena lo
+  trate como tal). No hay interruptores de mecanismos en la pantalla:
+  `config.yaml` sigue siendo la única fuente de la configuración (C0..C6).
 - `proxy/auth.py` (login de la consola): **opt-in** — con `REVISION_USUARIOS`
   vacía todo se comporta como antes (scripts y tests del experimento
   intactos); con cuentas definidas, `GET /revision`, `/revision/panel`,

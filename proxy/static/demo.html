@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta name="color-scheme" content="light dark">
+  <title>Demostración · IronVeil</title>
+  <link rel="icon" href="/revision/static/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/revision/static/consola.css">
+  <link rel="stylesheet" href="/revision/static/demo.css">
+</head>
+<body class="demo-cuerpo">
+  <header class="barra">
+    <div class="marca">
+      <!-- Logo: reemplaza proxy/static/logo.svg para poner el definitivo. -->
+      <img src="/revision/static/logo.svg" alt="" width="34" height="34">
+      <div>IronVeil<small>Demostración</small></div>
+    </div>
+    <div class="relleno"></div>
+    <a class="boton-barra" href="/revision/ui" target="_blank" rel="noopener">Abrir consola de revisión</a>
+  </header>
+
+  <div class="demo-layout">
+    <main class="demo-chat" id="principal">
+      <h1 class="solo-lectores">Chat protegido por IronVeil</h1>
+
+      <div class="demo-hilo" id="hilo" role="log" aria-live="polite" aria-label="Conversación" tabindex="-1">
+        <section class="demo-inicio" id="inicio">
+          <img src="/revision/static/logo.svg" alt="" width="52" height="52">
+          <h2>¿Qué quieres probar?</h2>
+          <p>Escribe un mensaje o elige un ejemplo. Verás, a la derecha, qué hace cada defensa con él antes de que llegue al modelo.</p>
+          <ul class="demo-ejemplos" id="ejemplos"></ul>
+        </section>
+      </div>
+
+      <form class="demo-compositor" id="formulario" novalidate>
+        <label class="solo-lectores" for="mensaje">Mensaje</label>
+        <textarea id="mensaje" name="mensaje" rows="1" maxlength="12000" placeholder="Escribe tu mensaje…" autocomplete="off" spellcheck="true"></textarea>
+        <div class="demo-controles">
+          <div class="demo-campo">
+            <label for="modelo">Modelo</label>
+            <select id="modelo" name="modelo"></select>
+          </div>
+          <label class="demo-casilla">
+            <input type="checkbox" id="ataque">
+            <span>Registrar como ataque en el SIEM</span>
+          </label>
+          <div class="relleno"></div>
+          <button type="button" class="demo-secundario" id="nueva" hidden>Nueva conversación</button>
+          <button type="submit" class="demo-enviar" id="enviar">Enviar</button>
+        </div>
+        <p class="demo-ayuda">Enter envía, Mayús+Enter agrega una línea. Cada mensaje es independiente: IronVeil no guarda el contexto de la conversación.</p>
+      </form>
+    </main>
+
+    <aside class="demo-proceso" id="proceso" aria-labelledby="proceso-titulo">
+      <button type="button" class="demo-proceso-toggle" id="proceso-toggle" aria-expanded="true" aria-controls="proceso-cuerpo">Proceso del mensaje</button>
+      <div id="proceso-cuerpo">
+        <div class="demo-proceso-cabecera">
+          <h2 id="proceso-titulo">Qué le pasó a tu mensaje</h2>
+          <p class="demo-config" id="config" aria-live="off"></p>
+        </div>
+        <ol class="demo-etapas" id="etapas"></ol>
+        <p class="demo-total" id="total"></p>
+        <p class="demo-vacio" id="proceso-vacio">Cuando envíes un mensaje, cada defensa aparecerá aquí en el orden en que actúa.</p>
+      </div>
+    </aside>
+  </div>
+
+  <div class="solo-lectores" id="anuncios" role="status" aria-live="polite"></div>
+  <script src="/revision/static/demo.js"></script>
+</body>
+</html>

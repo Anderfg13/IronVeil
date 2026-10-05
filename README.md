@@ -166,6 +166,12 @@ repositorio):
 Guion paso a paso (curl → defensas → logs → avisos → SIEM), con comandos
 verificados y los problemas conocidos de esta máquina: `docs/DEMO.md`.
 
+## Pantalla de chat de la demo
+
+`IRONVEIL_DEMO=1` activa **/demo**: una pantalla tipo chat que envía el mensaje por
+el pipeline real y muestra en vivo qué hace cada defensa. Apagada por defecto
+(revela qué mecanismo detuvo cada mensaje). Ver `docs/DEMO.md`.
+
 ## Wazuh / SIEM (extensión opcional, **pesada**)
 
 `proxy/siem.py` → `exportar_a_siem(evento)` convierte un evento del log a JSON
