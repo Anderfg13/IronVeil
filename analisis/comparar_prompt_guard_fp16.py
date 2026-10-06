@@ -65,7 +65,7 @@ class Fila:
 
 
 def textos_de_prueba() -> list[str]:
-    """Legitimos, casos de bloqueo y dos textos largos (inyeccion al inicio y al final)."""
+    """Legitimos, casos de bloqueo y dos textos largos (inyeccion al inicio y final)."""
     largo = RELLENO * 400
     return [
         *PROMPTS_LEGITIMOS,
