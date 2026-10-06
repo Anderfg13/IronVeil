@@ -1,4 +1,4 @@
-/* IronVeil · consola de revision humana.
+/* IronVeil · consola de revision humana y chat de la demo.
    Un solo archivo de estilos para la consola y el login. Sin fuentes ni
    recursos externos (funciona sin internet y con CSP estricta).
    La apariencia sigue al sistema (prefers-color-scheme): no hay interruptor
@@ -6,21 +6,31 @@
 
 :root {
   color-scheme: light dark;
-  --bg: #e6eaf0;
-  --panel: #f7f9fc;
-  --panel-2: #edf1f6;
-  --ink: #0f1a26;
-  --ink-2: #455466;
-  --ink-3: #566377;
-  --line: #cdd5df;
-  --borde: #76879c;
-  --iron: #1b2b3c;
-  --iron-ink: #e9eef5;
-  --iron-ink-2: #b6c3d3;
-  --iron-ink-3: #9fb0c3;
-  --veil: #5b4ae0;
-  --veil-soft: #e9e6fb;
+  --bg: #e8eef6;
+  --panel: #fbfdff;
+  --panel-2: #f0f5fa;
+  --ink: #0d1319;
+  --ink-2: #414f5e;
+  --ink-3: #536171;
+  --line: #d3dce6;
+  --borde: #72849a;
+  --iron: #181f27;
+  --iron-ink: #eaf0f6;
+  --iron-ink-2: #b7c4d2;
+  --iron-ink-3: #a0afc0;
+  --veil: #0a63c9;
+  --veil-soft: #dbeafc;
   --on-veil: #ffffff;
+  /* Hielo: el fondo que se ve a traves del vidrio (se mide en los tests). */
+  --hielo: #5aaeff;
+  --hielo-1: #cfe3fa;
+  --hielo-2: #dde8f6;
+  /* Vidrio: opacidad del relleno (cuanto menos, mas se ve el fondo). */
+  --vidrio-pct: 78%;
+  --iron-vidrio-pct: 88%;
+  --brillo: rgb(255 255 255 / 90%);
+  --canto: rgb(255 255 255 / 70%);
+  --aro: rgb(20 40 70 / 9%);
   --on-attack: #ffffff;
   --attack: #b3261e;
   --attack-soft: #fbe6e4;
@@ -30,25 +40,34 @@
   --ok: #13795b;
   --ok-soft: #dcf2e9;
   --sombra: 0 1px 2px rgb(15 26 38 / 8%), 0 8px 24px rgb(15 26 38 / 6%);
-  --ui: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
-  --mono: "Cascadia Mono", "SF Mono", ui-monospace, Consolas, monospace;
-  --radio: 10px;
+  --ui: system-ui, -apple-system, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", Roboto, sans-serif;
+  --display: system-ui, -apple-system, "SF Pro Display", "Segoe UI Variable Display", "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+  --radio: 18px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0c1218;
-    --panel: #131b25;
-    --panel-2: #18222e;
-    --ink: #e7edf4;
-    --ink-2: #a9b6c5;
-    --ink-3: #8393a7;
-    --line: #263342;
-    --borde: #66768b;
-    --iron: #0a1017;
-    --veil: #9a8fff;
-    --veil-soft: #232049;
-    --on-veil: #0c1218;
+    --bg: #090d12;
+    --panel: #10161d;
+    --panel-2: #151d26;
+    --ink: #ecf1f6;
+    --ink-2: #aab7c5;
+    --ink-3: #8595a8;
+    --line: #243040;
+    --borde: #66778b;
+    --iron: #070a0e;
+    --veil: #66b2ff;
+    --veil-soft: #112640;
+    --on-veil: #06111d;
+    --hielo: #1f6fd0;
+    --hielo-1: #0f2744;
+    --hielo-2: #0d1b2c;
+    --vidrio-pct: 72%;
+    --iron-vidrio-pct: 70%;
+    --brillo: rgb(255 255 255 / 16%);
+    --canto: rgb(255 255 255 / 14%);
+    --aro: rgb(255 255 255 / 7%);
     --on-attack: #0c1218;
     --attack: #ff8d83;
     --attack-soft: #3a1c1c;
@@ -65,12 +84,18 @@
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
-  background: var(--bg);
+  /* Hielo: dos luces suaves bajo el vidrio; sin ellas el vidrio no tiene que refractar. */
+  background:
+    radial-gradient(70% 55% at 10% -8%, var(--hielo-1) 0%, transparent 70%),
+    radial-gradient(55% 50% at 100% 0%, var(--hielo-2) 0%, transparent 72%),
+    var(--bg);
+  background-attachment: fixed;
   color: var(--ink);
   font: 0.875rem/1.5 var(--ui);
   min-height: 100vh;
 }
 button, input { font: inherit; color: inherit; }
+h1, h2, h3 { font-family: var(--display); }
 button { cursor: pointer; }
 :focus-visible { outline: 2px solid var(--veil); outline-offset: 2px; }
 .solo-lectores {
@@ -86,16 +111,28 @@ button:active:not(:disabled) { transform: translateY(1px); }
 
 /* ---------- Barra superior ---------- */
 .barra {
-  background: var(--iron);
+  background: color-mix(in srgb, var(--iron) var(--iron-vidrio-pct), transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(1.7);
+  backdrop-filter: blur(24px) saturate(1.7);
   color: var(--iron-ink);
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: 22px;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 22%), 0 8px 24px rgb(9 20 34 / 18%);
+  margin: 12px 12px 0;
   display: flex; align-items: center; gap: 16px;
-  padding: 0 20px; min-height: 58px; flex-wrap: wrap;
-  position: sticky; top: 0; z-index: 5;
+  padding: 0 18px; min-height: 58px; flex-wrap: wrap;
+  position: sticky; top: 12px; z-index: 5;
 }
 .barra :focus-visible { outline-color: var(--iron-ink); }
 .marca { display: flex; align-items: center; gap: 10px; }
-.marca img { width: 34px; height: 34px; display: block; }
-.marca h1 { margin: 0; font-weight: 650; font-size: 1rem; line-height: 1.3; letter-spacing: .01em; }
+.marca img { width: 100%; height: 100%; object-fit: contain; display: block; }
+/* Espacio del logo: una caja de tamano fijo. Cambia el archivo logo.svg (o ajusta --logo)
+   y todo lo demas queda igual. */
+.marca-logo { flex: none; width: var(--logo, 36px); height: var(--logo, 36px); display: grid; place-items: center; }
+.nombre-marca { font-family: var(--display); font-weight: 400; font-size: 1.0625rem; letter-spacing: .005em; line-height: 1.2; }
+.nombre-marca b { font-weight: 700; letter-spacing: -.01em; }
+.marca h1 { margin: 0; font-weight: 400; font-size: 1.0625rem; line-height: 1.25; letter-spacing: .005em; }
+.marca h1 b { font-weight: 700; letter-spacing: -.01em; }
 .marca small { display: block; font-weight: 400; font-size: 0.75rem; color: var(--iron-ink-3); letter-spacing: 0; }
 .barra .relleno { flex: 1; }
 .vivo { display: flex; align-items: center; gap: 8px; font-size: 0.7812rem; color: var(--iron-ink-2); }
@@ -108,7 +145,7 @@ button:active:not(:disabled) { transform: translateY(1px); }
 .usuario span { display: block; font-size: 0.75rem; color: var(--iron-ink-3); line-height: 1.2; }
 .boton-barra {
   background: transparent; border: 1px solid rgb(255 255 255 / 45%); color: var(--iron-ink);
-  border-radius: 8px; padding: 6px 12px; font-size: 0.8125rem; min-height: 28px;
+  border-radius: 999px; padding: 6px 14px; font-size: 0.8125rem; min-height: 28px;
 }
 .boton-barra:hover { background: rgb(255 255 255 / 10%); }
 .aviso-laboratorio {
@@ -122,14 +159,23 @@ button:active:not(:disabled) { transform: translateY(1px); }
 
 /* ---------- Cuerpo ---------- */
 .cuerpo { display: grid; grid-template-columns: 372px minmax(0, 1fr); gap: 16px; padding: 12px 20px 28px; max-width: 1480px; margin: 0 auto; align-items: start; }
-.tarjeta { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radio); box-shadow: var(--sombra); }
+.tarjeta { border-radius: var(--radio); }
+/* Vidrio: relleno translucido + desenfoque del fondo + canto de luz arriba. El texto
+   largo vive en superficies casi opacas (--vidrio-pct) para no perder contraste. */
+.vidrio, .tarjeta, .acceso form {
+  background: color-mix(in srgb, var(--panel) var(--vidrio-pct), transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  backdrop-filter: blur(22px) saturate(1.6);
+  border: 1px solid var(--canto);
+  box-shadow: 0 0 0 1px var(--aro), inset 0 1px 0 var(--brillo), var(--sombra);
+}
 
 /* Lista */
-.lista { overflow: hidden; position: sticky; top: 74px; max-height: calc(100vh - 92px); display: flex; flex-direction: column; }
-.pestanas { display: flex; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
-.pestana { flex: 1 1 auto; min-width: 0; background: none; border: 0; padding: 12px 14px; color: var(--ink-3); font-weight: 600; border-bottom: 2px solid transparent; min-height: 28px; }
+.lista { overflow: hidden; position: sticky; top: 86px; max-height: calc(100vh - 104px); display: flex; flex-direction: column; }
+.pestanas { display: flex; flex-wrap: wrap; gap: 4px; padding: 5px; margin: 10px 10px 6px; background: var(--panel-2); border-radius: 14px; }
+.pestana { flex: 1 1 auto; min-width: 0; background: none; border: 2px solid transparent; border-radius: 10px; padding: 8px 12px; color: var(--ink-3); font-weight: 600; min-height: 28px; }
 .pestana:hover { color: var(--ink); }
-.pestana[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--veil); }
+.pestana[aria-selected="true"] { color: var(--ink); background: var(--panel); box-shadow: 0 1px 3px rgb(10 25 45 / 18%), 0 0 0 1px var(--aro); }
 .pestana .cuenta { background: var(--veil-soft); color: var(--veil); border-radius: 999px; padding: 1px 8px; font-size: 0.75rem; margin-left: 6px; font-variant-numeric: tabular-nums; }
 .panel-lista { overflow-y: auto; flex: 1; min-height: 0; }
 .resumen-historial { margin: 0; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel-2); color: var(--ink-2); font-size: 0.8125rem; }
@@ -212,9 +258,9 @@ button:active:not(:disabled) { transform: translateY(1px); }
 .contexto dd { margin: 0; font-weight: 550; overflow-wrap: anywhere; }
 
 /* Decision */
-.decision { position: sticky; bottom: 0; background: color-mix(in srgb, var(--panel) 92%, transparent); backdrop-filter: blur(6px); border-top: 1px solid var(--line); padding: 14px 22px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.decision { position: sticky; bottom: 12px; margin: 0 12px 12px; border-radius: 20px; padding: 12px 18px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
 .decision .ayuda { color: var(--ink-3); font-size: 0.7812rem; margin-right: auto; max-width: 42ch; }
-.accion { border-radius: 9px; border: 1px solid transparent; padding: 11px 18px; font-weight: 650; display: inline-flex; align-items: center; gap: 10px; min-height: 28px; }
+.accion { border-radius: 999px; border: 1px solid transparent; padding: 11px 18px; font-weight: 650; display: inline-flex; align-items: center; gap: 10px; min-height: 28px; }
 .accion kbd { font: 600 0.75rem var(--mono); border: 1px solid currentcolor; border-radius: 5px; padding: 0 6px; opacity: .75; }
 .sin-atajos .accion kbd { display: none; }
 .accion.aprobar, .accion.rechazar { background: var(--panel); color: var(--ink); border: 1.5px solid var(--ink-2); }
@@ -228,41 +274,41 @@ button:active:not(:disabled) { transform: translateY(1px); }
 .resultado .aprobada { color: var(--ok); }
 .resultado .rechazada { color: var(--attack); }
 .resultado pre { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; font: 0.8125rem/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 280px; overflow: auto; }
-.siguiente { margin-top: 14px; background: var(--veil); color: var(--on-veil); border: 0; border-radius: 9px; padding: 10px 18px; font-weight: 650; min-height: 28px; }
+.siguiente { margin-top: 14px; background: var(--veil); color: var(--on-veil); border: 0; border-radius: 999px; padding: 10px 18px; font-weight: 650; min-height: 28px; }
 .siguiente:hover, .entrar:hover:not(:disabled) { filter: brightness(.92); }
 
 /* Dialogo y avisos */
-dialog { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--ink); max-width: 440px; padding: 22px; box-shadow: 0 24px 64px rgb(0 0 0 / 35%); }
-dialog::backdrop { background: rgb(8 14 22 / 55%); }
+dialog { border: 1px solid var(--canto); border-radius: 24px; background: color-mix(in srgb, var(--panel) 88%, transparent); -webkit-backdrop-filter: blur(28px) saturate(1.6); backdrop-filter: blur(28px) saturate(1.6); color: var(--ink); max-width: 440px; padding: 24px; box-shadow: 0 0 0 1px var(--aro), inset 0 1px 0 var(--brillo), 0 24px 64px rgb(0 0 0 / 35%); }
+dialog::backdrop { background: rgb(8 14 22 / 45%); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
 dialog h2 { margin: 0 0 6px; font-size: 1.125rem; }
 dialog h2:focus { outline: none; }
 dialog p { margin: 0 0 18px; color: var(--ink-2); }
 dialog .acciones { display: flex; gap: 10px; justify-content: flex-end; }
-.secundario { background: none; border: 1px solid var(--borde); border-radius: 9px; padding: 10px 16px; min-height: 28px; }
+.secundario { background: none; border: 1px solid var(--borde); border-radius: 999px; padding: 10px 16px; min-height: 28px; }
 .secundario:hover { background: var(--panel-2); }
 .avisos { position: fixed; right: 20px; bottom: 20px; display: grid; gap: 8px; z-index: 20; }
-.aviso { display: flex; align-items: flex-start; gap: 12px; background: var(--iron); color: var(--iron-ink); border-radius: 10px; padding: 11px 12px 11px 16px; box-shadow: var(--sombra); max-width: 380px; animation: entra .25s ease-out; }
+.aviso { display: flex; align-items: flex-start; gap: 12px; background: color-mix(in srgb, var(--iron) var(--iron-vidrio-pct), transparent); -webkit-backdrop-filter: blur(24px) saturate(1.7); backdrop-filter: blur(24px) saturate(1.7); border: 1px solid rgb(255 255 255 / 16%); color: var(--iron-ink); border-radius: 18px; padding: 11px 12px 11px 16px; box-shadow: var(--sombra); max-width: 380px; animation: entra .25s ease-out; }
 .aviso.error { background: var(--attack); color: var(--on-attack); }
 .aviso :focus-visible { outline-color: currentcolor; }
 .aviso p { margin: 0; flex: 1; padding-top: 3px; }
-.cerrar-aviso { flex: none; background: none; border: 1px solid currentcolor; border-radius: 8px; padding: 2px 10px; min-height: 28px; font-size: 0.8125rem; }
+.cerrar-aviso { flex: none; background: none; border: 1px solid currentcolor; border-radius: 999px; padding: 2px 10px; min-height: 28px; font-size: 0.8125rem; }
 @keyframes entra { from { transform: translateY(8px); opacity: 0; } }
 
 /* ---------- Inicio de sesion ---------- */
 .acceso { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); min-height: 100vh; }
-.acceso .marca-lado { background: var(--iron); color: var(--iron-ink); padding: 48px 56px; display: flex; flex-direction: column; justify-content: space-between; position: relative; overflow: hidden; }
-.acceso .marca-lado::after { content: ""; position: absolute; inset: auto -20% -35% -20%; height: 60%; background: radial-gradient(60% 80% at 50% 0%, rgb(143 130 255 / 35%), transparent 70%); pointer-events: none; }
-.acceso .marca-lado img { width: 64px; height: 64px; }
-.acceso .lema { color: var(--iron-ink); font-size: clamp(1.75rem, 3.4vw, 2.75rem); font-weight: 700; line-height: 1.12; letter-spacing: -.02em; margin: 0 0 14px; max-width: 16ch; }
+.acceso .marca-lado { background: var(--iron); color: var(--iron-ink); margin: 12px; border-radius: 28px; padding: 44px 52px; display: flex; flex-direction: column; justify-content: space-between; position: relative; overflow: hidden; }
+.acceso .marca-lado::after { content: ""; position: absolute; inset: auto 0 0 0; height: 65%; background: radial-gradient(85% 100% at 50% 100%, rgb(90 174 255 / 34%), transparent 72%); pointer-events: none; }
+.acceso .marca-lado .marca-logo { --logo: 64px; }
+.acceso .marca-lado .lema { color: var(--iron-ink); font-size: clamp(1.75rem, 3.4vw, 2.75rem); font-weight: 700; line-height: 1.12; letter-spacing: -.02em; margin: 0 0 14px; max-width: 16ch; }
 .acceso .marca-lado p { color: var(--iron-ink-2); max-width: 44ch; margin: 0; font-size: 1rem; }
 .acceso .marca-lado footer { color: var(--iron-ink-3); font-size: 0.8125rem; position: relative; z-index: 1; }
 .acceso .formulario { display: grid; place-items: center; padding: 32px; }
-.acceso form { width: min(380px, 100%); display: grid; gap: 16px; }
-.acceso form h1 { margin: 0; font-size: 1.5rem; letter-spacing: -.01em; }
+.acceso form { width: min(400px, 100%); display: grid; gap: 16px; padding: 32px; border-radius: 28px; }
+.acceso form h1 { margin: 0; font-size: 1.625rem; font-weight: 650; letter-spacing: -.015em; }
 .acceso form > p { margin: -8px 0 4px; color: var(--ink-2); }
 .campo { display: grid; gap: 6px; }
 .campo label { font-weight: 600; font-size: 0.8438rem; }
-.campo input { background: var(--panel); border: 1px solid var(--borde); border-radius: 9px; padding: 11px 13px; width: 100%; }
+.campo input { background: var(--panel); border: 1px solid var(--borde); border-radius: 12px; padding: 11px 14px; width: 100%; }
 .campo input:focus-visible { border-color: var(--veil); }
 .campo input[aria-invalid="true"] { border-color: var(--attack); border-width: 2px; padding: 10px 12px; }
 .campo-clave { position: relative; }
@@ -271,7 +317,7 @@ dialog .acciones { display: flex; gap: 10px; justify-content: flex-end; }
 .ver-clave:active:not(:disabled) { transform: translateY(calc(-50% + 1px)); }
 .ver-clave:hover { background: var(--panel-2); }
 .ver-clave[aria-pressed="true"] { background: var(--veil-soft); border-color: var(--veil); color: var(--ink); }
-.entrar { background: var(--veil); color: var(--on-veil); border: 0; border-radius: 9px; padding: 12px 16px; font-weight: 650; min-height: 28px; }
+.entrar { background: var(--veil); color: var(--on-veil); border: 0; border-radius: 999px; box-shadow: inset 0 1px 0 rgb(255 255 255 / 30%); padding: 12px 16px; font-weight: 650; min-height: 28px; }
 .entrar:disabled { opacity: .6; cursor: wait; }
 .error-form { min-height: 22px; color: var(--attack); font-size: 0.8438rem; }
 .nota { color: var(--ink-3); font-size: 0.7812rem; }
@@ -292,7 +338,10 @@ dialog .acciones { display: flex; gap: 10px; justify-content: flex-end; }
 }
 @media (max-width: 560px) {
   body { font-size: 1rem; }
-  .barra { padding: 6px 12px; gap: 10px; }
+  .barra { padding: 6px 12px; gap: 10px; margin: 8px 8px 0; border-radius: 18px; top: 8px; }
+  .decision { margin: 0 8px 8px; bottom: 8px; }
+  .acceso .formulario { padding: 12px; }
+  .acceso form { padding: 22px; }
   .vivo-detalle { display: none; }
   .usuario div { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .usuario { padding-left: 10px; min-width: 0; }
@@ -310,8 +359,15 @@ dialog .acciones { display: flex; gap: 10px; justify-content: flex-end; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 /* Sin transparencia: la barra de decision (capa funcional) pasa a fondo opaco. */
-@media (prefers-reduced-transparency: reduce) {
-  .decision { background: var(--panel); backdrop-filter: none; }
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .vidrio, .tarjeta, .acceso form, .decision, dialog { background: var(--panel); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .barra, .aviso { background: var(--iron); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  dialog::backdrop { -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+/* Navegadores sin backdrop-filter: superficies opacas, mismo diseno. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .vidrio, .tarjeta, .acceso form, .decision, dialog { background: var(--panel); }
+  .barra, .aviso { background: var(--iron); }
 }
 
 /* ---------- Contraste alto (prefers-contrast: more) ---------- */
@@ -321,7 +377,7 @@ dialog .acciones { display: flex; gap: 10px; justify-content: flex-end; }
     --ink-3: #3d4b5e;
     --line: #5f7085;
     --borde: #3d4b5e;
-    --veil: #4636c4;
+    --veil: #064a9e;
     --attack: #8f1a14;
     --warn: #6b3e00;
     --media: #8f5400;
@@ -333,6 +389,7 @@ dialog .acciones { display: flex; gap: 10px; justify-content: flex-end; }
   .elemento[aria-current="true"] { box-shadow: inset 0 0 0 3px var(--veil); }
   .accion.aprobar, .accion.rechazar { border-width: 2px; }
   .boton-barra { border-color: var(--iron-ink); }
+  .vidrio, .tarjeta, .acceso form, .decision, dialog { border-color: var(--borde); }
 }
 @media (prefers-contrast: more) and (prefers-color-scheme: dark) {
   :root {
@@ -340,7 +397,7 @@ dialog .acciones { display: flex; gap: 10px; justify-content: flex-end; }
     --ink-3: #b3c0cf;
     --line: #66768b;
     --borde: #a9b6c5;
-    --veil: #b8afff;
+    --veil: #a9d2ff;
     --attack: #ffb3ac;
     --warn: #ffd180;
     --media: #f0b24a;
@@ -352,14 +409,14 @@ dialog .acciones { display: flex; gap: 10px; justify-content: flex-end; }
    El sistema reemplaza los colores: todo lo que dependia de un relleno o de
    una sombra recibe un borde, un subrayado o un texto reales. */
 @media (forced-colors: active) {
-  .barra { border-bottom: 1px solid CanvasText; }
+  .barra, .vidrio, .tarjeta, .acceso form, dialog, .aviso { border: 1px solid CanvasText; -webkit-backdrop-filter: none; backdrop-filter: none; }
   .boton-barra, .secundario, .accion, .siguiente, .entrar, .cerrar-aviso, .avatar { border: 1px solid ButtonText; }
   .accion.aprobar, .accion.rechazar { border-width: 2px; }
   .avatar { background: Canvas; color: CanvasText; }
   .vivo i { background: CanvasText; }
   .vivo.caido i { background: Canvas; border: 2px solid CanvasText; }
-  .pestana { border-bottom: 4px solid Canvas; }
-  .pestana[aria-selected="true"] { border-bottom-color: Highlight; font-weight: 700; }
+  .pestana { border: 2px solid Canvas; }
+  .pestana[aria-selected="true"] { border-color: Highlight; font-weight: 700; }
   .pestana .cuenta { border: 1px solid CanvasText; }
   .elemento::before { background: CanvasText; }
   .nivel-media::before { background: CanvasText; border: 0; }
@@ -377,7 +434,7 @@ dialog .acciones { display: flex; gap: 10px; justify-content: flex-end; }
   .espectro { background: Canvas; border: 1px solid CanvasText; }
   .espectro .marcas { background: repeating-linear-gradient(90deg, transparent 0 calc(25% - 1px), CanvasText calc(25% - 1px) 25%); }
   .espectro .pin { background: Highlight; border-color: CanvasText; }
-  .decision { border-top: 2px solid CanvasText; backdrop-filter: none; }
+  .decision { border: 2px solid CanvasText; -webkit-backdrop-filter: none; backdrop-filter: none; }
   .ver-clave { border: 1px solid ButtonText; }
   .ver-clave[aria-pressed="true"] { border-width: 3px; border-color: Highlight; }
   .campo input { border: 1px solid FieldText; }

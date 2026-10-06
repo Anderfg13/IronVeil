@@ -13,9 +13,9 @@
 <body class="demo-cuerpo">
   <header class="barra">
     <div class="marca">
-      <!-- Logo: reemplaza proxy/static/logo.svg para poner el definitivo. -->
-      <img src="/revision/static/logo.svg" alt="" width="34" height="34">
-      <div>IronVeil</div>
+      <!-- Espacio del logo: reemplaza proxy/static/logo.svg (SVG o PNG con el mismo nombre) y se ajusta solo a esta caja; el tamano se cambia con --logo. -->
+      <span class="marca-logo"><img src="/revision/static/logo.svg" alt="" width="36" height="36"></span>
+      <div class="nombre-marca"><b>Iron</b>Veil</div>
     </div>
     <div class="relleno"></div>
     <button type="button" class="boton-barra" id="nueva" hidden>Nueva conversación</button>
@@ -34,7 +34,7 @@
 
     <form class="demo-compositor" id="formulario" novalidate>
       <label class="solo-lectores" for="mensaje">Mensaje</label>
-      <div class="demo-caja">
+      <div class="demo-caja vidrio">
         <textarea id="mensaje" name="mensaje" rows="1" maxlength="12000" placeholder="Escribe tu mensaje…" autocomplete="off" spellcheck="true" aria-describedby="ayuda"></textarea>
         <div class="demo-controles">
           <div class="demo-campo">

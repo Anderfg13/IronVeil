@@ -1,22 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="IronVeil">
   <!--
-    LOGO PROVISIONAL. Para poner el definitivo, reemplaza este archivo por el
-    tuyo (mismo nombre: proxy/static/logo.svg, SVG o con el mismo nombre en PNG
-    cambiando la ruta en revision.html y login.html). Se ve bien en 28 a 120 px.
+    Logo de IronVeil: un escudo de grafito (el hierro) cubierto por un velo de
+    vidrio glaciar. Para usar otro, reemplaza este archivo (mismo nombre; si es PNG,
+    cambia la ruta en revision.html, login.html y demo.html). Se ve bien de 20 a 160 px.
+    Alternativas en docs/identidad/.
   -->
   <defs>
-    <linearGradient id="hierro" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#3B5470"/>
-      <stop offset="1" stop-color="#16263A"/>
-    </linearGradient>
-    <linearGradient id="velo" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#8F82FF" stop-opacity=".95"/>
-      <stop offset="1" stop-color="#5B4AE0" stop-opacity=".55"/>
-    </linearGradient>
+    <linearGradient id="hierro" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#47566A"/><stop offset="1" stop-color="#141A21"/></linearGradient>
+    <linearGradient id="velo" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#C4E3FF" stop-opacity=".95"/><stop offset=".55" stop-color="#5DAEFF" stop-opacity=".6"/><stop offset="1" stop-color="#1F78E0" stop-opacity=".25"/></linearGradient>
+    <clipPath id="e"><path id="s" d="M32 4 55 12.5V31C55 45.5 45.5 55.5 32 60 18.5 55.5 9 45.5 9 31V12.5z"/></clipPath>
   </defs>
-  <path d="M32 3 56 12v18c0 15-10 26-24 31C18 56 8 45 8 30V12z" fill="url(#hierro)"/>
-  <path d="M32 3 56 12v18c0 15-10 26-24 31z" fill="#ffffff" opacity=".06"/>
-  <path d="M8 26c8 6 16 6 24 2s16-4 24 2v-6C48 18 40 18 32 22S16 26 8 20z" fill="url(#velo)"/>
-  <path d="M32 3 56 12v18c0 15-10 26-24 31C18 56 8 45 8 30V12z" fill="none" stroke="#8F82FF" stroke-opacity=".55" stroke-width="1.5"/>
-  <text x="32" y="46" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif" font-size="17" font-weight="700" letter-spacing="1" fill="#F2F5FA">IV</text>
+  <use href="#s" fill="url(#hierro)"/>
+  <g clip-path="url(#e)">
+    <path d="M9 4h32C36 22 30 36 14 52L9 48z" fill="url(#velo)"/>
+    <path d="M41 4C36 22 30 36 14 52" fill="none" stroke="#fff" stroke-opacity=".8" stroke-width="1.2" stroke-linecap="round"/>
+  </g>
+  <use href="#s" fill="none" stroke="#fff" stroke-opacity=".22" stroke-width="1"/>
 </svg>
