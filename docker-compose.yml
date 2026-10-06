@@ -91,6 +91,14 @@ services:
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
       # Extensiones opcionales (vacias = apagadas). Ver .env.example.
       MODELOS_CON_HERRAMIENTAS: ${MODELOS_CON_HERRAMIENTAS:-}
+      # Proteger un modelo servido por otra API en vez de Ollama (opcional, apagado por
+      # defecto; docs/MODELO_PROTEGIDO_REMOTO.md). Un TERCERO recibe el prompt completo con
+      # el system prompt, canario incluido: exige MODELO_PROTEGIDO_PERMITIR_TERCEROS=1.
+      MODELOS_REMOTOS: ${MODELOS_REMOTOS:-}
+      MODELO_PROTEGIDO_PERMITIR_TERCEROS: ${MODELO_PROTEGIDO_PERMITIR_TERCEROS:-}
+      MODELO_PROTEGIDO_HOSTS_PROPIOS: ${MODELO_PROTEGIDO_HOSTS_PROPIOS:-}
+      MODELO_PROTEGIDO_OPENAI_API_KEY: ${MODELO_PROTEGIDO_OPENAI_API_KEY:-}
+      MODELO_PROTEGIDO_ANTHROPIC_API_KEY: ${MODELO_PROTEGIDO_ANTHROPIC_API_KEY:-}
       # Exportacion de cada evento a un archivo en formato Wazuh JSON (ver
       # docs/siem/wazuh/LEEME.md). Vacio = apagada. La ruta es DENTRO del
       # contenedor; ./docs/siem/exportados se monta mas abajo.

@@ -52,7 +52,6 @@ import httpx
 import proxy.adaptador_clasificador as adaptador
 from proxy.adaptador_clasificador import (
     DESTINO_LOCAL,
-    DESTINO_PROPIO,
     DESTINO_TERCERO,
     ESTADO_OK,
     ESTADO_RESPUESTA_INVALIDA,
@@ -123,12 +122,6 @@ _INSTRUCCION_JUEZ = (
     "Answer with exactly one word: INJECTION or SAFE."
 )
 _TOKENS_RESPUESTA_JUEZ = 16
-# "ollama" es el nombre del servicio en la red interna de Docker. Es una constante y
-# no se deriva de OLLAMA_BASE_URL: si no, apuntar esa variable a un servidor ajeno lo
-# volveria "local" y se saltaria el permiso.
-_HOSTS_LOCALES = frozenset(
-    {"localhost", "127.0.0.1", "::1", "host.docker.internal", "ollama"}
-)
 _CARACTERES_DE_ADORNO = " \t\r\n.,;:!*_`'\""
 _LARGO_MAXIMO_ETIQUETA = 40
 
@@ -139,20 +132,11 @@ def _cliente() -> httpx.Client:
     return httpx.Client(timeout=TIMEOUT_CLASIFICADOR_S)
 
 
-def _hosts_propios() -> frozenset[str]:
-    return frozenset(
-        h.strip().lower() for h in CLASIFICADOR_HOSTS_PROPIOS.split(",") if h.strip()
-    )
-
-
 def clasificar_destino(url: str) -> str:
     """`local`, `propio` o `tercero` segun a donde iria el texto si se envia a `url`."""
-    host = (urlparse(url).hostname or "").lower()
-    if host in _HOSTS_LOCALES:
-        return DESTINO_LOCAL
-    if host and host in _hosts_propios():
-        return DESTINO_PROPIO
-    return DESTINO_TERCERO
+    return adaptador.clasificar_destino(
+        url, adaptador.parsear_hosts(CLASIFICADOR_HOSTS_PROPIOS)
+    )
 
 
 def _es_destino_local(url: str) -> bool:

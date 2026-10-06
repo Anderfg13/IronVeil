@@ -165,6 +165,32 @@ no lo guarda). Mientras tanto, el valor por defecto sigue siendo Prompt Guard 2 
 
 ---
 
+## 6. Un modelo protegido servido por una API de un tercero vs. "todo local" (2026-10-05)
+
+**Conflicto.** García pidió que el proxy pueda proteger también un modelo de frontera por API
+key, solo para que sea más versátil (no para medir). Eso es distinto de los backends del
+clasificador (conflicto 5): aquí el tercero recibe el **prompt completo y el system prompt, con
+el canario**, y devuelve la respuesta. Choca con la regla 1 (laboratorio aislado) y con la regla
+2 (los canarios, aunque ficticios, se tratan como reales). Además, los términos de uso de varios
+proveedores restringen las pruebas de seguridad.
+
+**Decisión.** Se implementa como **extensión aparte** (`proxy/modelos_protegidos.py`, opcional y
+apagada por defecto):
+- permiso propio, distinto del de los clasificadores: `MODELO_PROTEGIDO_PERMITIR_TERCEROS=1`;
+  un host de la propia organización (`MODELO_PROTEGIDO_HOSTS_PROPIOS`) no lo necesita; fuera de
+  esta máquina siempre HTTPS y clave;
+- los 5 mecanismos no cambian: el adaptador devuelve la forma de Ollama;
+- el canario no se escribe en el código ni en el JSON: el system prompt lleva `${VARIABLE}`;
+- los eventos de un modelo remoto llevan `es_extension` para que **no se mezclen con C0–C6**:
+  un modelo de frontera trae su propio entrenamiento de seguridad y no es comparable;
+- cualquier fallo es un 502 genérico, sin el cuerpo de error del proveedor.
+
+**Pendiente (no lo decide el código).** Antes de activar un tercero: aprobación del equipo, revisar
+los términos de uso del proveedor para pruebas de seguridad, y **no enviarle los ataques de
+V2–V4**.
+
+---
+
 ## Matriz de integración — semana de clasificación
 
 Línea base: `pytest` completo en verde (80 tests) antes de cerrar.

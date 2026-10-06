@@ -41,9 +41,11 @@ import proxy.demo_chat as demo_chat
 import proxy.espera_revision as espera_revision
 import proxy.herramientas as herramientas
 import proxy.mecanismos as mecanismos
+import proxy.modelos_protegidos as modelos_protegidos
 import proxy.notificaciones as notificaciones
 import proxy.revision_panel as revision_panel
 import proxy.siem as siem
+from proxy.adaptador_clasificador import ErrorConfiguracion
 
 logger = logging.getLogger(__name__)
 
@@ -237,8 +239,9 @@ async def _calentar_modelos() -> None:
     """
     config = mecanismos.cargar_config(mecanismos.CONFIG_PATH)
     tareas: dict[str, Awaitable[None]] = {
-        "modelo soporte": _calentar_modelo_ollama("soporte"),
-        "modelo rrhh": _calentar_modelo_ollama("rrhh"),
+        f"modelo {nombre}": _calentar_modelo_ollama(nombre)
+        for nombre in ("soporte", "rrhh")
+        if not modelos_protegidos.es_remoto(nombre)
     }
     if config["clasificacion"]:
         tareas["clasificador"] = _calentar_clasificador()
@@ -255,6 +258,10 @@ async def _calentar_modelos() -> None:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    try:
+        modelos_protegidos.resolver("")  # valida MODELOS_REMOTOS al arrancar
+    except ErrorConfiguracion as exc:
+        logger.error("MODELOS_REMOTOS esta mal configurado: %s", exc)
     await _calentar_modelos()
     yield
 
@@ -322,6 +329,9 @@ class _MetricasCadena:
     # extendidos `clasificador_entrada` / `clasificador_salida` del evento. Solo estan
     # las direcciones que SI se clasificaron.
     detalles_clasificacion: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # Que modelo protegido respondio (backend, modelo, destino, estado): el campo
+    # extendido `modelo_protegido` del evento. None si el modelo no llego a llamarse.
+    detalle_modelo: dict[str, Any] | None = None
 
     def sumar(self, pieza: str, ns: int) -> None:
         """Suma `ns` al tiempo de `pieza` (entrada y salida van al mismo total)."""
@@ -629,6 +639,68 @@ async def _llamar_ollama(modelo: str, mensaje: str) -> dict[str, Any]:
     return response.json()
 
 
+async def _llamar_modelo_protegido(
+    modelo: str, mensaje: str, metricas: _MetricasCadena
+) -> dict[str, Any]:
+    """Llama al modelo que responde: Ollama (por defecto) o un modelo remoto.
+
+    Un modelo declarado en `MODELOS_REMOTOS` (proxy/modelos_protegidos.py) se atiende
+    por la API de su proveedor y devuelve la misma forma que Ollama, asi que desde aqui
+    hacia adelante (cadena de salida, respuesta al cliente) nada cambia. Cualquier fallo
+    del modelo remoto es un 502 generico: el detalle va solo al log del servidor, nunca
+    el cuerpo de error del proveedor.
+    """
+    try:
+        remoto = modelos_protegidos.resolver(modelo)
+    except ErrorConfiguracion as exc:
+        logger.error("MODELOS_REMOTOS esta mal configurado: %s", exc)
+        raise HTTPException(status_code=502, detail=_DETALLE_ERROR_OLLAMA) from exc
+    if remoto is None:
+        respuesta = await _llamar_ollama(modelo, mensaje)
+        metricas.detalle_modelo = modelos_protegidos.detalle_ollama(
+            modelo, OLLAMA_BASE_URL
+        ).como_dict()
+        return respuesta
+    if _modelo_con_herramientas(modelo):
+        logger.error(
+            "el modelo remoto %r no admite herramientas simuladas "
+            "(MODELOS_CON_HERRAMIENTAS); se rechaza la peticion.",
+            _sanear_para_log(modelo),
+        )
+        raise HTTPException(status_code=502, detail=_DETALLE_ERROR_OLLAMA)
+    try:
+        respuesta, detalle = await modelos_protegidos.llamar(
+            _obtener_cliente_http(), remoto, mensaje
+        )
+    except (
+        httpx.HTTPError,
+        ErrorConfiguracion,
+        KeyError,
+        IndexError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        logger.warning(
+            "El modelo remoto %r (%s) fallo: %s (%s).",
+            _sanear_para_log(modelo),
+            remoto.backend,
+            modelos_protegidos.estado(exc),
+            type(exc).__name__,
+        )
+        raise HTTPException(status_code=502, detail=_DETALLE_ERROR_OLLAMA) from exc
+    metricas.detalle_modelo = detalle.como_dict()
+    return respuesta
+
+
+def _es_extension(modelo: str) -> bool:
+    """Resultados fuera del nucleo: el modelo con herramientas o uno remoto.
+
+    Un modelo de frontera trae su propio entrenamiento de seguridad: sus resultados no
+    son comparables con C0-C6 de los modelos locales, asi que no deben mezclarse.
+    """
+    return _modelo_con_herramientas(modelo) or modelos_protegidos.es_remoto(modelo)
+
+
 def _modelo_con_herramientas(modelo: str) -> bool:
     """Extension (Excessive Agency): el modelo recibe herramientas SIMULADAS
     solo si esta en `MODELOS_CON_HERRAMIENTAS` (lista separada por comas,
@@ -809,7 +881,8 @@ def _construir_evento(
     mecanismos y `modelo`, el tiempo del modelo protegido). Agrega
     `clasificador_entrada` / `clasificador_salida` (que clasificador respondio, con que
     modelo, hacia que destino, con que estado y puntaje) por cada direccion
-    clasificada. Agrega
+    clasificada. Agrega `modelo_protegido` (backend, modelo y destino del modelo que
+    respondio, si llego a llamarse). Agrega
     `tiempo_revision_humana_ms` solo si se pasa
     explicitamente (peticion que paso por la cola de revision): es un
     evento aparte del que ya escribio `/chat` al encolar, nunca lo
@@ -836,6 +909,9 @@ def _construir_evento(
     # solo las direcciones que se clasificaron.
     for direccion, detalle in metricas.detalles_clasificacion.items():
         evento[f"clasificador_{direccion}"] = detalle
+    # Que modelo protegido respondio (campo extendido `modelo_protegido`).
+    if metricas.detalle_modelo:
+        evento["modelo_protegido"] = metricas.detalle_modelo
     if tiempo_revision_humana_ms is not None:
         evento["tiempo_revision_humana_ms"] = tiempo_revision_humana_ms
     if es_extension:
@@ -964,7 +1040,7 @@ async def _completar_peticion(
     """
     prompt_ollama = _preparar_prompt(mensaje, modelo, config, metricas)
     inicio_modelo_ns = time.perf_counter_ns()
-    respuesta = await _llamar_ollama(modelo, prompt_ollama)
+    respuesta = await _llamar_modelo_protegido(modelo, prompt_ollama, metricas)
     # Tiempo del modelo protegido: restarlo a `latencia_ms` deja el costo propio.
     metricas.sumar("modelo", time.perf_counter_ns() - inicio_modelo_ns)
     mecanismo_herramienta = _gestionar_llamadas_a_herramientas(
@@ -1038,7 +1114,7 @@ async def chat(request: ChatRequest, http_request: Request) -> dict[str, Any]:
             latencia_ms,
             metricas,
             config,
-            es_extension=_modelo_con_herramientas(request.modelo),
+            es_extension=_es_extension(request.modelo),
         )
     )
 

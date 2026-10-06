@@ -28,6 +28,7 @@ import math
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from typing import Any
+from urllib.parse import urlparse
 
 MODELO_VERIFICADO_ENTRADA = "meta-llama/Llama-Prompt-Guard-2-86M"
 
@@ -38,6 +39,32 @@ DESTINO_TERCERO = "tercero"  # otra organizacion: el texto sale del laboratorio
 
 ESTADO_OK = "ok"
 ESTADO_RESPUESTA_INVALIDA = "respuesta_invalida"
+
+# "ollama" es el nombre del servicio en la red interna de Docker. Es una constante y
+# no se deriva de OLLAMA_BASE_URL: si no, apuntar esa variable a un servidor ajeno lo
+# volveria "local" y se saltaria el permiso.
+HOSTS_LOCALES = frozenset(
+    {"localhost", "127.0.0.1", "::1", "host.docker.internal", "ollama"}
+)
+
+
+def parsear_hosts(texto: str) -> frozenset[str]:
+    """Lista de hosts de una variable de entorno, sin espacios y en minusculas."""
+    return frozenset(h.strip().lower() for h in texto.split(",") if h.strip())
+
+
+def clasificar_destino(url: str, hosts_propios: frozenset[str]) -> str:
+    """`local`, `propio` o `tercero`: a donde iria el texto si se envia a `url`.
+
+    `hosts_propios` son nombres exactos (ni subdominios ni sufijos cuentan). Una URL
+    sin host se trata como tercero.
+    """
+    host = (urlparse(url).hostname or "").lower()
+    if host in HOSTS_LOCALES:
+        return DESTINO_LOCAL
+    if host and host in hosts_propios:
+        return DESTINO_PROPIO
+    return DESTINO_TERCERO
 
 
 class ErrorConfiguracion(RuntimeError):
