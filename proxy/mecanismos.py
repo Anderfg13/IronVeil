@@ -24,6 +24,7 @@ import httpx
 import yaml
 
 import proxy.adaptador_clasificador as adaptador
+import proxy.backends_entrada as backends_entrada
 import proxy.cola as cola
 
 logger = logging.getLogger(__name__)
@@ -531,15 +532,17 @@ def _backends_entrada() -> dict[str, Callable[[str], bool]]:
     """Backends de clasificacion de entrada disponibles, por nombre.
 
     Cada uno recibe el texto y devuelve True = malicioso, y debe fallar cerrado ante
-    cualquier error. Para sumar otro modelo con otro transporte (p. ej. una API
-    remota con su propia clave y formato de respuesta) se agrega aqui una funcion
-    `(texto) -> bool` y se elige con CLASIFICADOR_ENTRADA_BACKEND; `clasificar()` y
-    el resto de la cadena no cambian. Un backend remoto envia texto FUERA del
-    laboratorio: requiere aprobacion expresa del equipo (CLAUDE.md, regla 1) y
-    dejarlo anotado en docs/CONFLICTOS_RESUELTOS.md. Ver
-    docs/CAMBIAR_MODELO_CLASIFICADOR.md.
+    cualquier error. "huggingface" (local) vive aqui; ollama, openai, anthropic y jev
+    estan en proxy/backends_entrada.py. Para sumar otro se escribe una funcion
+    `(texto) -> bool` y se registra; se elige con CLASIFICADOR_ENTRADA_BACKEND y
+    `clasificar()` no cambia. Un backend remoto envia texto FUERA del laboratorio: esta
+    apagado salvo CLASIFICADOR_PERMITIR_REMOTO=1 (CLAUDE.md, regla 1; decision en
+    docs/CONFLICTOS_RESUELTOS.md). Ver docs/CAMBIAR_MODELO_CLASIFICADOR.md.
     """
-    return {"huggingface": _clasificar_entrada_prompt_guard}
+    return {
+        "huggingface": _clasificar_entrada_prompt_guard,
+        **backends_entrada.BACKENDS,
+    }
 
 
 def _clasificar_entrada(texto: str) -> bool:

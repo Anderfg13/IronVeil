@@ -69,6 +69,18 @@ services:
       CLASIFICADOR_ENTRADA_ETIQUETAS_BENIGNAS: ${CLASIFICADOR_ENTRADA_ETIQUETAS_BENIGNAS:-}
       CLASIFICADOR_SALIDA_VEREDICTOS_INSEGUROS: ${CLASIFICADOR_SALIDA_VEREDICTOS_INSEGUROS:-}
       CLASIFICADOR_SALIDA_VEREDICTOS_SEGUROS: ${CLASIFICADOR_SALIDA_VEREDICTOS_SEGUROS:-}
+      # Otros backends del clasificador de entrada (proxy/backends_entrada.py). Los remotos
+      # (Jev, APIs de frontera) estan APAGADOS salvo CLASIFICADOR_PERMITIR_REMOTO=1: sacan
+      # el texto de cada peticion del laboratorio. Las claves viven solo en .env.
+      CLASIFICADOR_ENTRADA_MODELO: ${CLASIFICADOR_ENTRADA_MODELO:-}
+      CLASIFICADOR_ENTRADA_URL_BASE: ${CLASIFICADOR_ENTRADA_URL_BASE:-}
+      CLASIFICADOR_ENTRADA_API_KEY: ${CLASIFICADOR_ENTRADA_API_KEY:-}
+      CLASIFICADOR_ENTRADA_PARAMETROS_EXTRA: ${CLASIFICADOR_ENTRADA_PARAMETROS_EXTRA:-}
+      CLASIFICADOR_PERMITIR_REMOTO: ${CLASIFICADOR_PERMITIR_REMOTO:-}
+      TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+      TYPESAFE_ENDPOINT: ${TYPESAFE_ENDPOINT:-https://api.typesafe.ai}
+      JEV_MODELO: ${JEV_MODELO:-jev-latest}
+      JEV_UMBRAL: ${JEV_UMBRAL:-0.5}
       # Cuanto tiempo mantiene Ollama un modelo cargado en memoria tras la
       # ultima peticion (nativo de su API). 30m por defecto, mas que el 5m
       # de Ollama, para que una pausa entre peticiones (demo en vivo,

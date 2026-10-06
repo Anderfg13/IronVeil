@@ -133,6 +133,30 @@
 
 ---
 
+## 5. Backends remotos del clasificador de entrada vs. "todo local" (2026-10-05)
+
+**Conflicto.** García pidió que el proxy pueda conectarse a modelos locales y también a
+modelos de frontera por API key y a Jev (documentación de TypeSafe) para decidir si un
+texto es prompt injection. Un backend remoto envía el texto de **cada petición** a un
+tercero, lo que choca con la regla 1 de `CLAUDE.md` (laboratorio aislado), con el criterio
+dado antes de que todo fuera local, y con la regla 2 (los canarios, aunque ficticios, se
+tratan como reales: V4 paso 2 los lleva dentro del mensaje).
+
+**Decisión.** Se implementan los cuatro backends (`ollama`, `openai`, `anthropic`, `jev`;
+`proxy/backends_entrada.py`) pero **lo remoto queda apagado por defecto**:
+- exige `CLASIFICADOR_PERMITIR_REMOTO=1`, destino HTTPS y clave en `.env`;
+- un destino local (localhost, el Ollama del stack, un servidor local tipo OpenAI) no
+  necesita permiso;
+- todos fallan cerrado y nunca escriben claves ni el texto del usuario en el log;
+- solo sustituyen al clasificador de **entrada** (el de salida sigue siendo Llama Guard).
+
+**Pendiente (no lo decide el código).** Antes de usar un backend remoto en corridas del
+informe: aprobación del equipo, revisar los términos de uso del proveedor para pruebas de
+seguridad, y anotar en cada corrida qué backend, modelo y umbral se usó (el log de eventos
+no lo guarda). Mientras tanto, el valor por defecto sigue siendo Prompt Guard 2 86M local.
+
+---
+
 ## Matriz de integración — semana de clasificación
 
 Línea base: `pytest` completo en verde (80 tests) antes de cerrar.

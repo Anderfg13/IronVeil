@@ -175,6 +175,9 @@ Esta es la estructura **objetivo**. Lo marcado `[ya existe]` está en el repo ho
                         a /chat de forma opcional via SIEM_ARCHIVO_WAZUH;
                         incluye exportar_a_siem(evento, "json"|"cef"), funcion pura,
                         y docs/siem/wazuh/ con reglas y guia de despliegue)
+                        backends_entrada.py (clasificador de entrada alternativo: ollama,
+                        openai, anthropic y jev; los remotos apagados salvo
+                        CLASIFICADOR_PERMITIR_REMOTO=1)
                         adaptador_clasificador.py (traduce el veredicto de cada modelo
                         clasificador a "malicioso / no" y elige el backend de entrada;
                         cambiar de modelo no toca clasificar(); guia en
