@@ -103,6 +103,7 @@ services:
       # un rechazo de la revision humana se recuerda y el mismo mensaje se rechaza solo.
       MEMORIA_RECHAZOS: ${MEMORIA_RECHAZOS:-}
       MEMORIA_RECHAZOS_ALMACEN: ${MEMORIA_RECHAZOS_ALMACEN:-jsonl:///app/memoria/rechazos.jsonl}
+      MEMORIA_RECHAZOS_ADAPTADORES: ${MEMORIA_RECHAZOS_ADAPTADORES:-}
       MEMORIA_RECHAZOS_MAXIMO: ${MEMORIA_RECHAZOS_MAXIMO:-5000}
       MEMORIA_RECHAZOS_VISTA_PREVIA: ${MEMORIA_RECHAZOS_VISTA_PREVIA:-1}
       # Exportacion de cada evento a un archivo en formato Wazuh JSON (ver

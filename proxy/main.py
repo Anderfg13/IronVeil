@@ -264,7 +264,7 @@ _log_servidor = logging.getLogger("uvicorn.error")
 
 def _avisar_estado_de_la_memoria() -> None:
     """Deja en el log si la memoria de decisiones esta activa, y con que reglas."""
-    if not memoria_decisiones.MEMORIA_RECHAZOS:
+    if not memoria_decisiones.esta_activa():
         _log_servidor.info(
             "Memoria de decisiones: APAGADA (MEMORIA_RECHAZOS=1 para activarla)."
         )
@@ -287,6 +287,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     _avisar_estado_de_la_memoria()
     await _calentar_modelos()
     yield
+    memoria_decisiones.cerrar()  # libera el almacen (conexiones de la base de datos)
 
 
 app = FastAPI(title="IronVeil Proxy", version="0.1.0", lifespan=_lifespan)

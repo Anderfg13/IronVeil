@@ -327,9 +327,12 @@ con `json.dumps(evento, ensure_ascii=False)` + salto de línea.
     (modelo, mensaje normalizado) y `_consultar_memoria()` rechaza solo el mismo
     mensaje al principio de `/chat` (400 inmediato, sin cola, sin aviso, sin llegar
     al modelo). Solo rechazos (nunca aprobaciones), por modelo, coincidencia exacta:
-    no frena paráfrasis. **Persistente** con **almacén intercambiable** (adaptador
-    `AlmacenMemoria`: JSON Lines o SQLite en `./memoria`, carpeta del host; otra base
-    de datos se conecta registrando un almacén), reconstruido al arrancar; visible y
+    no frena paráfrasis. Es un **paquete con puertos y adaptadores**
+    (`proxy/memoria_decisiones/`: dominio, puerto `AlmacenMemoria`, servicio, registro,
+    `almacenes/` y composición; cada capa depende solo de la de abajo y solo la
+    composición lee el entorno). **Persistente** con almacén intercambiable (JSON Lines
+    o SQLite en `./memoria`, carpeta del host); la base de datos de una empresa se
+    conecta con `MEMORIA_RECHAZOS_ADAPTADORES`, sin editar IronVeil. Visible y
     revocable desde la pestaña *Memoria* de la consola. Los resultados de C0-C6 se midieron **sin** ella; sus
     eventos llevan `origen_decision: "memoria"`, `latencia_memoria_us` y
     `es_extension: true`, y se atribuyen a `aprobacion_humana`.

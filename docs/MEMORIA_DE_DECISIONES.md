@@ -38,58 +38,119 @@ solo se aplican al recrear el contenedor (`docker compose up -d proxy`).
   mecanismos y por la cola.
 - Al **rechazar**, el diálogo avisa si esa decisión se va a recordar, y al terminar lo confirma.
 
+## Cómo está construida (puertos y adaptadores)
+
+Cada capa depende **solo de la de abajo**; el núcleo no conoce a sus adaptadores.
+
+| Capa | Archivo (`proxy/memoria_decisiones/`) | Qué es | Depende de |
+|---|---|---|---|
+| Composición | `composicion.py` | lee el entorno **una vez** (`Configuracion`) y cablea todo | todo lo demás |
+| Servicio | `servicio.py` | el caso de uso: recordar, consultar, olvidar | dominio y puerto |
+| Puerto | `puerto.py` | `AlmacenMemoria`: el contrato de un almacén, y `ErrorAlmacen` | dominio |
+| Registro | `registro.py` | `RegistroAlmacenes`: de la URL al adaptador | puerto |
+| Adaptadores | `almacenes/jsonl.py`, `almacenes/sqlite.py` | un adaptador por archivo | dominio y puerto |
+| Dominio | `dominio.py` | qué es una regla y cómo se compara (huella, normalización) | nada |
+
+Lo que eso garantiza (y vigilan **pruebas de arquitectura** en `tests/test_memoria_servicio.py`):
+- el servicio **no importa ningún almacén** ni toca archivos o bases de datos: recibe el almacén
+  **inyectado**, igual que el `redactor` de credenciales y el reloj;
+- **solo `composicion.py` lee el entorno**: ni el dominio, ni el servicio, ni los adaptadores saben
+  que existe un `.env`;
+- el registro es un **objeto**, no un diccionario global: no hay estado compartido entre pruebas ni
+  entre instancias.
+
 ## Dónde se guardan las reglas (almacén intercambiable)
 
 Las reglas se leen en memoria al arrancar (la consulta de cada petición es un diccionario) y cada
-cambio se escribe **en el momento** en un **almacén**. El almacén es un **adaptador**
-(`AlmacenMemoria`), igual que los clasificadores: se elige con una URL en
-`MEMORIA_RECHAZOS_ALMACEN` y una empresa puede conectar su propia base de datos sin tocar el resto.
+cambio se escribe **en el momento** en un **almacén**, que se elige con una URL en
+`MEMORIA_RECHAZOS_ALMACEN`:
 
 | URL | Almacén | Cuándo |
 |---|---|---|
 | `jsonl:///app/memoria/rechazos.jsonl` | JSON Lines (**por defecto**) | sin dependencias ni servidor; legible a simple vista |
 | `sqlite:///app/memoria/memoria.db` | SQLite (biblioteca estándar) | una base real y transaccional; deja además una tabla de **auditoría** (quién olvidó cada regla y cuándo) |
+| `esquema://…` | el de **tu empresa** | ver «Conectar otra base de datos» |
 
 Ambos escriben en `./memoria` del equipo (montada en el contenedor como `/app/memoria`), **no** en
 un volumen de Docker: la memoria sobrevive a apagar el contenedor, reconstruir la imagen, `docker
 compose down -v` y reiniciar el equipo, y se puede ver, copiar y respaldar. **Para borrarlo todo,
 borra el archivo** con el proxy apagado.
 
-Robustez (probada con los dos almacenes):
+Robustez (probada con los dos almacenes, con la misma batería):
 - Cada cambio se fuerza a disco antes de responder (`fsync` / `synchronous = FULL`).
 - JSON Lines: un renglón dañado se **omite con un aviso** y un corte a mitad de escritura no pierde
   lo anterior. SQLite: una base corrupta no impide arrancar.
-- Si el almacén no está disponible (carpeta sin permiso, base caída, URL mala), la memoria
-  **funciona solo en memoria y lo dice** en el log y en la consola («SOLO en memoria: se perderán al
-  reiniciar»). Nunca deja de proteger por un fallo de almacenamiento.
-- **Una sola instancia del proxy**: las reglas se leen al arrancar, así que varias instancias
-  contra la misma base no se enteran de las reglas nuevas de las otras hasta reiniciar.
+- Si el almacén no está disponible (carpeta sin permiso, base caída, URL o complemento mal
+  configurados), la memoria **funciona solo en memoria y lo dice** en el log y en la consola («SOLO
+  en memoria: se perderán al reiniciar»). Nunca deja de proteger por un fallo de almacenamiento ni
+  tumba el proxy.
+- **Una sola instancia del proxy**: las reglas se leen al arrancar, así que varias instancias contra
+  la misma base no se enteran de las reglas nuevas de las otras hasta reiniciar.
 
-### Conectar otra base de datos (PostgreSQL, MySQL, Redis…)
+### Conectar otra base de datos (PostgreSQL, MySQL, Redis…) sin editar IronVeil
 
-Un almacén es una clase con tres métodos (el contrato está en `AlmacenMemoria`):
+Una empresa escribe su adaptador **en su propio paquete** y lo registra por configuración; no se toca
+ningún archivo de IronVeil.
+
+**1. El adaptador** cumple el contrato de `AlmacenMemoria` (cinco miembros):
 
 ```python
-class AlmacenDeLaEmpresa:
+# mi_empresa/ironveil_postgres.py
+from proxy.memoria_decisiones import ErrorAlmacen, Regla
+
+class AlmacenPostgres:
     descripcion = "PostgreSQL (mi-empresa)"        # lo que ve la consola
 
-    def __init__(self, ruta: str) -> None: ...     # recibe lo que sigue a «esquema://»
+    def __init__(self, destino: str) -> None: ...  # lo que sigue a «postgresql://»
 
     def cargar(self) -> list[Regla]: ...           # las reglas VIGENTES; deja el almacén listo
-    def guardar(self, regla: Regla) -> None: ...   # persiste antes de volver
+    def guardar(self, regla: Regla) -> None: ...   # persiste ANTES de volver
     def olvidar(self, huella: str, por: str, en: str) -> None: ...
+    def cerrar(self) -> None: ...                  # libera la conexión; repetible
+
+def registrar(registro) -> None:                   # el enganche que busca IronVeil
+    registro.registrar("postgresql", AlmacenPostgres)
 ```
 
-1. Lanza **`ErrorAlmacen`** (nunca otra excepción) ante cualquier fallo: la memoria lo captura y
-   sigue en memoria avisando.
-2. Regístralo en `ALMACENES` de `proxy/memoria_decisiones.py`: `"postgresql": AlmacenDeLaEmpresa`.
-3. Elígelo: `MEMORIA_RECHAZOS_ALMACEN=postgresql://usuario@servidor/base`.
-4. La clave o la cadena de conexión van en `.env`, **nunca en el código**; TLS siempre verificado; y
-   ni el mensaje ni credenciales al log (solo se guardan huellas).
-5. Pruebas con una base **simulada**, como `tests/test_memoria_decisiones.py` (la suite no usa red).
+**2. Se activa en `.env`**, sin cambiar IronVeil:
 
-No hay un almacén de PostgreSQL incluido: necesita un controlador (dependencia nueva, con versión
-fija) y un servidor para probarlo, y eso no se verificó. SQLite y JSON Lines sí están probados.
+```
+MEMORIA_RECHAZOS_ADAPTADORES=mi_empresa.ironveil_postgres
+MEMORIA_RECHAZOS_ALMACEN=postgresql://usuario@servidor/base
+```
+
+**3. Reglas del contrato** (lo que cualquier adaptador debe respetar):
+- Cualquier fallo se lanza como **`ErrorAlmacen`** (nunca otra excepción): traduce la del controlador.
+  La memoria lo captura y sigue en memoria avisando.
+- `guardar` y `olvidar` **persisten antes de volver**; `olvidar` de algo inexistente **no falla**;
+  guardar dos veces la misma regla **no la duplica**.
+- **No necesita ser seguro entre hilos**: el servicio serializa las llamadas.
+- Solo recibe **huellas y la vista previa** de la `Regla`; nunca el mensaje completo, y no debe
+  guardarlo ni escribirlo en el log.
+- La cadena de conexión y las claves van en `.env` (**nunca en el código**), con TLS siempre
+  verificado.
+
+**4. Pruébalo con la misma batería** que los adaptadores incluidos (`tests/contrato_almacen.py`):
+
+```python
+from contrato_almacen import ContratoAlmacen
+
+class TestMiAlmacen(ContratoAlmacen):
+    @pytest.fixture
+    def nuevo(self, tmp_path):
+        return lambda: AlmacenPostgres("usuario@servidor/base_de_pruebas")
+```
+
+Notas honestas:
+- El módulo de `MEMORIA_RECHAZOS_ADAPTADORES` **se importa y se ejecuta con los permisos del proxy**:
+  solo código de confianza, como cualquier complemento. Solo se aceptan **nombres de módulo**
+  (nunca rutas ni expresiones).
+- Que el módulo sea **importable dentro del contenedor** (instalarlo en la imagen o montarlo y
+  añadirlo al `PYTHONPATH`) lo resuelve quien despliega: IronVeil no lo hace por ti.
+- **No hay un adaptador de PostgreSQL/MySQL incluido ni verificado**: necesita un controlador
+  (dependencia nueva con versión fija) y un servidor para probarlo. SQLite y JSON Lines sí están
+  probados, también con la batería de contrato y con un almacén de «empresa» simulado que se
+  conecta por este mismo camino.
 
 ## Qué se recuerda y qué no
 
@@ -147,6 +208,7 @@ distingue por el campo extendido `origen_decision: "memoria"`.
 |---|---|---|
 | `MEMORIA_RECHAZOS` | vacío (apagada) | `1` la enciende. Solo actúa con `aprobacion_humana` activa |
 | `MEMORIA_RECHAZOS_ALMACEN` | `jsonl:///app/memoria/rechazos.jsonl` | Dónde se guardan: `jsonl://…`, `sqlite://…` u otro registrado |
+| `MEMORIA_RECHAZOS_ADAPTADORES` | vacío | Módulos (separados por comas) que registran adaptadores propios, p. ej. `mi_empresa.ironveil_postgres` |
 | `MEMORIA_RECHAZOS_MAXIMO` | `5000` | Tope de reglas |
 | `MEMORIA_RECHAZOS_VISTA_PREVIA` | `1` | `0` guarda solo la huella, sin vista previa |
 
