@@ -224,3 +224,36 @@ def test_el_registro_de_metricas_acumula_por_pieza() -> None:
 
     assert metricas.tiempos_ns == {"filtrado": 4_000, "modelo": 10_000}
     assert main._MetricasCadena().tiempos_ns == {}  # sin estado compartido
+
+
+def test_la_clasificacion_registra_entrada_y_salida_por_separado(
+    entorno: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def clasificar_con_ritmo(texto: str, direccion: str) -> bool:
+        time.sleep(0.01 if direccion == "entrada" else 0.04)
+        return False
+
+    monkeypatch.setattr(mecanismos, "clasificar", clasificar_con_ritmo)
+    entorno["usar"](clasificacion=True)
+
+    piezas = _piezas(entorno["enviar"](NORMAL))
+
+    assert piezas["clasificacion_entrada"] >= 10_000
+    assert piezas["clasificacion_salida"] >= 40_000
+    assert piezas["clasificacion_salida"] > piezas["clasificacion_entrada"]
+    # el total sigue siendo la suma de las dos direcciones
+    assert piezas["clasificacion"] >= (
+        piezas["clasificacion_entrada"] + piezas["clasificacion_salida"]
+    )
+
+
+def test_si_la_entrada_se_retiene_no_hay_clasificacion_de_salida(
+    entorno: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(mecanismos, "clasificar", lambda texto, direccion: True)
+    entorno["usar"](clasificacion=True)
+
+    piezas = _piezas(entorno["enviar"](NORMAL))
+
+    assert "clasificacion_entrada" in piezas
+    assert "clasificacion_salida" not in piezas

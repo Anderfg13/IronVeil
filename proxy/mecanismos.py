@@ -372,6 +372,14 @@ TIMEOUT_CLASIFICADOR_S: float = float(os.getenv("TIMEOUT_CLASIFICADOR_S", "10"))
 # latencia del clasificador (docs/FUENTE_DE_VERDAD.md, seccion 5: C3 real,
 # maximo 170.5s frente a una mediana de 12.7s).
 KEEP_ALIVE_OLLAMA: str = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
+# Llama Guard contesta "safe" o "unsafe" y, si es unsafe, las categorias violadas
+# ("S1,S10"): 32 tokens sobran. Sin tope, el modelo puede generar de mas y pagar
+# ese tiempo en cada peticion. NO se reduce `num_ctx`: Ollama descarta el inicio
+# del texto si no cabe, y un texto sin revisar seria un hueco de seguridad.
+LLAMA_GUARD_MAX_TOKENS: int = int(os.getenv("LLAMA_GUARD_MAX_TOKENS", "32"))
+# Prompt Guard en media precision (fp16) cuando hay GPU CUDA: menos tiempo y
+# memoria. Sin CUDA no se usa. Se puede apagar con PROMPT_GUARD_FP16=0.
+PROMPT_GUARD_FP16: bool = os.getenv("PROMPT_GUARD_FP16", "1") == "1"
 
 # Llama Guard 3 distingue si esta evaluando lo que dijo el usuario o lo que
 # respondio el modelo (plantilla oficial, ver docstring de clasificar()).
@@ -508,6 +516,8 @@ def _clasificar_salida_llama_guard(texto: str, direccion: str) -> bool:
         "messages": [{"role": _ROL_LLAMA_GUARD[direccion], "content": texto}],
         "stream": False,
         "keep_alive": KEEP_ALIVE_OLLAMA,
+        # Veredicto determinista y corto (ver LLAMA_GUARD_MAX_TOKENS).
+        "options": {"temperature": 0, "num_predict": LLAMA_GUARD_MAX_TOKENS},
     }
     try:
         client = _obtener_cliente_http_llama_guard()
@@ -565,12 +575,20 @@ def _obtener_pipeline_prompt_guard() -> Any:
             # primera GPU CUDA; sin CUDA (p. ej. torch CPU-only del
             # Dockerfile) sigue en -1, comportamiento identico al anterior.
             dispositivo = 0 if torch.cuda.is_available() else -1
-            logger.info("Prompt Guard cargado en device=%d.", dispositivo)
+            opciones: dict[str, Any] = {}
+            if dispositivo == 0 and PROMPT_GUARD_FP16:
+                opciones["torch_dtype"] = torch.float16
+            logger.info(
+                "Prompt Guard cargado en device=%d (%s).",
+                dispositivo,
+                "fp16" if opciones else "fp32",
+            )
             _pipeline_prompt_guard = _crear_pipeline(
                 "text-classification",
                 model=MODELO_PROMPT_GUARD_ID,
                 token=HF_TOKEN,
                 device=dispositivo,
+                **opciones,
             )
     return _pipeline_prompt_guard
 

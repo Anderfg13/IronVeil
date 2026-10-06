@@ -404,3 +404,57 @@ def test_la_ruta_de_salida_no_puede_salir_del_repositorio(tmp_path: Path) -> Non
 
     with pytest.raises(ValueError):
         costo._escribir(tabla, destino, "x")
+
+
+# --- Clasificacion desglosada en entrada y salida ------------------------------
+
+
+def test_la_clasificacion_se_desglosa_en_entrada_y_salida(tmp_path: Path) -> None:
+    eventos = [
+        _evento(
+            "C3",
+            400,
+            300_000,
+            segundos=1,
+            clasificacion=80_000,
+            clasificacion_entrada=10_000,
+            clasificacion_salida=70_000,
+        )
+    ]
+    df = costo.leer_eventos([_escribir_jsonl(tmp_path / "e.jsonl", eventos)])
+
+    fila = costo.resumen_legitimas(df).iloc[0]
+
+    assert fila["Clasificación de entrada (ms)"] == pytest.approx(10.0)
+    assert fila["Clasificación de salida (ms)"] == pytest.approx(70.0)
+
+
+def test_el_desglose_no_se_cuenta_dos_veces_en_la_suma_de_mecanismos(
+    tmp_path: Path,
+) -> None:
+    eventos = [
+        _evento(
+            "C3",
+            400,
+            300_000,
+            segundos=1,
+            clasificacion=80_000,
+            clasificacion_entrada=10_000,
+            clasificacion_salida=70_000,
+        )
+    ]
+    df = costo.leer_eventos([_escribir_jsonl(tmp_path / "e.jsonl", eventos)])
+
+    fila = costo.resumen_legitimas(df).iloc[0]
+
+    assert fila[costo.COL_SUMA_MECANISMOS] == pytest.approx(80.0)  # no 160
+
+
+def test_sin_datos_de_desglose_las_columnas_quedan_vacias(tmp_path: Path) -> None:
+    eventos = [_evento("C3", 400, 300_000, segundos=1, clasificacion=80_000)]
+    df = costo.leer_eventos([_escribir_jsonl(tmp_path / "e.jsonl", eventos)])
+
+    fila = costo.resumen_legitimas(df).iloc[0]
+
+    assert pd.isna(fila["Clasificación de entrada (ms)"])
+    assert pd.isna(fila["Clasificación de salida (ms)"])

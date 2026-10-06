@@ -60,6 +60,13 @@ NOMBRES_PIEZA = {
     "limite": "Límite de peticiones",
     "aprobacion_humana": "Aprob. humana (revisar si retener)",
 }
+# Desglose de la clasificacion por direccion (desde 2026-10-05): entrada = Prompt Guard,
+# salida = Llama Guard. NO entran en la suma de mecanismos: ya estan dentro de
+# `clasificacion` y se contarian dos veces.
+PIEZAS_DETALLE = {
+    "clasificacion_entrada": "Clasificación de entrada (ms)",
+    "clasificacion_salida": "Clasificación de salida (ms)",
+}
 PATRON_DEFECTO = "resultados/**/eventos.jsonl"
 DECIMALES = 3
 # Nombres de columna de las tablas (una sola vez; son el contrato con el CSV/MD).
@@ -147,6 +154,7 @@ def resumen_legitimas(df: pd.DataFrame) -> pd.DataFrame:
         COL_PROPIO_P95,
         COL_SUMA_MECANISMOS,
         *[f"{NOMBRES_PIEZA[p]} (ms)" for p in PIEZAS_MECANISMO],
+        *PIEZAS_DETALLE.values(),
     ]
     if df.empty or "latencia_modelo_us" not in df:
         return pd.DataFrame(columns=columnas)
@@ -166,9 +174,11 @@ def resumen_legitimas(df: pd.DataFrame) -> pd.DataFrame:
             COL_PROPIO_P95: propio.quantile(0.95),
             COL_SUMA_MECANISMOS: _suma_mecanismos_ms(g).median(),
         }
-        for pieza in PIEZAS_MECANISMO:
+        nombres = {p: f"{NOMBRES_PIEZA[p]} (ms)" for p in PIEZAS_MECANISMO}
+        nombres.update(PIEZAS_DETALLE)
+        for pieza, nombre_columna in nombres.items():
             columna = f"latencia_{pieza}_us"
-            fila[f"{NOMBRES_PIEZA[pieza]} (ms)"] = (
+            fila[nombre_columna] = (
                 _ms(g[columna]).median()
                 if columna in g and g[columna].notna().any()
                 else None

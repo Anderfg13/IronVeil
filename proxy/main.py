@@ -361,7 +361,11 @@ async def _paso_clasificacion(
     """
     inicio = time.perf_counter()
     inseguro = await run_in_threadpool(mecanismos.clasificar, texto, direccion)
-    metricas.latencia_clasificador_ms += int((time.perf_counter() - inicio) * 1000)
+    transcurrido = time.perf_counter() - inicio
+    metricas.latencia_clasificador_ms += int(transcurrido * 1000)
+    # Por direccion (entrada = Prompt Guard, salida = Llama Guard): permite saber cual
+    # de los dos pesa. Se suma ademas a `clasificacion` en _ejecutar_cadena().
+    metricas.sumar(f"clasificacion_{direccion}", int(transcurrido * 1e9))
     if inseguro and direccion == "salida":
         return _CONTENIDO_RETENIDO, True
     return texto, inseguro

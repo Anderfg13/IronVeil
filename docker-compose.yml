@@ -2,6 +2,13 @@ services:
   ollama:
     image: ollama/ollama:latest
     container_name: ironveil-ollama
+    environment:
+      # Cuantos modelos puede tener cargados a la vez. Con los modelos de la demo
+      # (soporte/rrhh/rrhh-agente + llama-guard3) un valor bajo hace que un
+      # modelo expulse a otro de memoria y la siguiente peticion pague una
+      # recarga (cola de latencia). 3 es el valor por defecto de Ollama; sube a 4
+      # solo si la maquina tiene memoria de sobra (p. ej. la GPU T4 de Colab).
+      OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-3}
     volumes:
       - ollama_data:/root/.ollama
     networks:
@@ -51,6 +58,10 @@ services:
       # (unsafe) en cada peticion -- ver docs/FUENTE_DE_VERDAD.md, seccion 4.
       MODELO_PROMPT_GUARD_ID: ${MODELO_PROMPT_GUARD_ID:-meta-llama/Llama-Prompt-Guard-2-86M}
       HF_TOKEN: ${HF_TOKEN}
+      # Latencia del clasificador (sin cambiar lo que revisa): tope de tokens de
+      # la respuesta de Llama Guard y media precision de Prompt Guard con GPU.
+      LLAMA_GUARD_MAX_TOKENS: ${LLAMA_GUARD_MAX_TOKENS:-32}
+      PROMPT_GUARD_FP16: ${PROMPT_GUARD_FP16:-1}
       # Cuanto tiempo mantiene Ollama un modelo cargado en memoria tras la
       # ultima peticion (nativo de su API). 30m por defecto, mas que el 5m
       # de Ollama, para que una pausa entre peticiones (demo en vivo,
