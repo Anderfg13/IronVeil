@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import secrets
+import sqlite3
 import threading
 from collections.abc import Iterator
 from pathlib import Path
@@ -36,7 +37,9 @@ CREDENCIAL_DE_PRUEBA = "SPT-DEMO-4321"
 
 
 def _memoria(tmp_path: Path, **kw: Any) -> md.MemoriaDecisiones:
-    return md.MemoriaDecisiones(tmp_path / "memoria" / "rechazos.jsonl", **kw)
+    return md.MemoriaDecisiones(
+        md.AlmacenJsonl(tmp_path / "memoria" / "rechazos.jsonl"), **kw
+    )
 
 
 # --- Normalizacion y huella ---
@@ -174,7 +177,7 @@ def test_si_no_se_puede_escribir_funciona_en_memoria_y_lo_avisa(
     bloqueo.write_text("x", encoding="utf-8")
 
     with caplog.at_level("ERROR"):
-        memoria = md.MemoriaDecisiones(bloqueo / "rechazos.jsonl")
+        memoria = md.MemoriaDecisiones(md.AlmacenJsonl(bloqueo / "rechazos.jsonl"))
 
     assert memoria.persistente is False
     assert "SOLO en memoria" in caplog.text
@@ -248,6 +251,244 @@ def test_apagada_por_defecto(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(md, "MEMORIA_RECHAZOS", False)
 
     assert md.obtener() is None
+
+
+# --- Almacenes intercambiables (JSON Lines y SQLite) ---
+
+
+def _nombre(tipo: str) -> str:
+    return "rechazos.jsonl" if tipo == "jsonl" else "memoria.db"
+
+
+def _en(tmp_path: Path, tipo: str, **kw: Any) -> md.MemoriaDecisiones:
+    ruta = tmp_path / "memoria" / _nombre(tipo)
+    almacen = md.AlmacenJsonl(ruta) if tipo == "jsonl" else md.AlmacenSqlite(ruta)
+    return md.MemoriaDecisiones(almacen, **kw)
+
+
+@pytest.fixture(params=["jsonl", "sqlite"])
+def tipo(request: pytest.FixtureRequest) -> str:
+    return str(request.param)
+
+
+def test_cada_almacen_conserva_lo_rechazado_tras_reiniciar(
+    tmp_path: Path, tipo: str
+) -> None:
+    antes = _en(tmp_path, tipo)
+    assert antes.recordar_rechazo("soporte", ATAQUE, "ana", "filtrado") == md.RECORDADA
+
+    despues = _en(tmp_path, tipo)
+
+    regla = despues.coincide("soporte", ATAQUE)
+    assert regla is not None and regla.decidido_por == "ana"
+    assert despues.persistente is True
+
+
+def test_cada_almacen_conserva_lo_olvidado_tras_reiniciar(
+    tmp_path: Path, tipo: str
+) -> None:
+    memoria = _en(tmp_path, tipo)
+    memoria.recordar_rechazo("soporte", ATAQUE, "ana", "filtrado")
+    memoria.recordar_rechazo("soporte", "otro mensaje", "ana", "filtrado")
+
+    assert memoria.olvidar(md.huella("soporte", ATAQUE), "luis") is True
+
+    reabierta = _en(tmp_path, tipo)
+    assert reabierta.coincide("soporte", ATAQUE) is None
+    assert reabierta.coincide("soporte", "otro mensaje") is not None
+
+
+def test_cada_almacen_respeta_el_tope_y_no_duplica(tmp_path: Path, tipo: str) -> None:
+    memoria = _en(tmp_path, tipo, maximo=2)
+    memoria.recordar_rechazo("soporte", "uno", "ana", "filtrado")
+    assert memoria.recordar_rechazo("soporte", "UNO", "ana", "filtrado") == (
+        md.YA_RECORDADA
+    )
+    memoria.recordar_rechazo("soporte", "dos", "ana", "filtrado")
+
+    assert memoria.recordar_rechazo("soporte", "tres", "ana", "filtrado") == (
+        md.MEMORIA_LLENA
+    )
+    assert _en(tmp_path, tipo).tamano() == 2
+
+
+def test_cada_almacen_soporta_escrituras_concurrentes(
+    tmp_path: Path, tipo: str
+) -> None:
+    memoria = _en(tmp_path, tipo)
+
+    def grabar(n: int) -> None:
+        memoria.recordar_rechazo("soporte", f"mensaje {n}", "ana", "filtrado")
+
+    hilos = [threading.Thread(target=grabar, args=(n,)) for n in range(40)]
+    for hilo in hilos:
+        hilo.start()
+    for hilo in hilos:
+        hilo.join()
+
+    assert memoria.tamano() == 40
+    assert _en(tmp_path, tipo).tamano() == 40
+
+
+def test_cada_almacen_guarda_huellas_y_no_el_mensaje(tmp_path: Path, tipo: str) -> None:
+    mensaje = f"{CREDENCIAL_DE_PRUEBA} " + "relleno largo del mensaje " * 8 + "FINAL"
+    _en(tmp_path, tipo).recordar_rechazo("soporte", mensaje, "ana", "filtrado")
+
+    crudo = (tmp_path / "memoria" / _nombre(tipo)).read_bytes()
+
+    assert b"FINAL" not in crudo
+    assert CREDENCIAL_DE_PRUEBA.encode() not in crudo
+    assert md.huella("soporte", mensaje).encode() in crudo
+
+
+def test_cada_almacen_deja_la_descripcion_para_la_consola(
+    tmp_path: Path, tipo: str
+) -> None:
+    descripcion = _en(tmp_path, tipo).descripcion
+
+    esperado = (
+        "JSON Lines (rechazos.jsonl)" if tipo == "jsonl" else "SQLite (memoria.db)"
+    )
+    assert descripcion == esperado
+
+
+def test_sqlite_deja_una_auditoria_de_quien_olvido_cada_regla(tmp_path: Path) -> None:
+    memoria = _en(tmp_path, "sqlite")
+    memoria.recordar_rechazo("soporte", ATAQUE, "ana", "filtrado")
+    memoria.olvidar(md.huella("soporte", ATAQUE), "luis")
+
+    con = sqlite3.connect(tmp_path / "memoria" / "memoria.db")
+    try:
+        filas = con.execute("SELECT op, por FROM auditoria ORDER BY id").fetchall()
+        reglas = con.execute("SELECT COUNT(*) FROM reglas").fetchone()
+    finally:
+        con.close()
+
+    assert filas == [("recordar", "ana"), ("olvidar", "luis")]
+    assert reglas == (0,)
+
+
+def test_una_base_sqlite_corrupta_no_impide_arrancar(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    carpeta = tmp_path / "memoria"
+    carpeta.mkdir()
+    (carpeta / "memoria.db").write_bytes(b"esto no es una base de datos " * 40)
+
+    with caplog.at_level("ERROR"):
+        memoria = _en(tmp_path, "sqlite")
+
+    assert memoria.persistente is False
+    assert "SOLO en memoria" in caplog.text
+    assert (
+        memoria.recordar_rechazo("soporte", ATAQUE, "ana", "filtrado")
+        == md.RECORDADA_SIN_GUARDAR
+    )
+    assert memoria.coincide("soporte", ATAQUE) is not None
+
+
+def test_sqlite_en_una_carpeta_no_escribible_funciona_en_memoria(
+    tmp_path: Path,
+) -> None:
+    bloqueo = tmp_path / "es-un-archivo"
+    bloqueo.write_text("x", encoding="utf-8")
+
+    memoria = md.MemoriaDecisiones(md.AlmacenSqlite(bloqueo / "memoria.db"))
+
+    assert memoria.persistente is False
+
+
+# --- Conectar otra base de datos (el adaptador) ---
+
+
+@pytest.mark.parametrize(
+    ("url", "tipo_esperado"),
+    [
+        ("jsonl:///app/memoria/rechazos.jsonl", md.AlmacenJsonl),
+        ("sqlite:///app/memoria/memoria.db", md.AlmacenSqlite),
+        ("SQLITE:///app/memoria/memoria.db", md.AlmacenSqlite),
+    ],
+)
+def test_la_url_elige_el_almacen(url: str, tipo_esperado: type) -> None:
+    assert isinstance(md.crear_almacen(url), tipo_esperado)
+
+
+@pytest.mark.parametrize(
+    "url", ["", "sqlite", "sqlite://", "postgres://u@h/db", "x:///y"]
+)
+def test_una_url_invalida_o_de_una_base_sin_adaptador_es_un_error_claro(
+    url: str,
+) -> None:
+    with pytest.raises(md.ErrorAlmacen, match="esquemas disponibles"):
+        md.crear_almacen(url)
+
+
+class _AlmacenDeEmpresa:
+    """Lo que escribiria una empresa para su base de datos: solo el contrato."""
+
+    descripcion = "Base de la empresa (simulada)"
+
+    def __init__(self, ruta: str) -> None:
+        self.reglas: dict[str, md.Regla] = {}
+        self.auditoria: list[tuple[str, str]] = []
+
+    def cargar(self) -> list[md.Regla]:
+        return list(self.reglas.values())
+
+    def guardar(self, regla: md.Regla) -> None:
+        self.reglas[regla.huella] = regla
+
+    def olvidar(self, huella: str, por: str, en: str) -> None:
+        self.reglas.pop(huella, None)
+        self.auditoria.append((huella, por))
+
+
+def test_una_base_nueva_se_conecta_registrando_un_almacen_sin_tocar_nada_mas(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(md.ALMACENES, "empresa", _AlmacenDeEmpresa)
+    monkeypatch.setattr(md, "MEMORIA_RECHAZOS", True)
+    monkeypatch.setattr(md, "MEMORIA_RECHAZOS_ALMACEN", "empresa://cualquier-cosa")
+    monkeypatch.setattr(md, "_instancia", None)
+
+    memoria = md.obtener()
+
+    assert memoria is not None and memoria.persistente is True
+    assert memoria.descripcion == "Base de la empresa (simulada)"
+    memoria.recordar_rechazo("soporte", ATAQUE, "ana", "filtrado")
+    assert memoria.coincide("soporte", ATAQUE) is not None
+
+
+def test_si_la_base_de_la_empresa_falla_la_memoria_sigue_en_memoria(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class _Caida(_AlmacenDeEmpresa):
+        def guardar(self, regla: md.Regla) -> None:
+            raise md.ErrorAlmacen("conexion perdida")
+
+    memoria = md.MemoriaDecisiones(_Caida("x"))
+
+    with caplog.at_level("ERROR"):
+        resultado = memoria.recordar_rechazo("soporte", ATAQUE, "ana", "filtrado")
+
+    assert resultado == md.RECORDADA_SIN_GUARDAR
+    assert "no se pudo guardar" in caplog.text
+    assert memoria.coincide("soporte", ATAQUE) is not None  # vale hasta reiniciar
+
+
+def test_una_url_mala_deja_la_memoria_funcionando_solo_en_memoria(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setattr(md, "MEMORIA_RECHAZOS", True)
+    monkeypatch.setattr(md, "MEMORIA_RECHAZOS_ALMACEN", "mongodb://sin-adaptador")
+    monkeypatch.setattr(md, "_instancia", None)
+
+    with caplog.at_level("ERROR"):
+        memoria = md.obtener()
+
+    assert memoria is not None and memoria.persistente is False
+    assert memoria.descripcion == "solo en memoria"
+    assert "esquemas disponibles" in caplog.text
 
 
 # --- En /chat ---
@@ -436,7 +677,9 @@ def test_un_reinicio_del_proxy_conserva_lo_rechazado(
     api["enviar"](ATAQUE)
     api["rechazar"]()
     # "Reiniciar": se descarta la instancia en memoria y se vuelve a leer el archivo.
-    monkeypatch.setattr(md, "_instancia", md.MemoriaDecisiones(api["ruta"]))
+    monkeypatch.setattr(
+        md, "_instancia", md.MemoriaDecisiones(md.AlmacenJsonl(api["ruta"]))
+    )
 
     assert api["enviar"](ATAQUE).status_code == 400
 
@@ -460,6 +703,7 @@ def test_la_lista_muestra_la_regla_sin_el_mensaje_completo(api: dict[str, Any]) 
     cuerpo = api["http"].get("/revision/memoria").json()
 
     assert cuerpo["activa"] is True and cuerpo["persistente"] is True
+    assert cuerpo["almacen"] == "JSON Lines (rechazos.jsonl)"
     regla = cuerpo["reglas"][0]
     assert (regla["modelo"], regla["motivo"], regla["aciertos"]) == (
         "soporte",

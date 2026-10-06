@@ -226,12 +226,12 @@ def test_el_dialogo_de_confirmacion_no_deja_un_boton_predeterminado() -> None:
 def test_las_pestanas_implementan_el_patron_tablist_completo() -> None:
     assert 'role="tablist"' in HTML
     assert 'aria-label="Vista de peticiones"' in HTML
-    # Pendientes, Historial y Memoria (esta ultima nace oculta: solo existe si la
-    # extension de memoria de decisiones esta activa en el proxy).
+    # Pendientes, Historial y Memoria (esta ultima siempre se ve: apagada, explica
+    # como encenderla).
     assert HTML.count('role="tab"') == 3
     assert 'role="tabpanel" id="panel-lista" aria-labelledby="tab-pendientes"' in HTML
     assert HTML.count('aria-controls="panel-lista"') == 3
-    assert re.search(r'id="tab-memoria"[^>]*tabindex="-1"[^>]*[ ]hidden>', HTML)
+    assert not re.search(r'id="tab-memoria"[^>]*[ ]hidden', HTML)  # siempre visible
     assert re.search(r'id="tab-memoria"[^>]*aria-selected="false"', HTML)
     # tabindex itinerante: solo la pestana activa entra en el orden de tabulacion
     assert 'id="tab-pendientes"' in HTML
@@ -251,12 +251,21 @@ def test_la_memoria_envia_el_token_csrf_tambien_al_borrar() -> None:
     assert "X-CSRF-Token" in JS
 
 
-def test_la_pestana_memoria_nace_oculta_y_solo_los_revisores_ven_olvidar() -> None:
-    assert re.search(r'id="tab-memoria"[^>]*[ ]hidden>', HTML)
+def test_la_pestana_memoria_siempre_se_ve_y_explica_como_encenderla() -> None:
+    assert 'id="tab-memoria"' in HTML
+    assert not re.search(r'id="tab-memoria"[^>]*[ ]hidden', HTML)
+    assert "La memoria está apagada" in JS
+    assert "MEMORIA_RECHAZOS=1" in JS
+
+
+def test_solo_los_revisores_ven_olvidar_y_tiene_nombre_accesible() -> None:
     assert 'estado.sesion?.rol === "revisor"' in JS
-    assert (
-        'h("span", { class: "solo-lectores" }, " esta regla")' in JS
-    )  # nombre accesible
+    assert 'h("span", { class: "solo-lectores" }, " esta regla")' in JS
+
+
+def test_al_rechazar_se_avisa_que_se_recordara_y_despues_si_se_recordo() -> None:
+    assert "Además se recordará" in JS
+    assert "TEXTOS_MEMORIA" in JS and "recordada_sin_guardar" in JS
 
 
 def test_olvidar_una_regla_siempre_pide_confirmacion() -> None:

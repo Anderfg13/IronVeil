@@ -558,6 +558,7 @@ def ver_memoria(
         {
             "activa": True,
             "persistente": memoria.persistente,
+            "almacen": memoria.descripcion,
             "maximo": memoria.maximo,
             "reglas": memoria.listar(),
         }

@@ -176,8 +176,9 @@ Esta es la estructura **objetivo**. Lo marcado `[ya existe]` está en el repo ho
                         incluye exportar_a_siem(evento, "json"|"cef"), funcion pura,
                         y docs/siem/wazuh/ con reglas y guia de despliegue)
                         memoria_decisiones.py (EXTENSION opcional: recuerda los rechazos
-                        de la revision humana y rechaza solo el mismo mensaje; persistente en
-                        ./memoria/rechazos.jsonl; apagada salvo MEMORIA_RECHAZOS=1; eventos
+                        de la revision humana y rechaza solo el mismo mensaje; persistente con
+                        almacen intercambiable (JSON Lines o SQLite en ./memoria; otra base de datos
+                        se conecta con un adaptador); apagada salvo MEMORIA_RECHAZOS=1; eventos
                         con es_extension; docs/MEMORIA_DE_DECISIONES.md)
                         modelos_protegidos.py (EXTENSION opcional: proteger un modelo servido
                         por otra API, openai/anthropic, en vez de Ollama; devuelve la forma de

@@ -225,13 +225,21 @@ function fechaHora(iso) {
 
 function resumenMemoria() {
   const m = estado.memoria;
+  if (!m.activa) return "Apagada";
   const n = m.reglas.length;
-  const guardado = m.persistente ? "guardadas en disco" : "SOLO en memoria: se perderán al reiniciar el proxy";
+  const guardado = m.persistente ? `guardadas en ${m.almacen}` : "SOLO en memoria: se perderán al reiniciar el proxy";
   return `${n} ${plural(n, "regla", "reglas")} · ${guardado}`;
 }
 
 function pintarMemoria(ul) {
   const reglas = estado.memoria.reglas;
+  if (!estado.memoria.activa) {
+    ul.append(h("li", { class: "vacio" },
+      h("h3", {}, "La memoria está apagada"),
+      h("p", {}, "Cuando está encendida, lo que rechazas aquí se recuerda y el mismo mensaje se rechaza solo la próxima vez."),
+      h("p", {}, "Para encenderla, pon MEMORIA_RECHAZOS=1 en el archivo .env y reinicia el proxy.")));
+    return;
+  }
   if (!reglas.length) {
     ul.append(h("li", { class: "vacio" },
       h("h3", {}, "Aún no hay reglas"),
@@ -372,12 +380,24 @@ function enfocarTitulo(caja) {
   if (titulo) { titulo.setAttribute("tabindex", "-1"); titulo.focus(); }
 }
 
+const TEXTOS_MEMORIA = {
+  recordada: "Se recordó este rechazo: el mismo mensaje se rechazará solo la próxima vez.",
+  ya_recordada: "Este mensaje ya estaba recordado como rechazado.",
+  memoria_llena: "La memoria está llena: este rechazo NO se recordó. Olvida alguna regla en la pestaña Memoria.",
+  recordada_sin_guardar: "Se recordó, pero NO se pudo guardar en disco: se perderá al reiniciar el proxy.",
+};
+
+function textoMemoria(clave) {
+  return TEXTOS_MEMORIA[clave] || "";
+}
+
 function pintarResultado(caja) {
   const r = estado.resultado;
   const quedan = estado.pendientes.length > 0;
   caja.replaceChildren(h("div", { class: "resultado" },
     h("h2", { class: r.accion, tabindex: "-1" }, r.accion === "aprobada" ? "Aprobada: se reconoció como falso positivo" : "Rechazada: se confirmó el ataque"),
     h("p", {}, `Decisión de ${r.revisor} registrada en ${duracion(Math.round(r.tiempoMs / 1000))}.`),
+    r.memoria && h("p", { class: "nota-memoria" }, textoMemoria(r.memoria)),
     r.detalle && h("div", {}, h("h3", {}, r.tituloDetalle), h("pre", { tabindex: "0" }, r.detalle)),
     h("button", { class: "siguiente", type: "button", onclick: () => { estado.resultado = null; estado.moverFoco = true; seleccionarPrimera(); } }, quedan ? "Ver siguiente petición" : "Volver a la lista")));
   enfocarTitulo(caja);
@@ -387,8 +407,16 @@ function pintarResultado(caja) {
 
 /* El foco va al titulo, no a un boton: ninguna opcion queda como predeterminada,
    asi una tecla suelta (A, R) no confirma por accidente (HIG: alerts.md). */
+/* Con la memoria encendida, rechazar una retencion de contenido la recuerda. */
+function seRecordaria(p) {
+  return estado.memoria.activa && p.tipo !== "herramienta" && Object.hasOwn(MOTIVOS_MEMORIA, p.motivo);
+}
+
 function textoConfirmacion(p, aprobar) {
-  if (!aprobar) return "La petición se descarta y no llega al modelo. Esta acción queda registrada.";
+  if (!aprobar) {
+    const base = "La petición se descarta y no llega al modelo. Esta acción queda registrada.";
+    return seRecordaria(p) ? `${base} Además se recordará: el mismo mensaje se rechazará solo la próxima vez (lo puedes olvidar en la pestaña Memoria).` : base;
+  }
   if (p.tipo === "herramienta") return "Se ejecutará la versión simulada de la herramienta.";
   return "La petición se enviará al modelo y recibirás su respuesta.";
 }
@@ -423,6 +451,7 @@ async function decidir(p, accion) {
       accion: aprobada ? "aprobada" : "rechazada",
       revisor: estado.sesion.usuario,
       tiempoMs: cuerpo.tiempo_revision_humana_ms ?? Date.now() - inicio,
+      memoria: cuerpo.memoria || null,
       detalle, tituloDetalle,
     };
     estado.moverFoco = true;
@@ -532,17 +561,16 @@ function iniciarAtajos() {
 
 const PESTANAS = ["pendientes", "historial", "memoria"];
 
-/* La pestana Memoria solo existe si la extension esta activa en el proxy. */
+/* La pestana Memoria siempre se ve: apagada, explica como encenderla (si se ocultara,
+   quien no la ve no sabria por que "no pasa nada"). */
 function pestanasVisibles() {
-  return PESTANAS.filter((id) => id !== "memoria" || estado.memoria.activa);
+  return PESTANAS;
 }
 
 function pintarPestanaMemoria(memoria) {
   estado.memoria = memoria;
-  $("tab-memoria").hidden = !memoria.activa;
-  $("cuenta-memoria").textContent = memoria.reglas.length;
-  $("resumen-memoria").textContent = memoria.activa ? resumenMemoria() : "";
-  if (!memoria.activa && estado.pestana === "memoria") cambiarPestana("pendientes");
+  $("cuenta-memoria").textContent = memoria.activa ? memoria.reglas.length : "–";
+  $("resumen-memoria").textContent = resumenMemoria();
 }
 
 function cambiarPestana(nombre, enfocar = false) {

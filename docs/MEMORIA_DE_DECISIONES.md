@@ -16,34 +16,80 @@ Está **apagada por defecto** y vive en `proxy/memoria_decisiones.py`.
 2. Reconstruye y levanta el proxy: `docker compose up -d --build proxy`.
 3. Manda un mensaje que un mecanismo retenga (con `aprobacion_humana` activa). Queda en la cola
    (429).
-4. En la consola (`/revision/ui`) **recházalo**. La respuesta trae `"memoria": "recordada"`.
+4. En la consola (`/revision/ui`) **recházalo**. El diálogo avisa «Además se recordará…» y, al
+   decidir, la consola confirma «Se recordó este rechazo».
 5. Manda el mismo mensaje otra vez: ahora recibe un **400 inmediato**. No entra a la cola, no
    genera aviso y no llega al modelo.
 
-En la consola aparece la pestaña **Memoria**, con las reglas recordadas, quién las decidió,
-cuántas veces actuaron y un botón **Olvidar** (solo para revisores).
+**Si «no pasa nada», casi siempre es que está apagada.** Con `MEMORIA_RECHAZOS` vacío la extensión
+no hace nada. Compruébalo en la pestaña **Memoria** de la consola (siempre visible: apagada,
+dice «La memoria está apagada» y cómo encenderla) y en el log del proxy al arrancar
+(`Memoria de decisiones: APAGADA` o `ACTIVA, N regla(s), almacen: …`). Recuerda que los cambios de `.env`
+solo se aplican al recrear el contenedor (`docker compose up -d proxy`).
 
-## Persistencia: sobrevive a reinicios
+## Lo que ve quien revisa (la consola)
 
-Cada regla se **anexa a un archivo** y se fuerza a disco (`fsync`) en el momento. Al arrancar, el
-proxy lo lee y reconstruye todo. Por eso no se pierde si se apaga el contenedor, se reconstruye
-la imagen, se hace `docker compose down` o se reinicia el equipo.
+- **Pestaña Memoria**, junto a Pendientes e Historial: las reglas recordadas (más reciente
+  primero), con la vista previa del mensaje, el modelo, el mecanismo que lo retuvo, quién lo
+  decidió, cuándo y **cuántas veces ha bloqueado solo** desde que arrancó el proxy.
+- Arriba de la lista, el **estado**: cuántas reglas hay y **dónde se guardan** («guardadas en
+  SQLite (memoria.db)»), o un aviso en claro si solo están en memoria.
+- Botón **Olvidar** (solo revisores, con confirmación): ese mensaje vuelve a pasar por los
+  mecanismos y por la cola.
+- Al **rechazar**, el diálogo avisa si esa decisión se va a recordar, y al terminar lo confirma.
 
-| Qué | Dónde |
-|---|---|
-| Archivo | `memoria/rechazos.jsonl` en la raíz del repo (carpeta ignorada por Git) |
-| Dentro del contenedor | `/app/memoria/rechazos.jsonl` (montada desde `./memoria`) |
-| Formato | JSON Lines: un renglón por decisión (`recordar` u `olvidar`) |
+## Dónde se guardan las reglas (almacén intercambiable)
 
-Es una carpeta de tu equipo (no un volumen de Docker), a propósito: se puede ver, copiar y
-respaldar, y no se pierde con `docker compose down -v`. **Para borrar toda la memoria, borra el
-archivo** (con el proxy apagado).
+Las reglas se leen en memoria al arrancar (la consulta de cada petición es un diccionario) y cada
+cambio se escribe **en el momento** en un **almacén**. El almacén es un **adaptador**
+(`AlmacenMemoria`), igual que los clasificadores: se elige con una URL en
+`MEMORIA_RECHAZOS_ALMACEN` y una empresa puede conectar su propia base de datos sin tocar el resto.
 
-Detalles de robustez:
-- Un renglón dañado se **omite con un aviso** y no impide arrancar.
-- Un corte a mitad de escritura no pierde lo anterior.
-- Si no se puede escribir en la carpeta, la memoria **funciona solo en memoria y lo dice en el
-  log y en la consola** («SOLO en memoria: se perderán al reiniciar»).
+| URL | Almacén | Cuándo |
+|---|---|---|
+| `jsonl:///app/memoria/rechazos.jsonl` | JSON Lines (**por defecto**) | sin dependencias ni servidor; legible a simple vista |
+| `sqlite:///app/memoria/memoria.db` | SQLite (biblioteca estándar) | una base real y transaccional; deja además una tabla de **auditoría** (quién olvidó cada regla y cuándo) |
+
+Ambos escriben en `./memoria` del equipo (montada en el contenedor como `/app/memoria`), **no** en
+un volumen de Docker: la memoria sobrevive a apagar el contenedor, reconstruir la imagen, `docker
+compose down -v` y reiniciar el equipo, y se puede ver, copiar y respaldar. **Para borrarlo todo,
+borra el archivo** con el proxy apagado.
+
+Robustez (probada con los dos almacenes):
+- Cada cambio se fuerza a disco antes de responder (`fsync` / `synchronous = FULL`).
+- JSON Lines: un renglón dañado se **omite con un aviso** y un corte a mitad de escritura no pierde
+  lo anterior. SQLite: una base corrupta no impide arrancar.
+- Si el almacén no está disponible (carpeta sin permiso, base caída, URL mala), la memoria
+  **funciona solo en memoria y lo dice** en el log y en la consola («SOLO en memoria: se perderán al
+  reiniciar»). Nunca deja de proteger por un fallo de almacenamiento.
+- **Una sola instancia del proxy**: las reglas se leen al arrancar, así que varias instancias
+  contra la misma base no se enteran de las reglas nuevas de las otras hasta reiniciar.
+
+### Conectar otra base de datos (PostgreSQL, MySQL, Redis…)
+
+Un almacén es una clase con tres métodos (el contrato está en `AlmacenMemoria`):
+
+```python
+class AlmacenDeLaEmpresa:
+    descripcion = "PostgreSQL (mi-empresa)"        # lo que ve la consola
+
+    def __init__(self, ruta: str) -> None: ...     # recibe lo que sigue a «esquema://»
+
+    def cargar(self) -> list[Regla]: ...           # las reglas VIGENTES; deja el almacén listo
+    def guardar(self, regla: Regla) -> None: ...   # persiste antes de volver
+    def olvidar(self, huella: str, por: str, en: str) -> None: ...
+```
+
+1. Lanza **`ErrorAlmacen`** (nunca otra excepción) ante cualquier fallo: la memoria lo captura y
+   sigue en memoria avisando.
+2. Regístralo en `ALMACENES` de `proxy/memoria_decisiones.py`: `"postgresql": AlmacenDeLaEmpresa`.
+3. Elígelo: `MEMORIA_RECHAZOS_ALMACEN=postgresql://usuario@servidor/base`.
+4. La clave o la cadena de conexión van en `.env`, **nunca en el código**; TLS siempre verificado; y
+   ni el mensaje ni credenciales al log (solo se guardan huellas).
+5. Pruebas con una base **simulada**, como `tests/test_memoria_decisiones.py` (la suite no usa red).
+
+No hay un almacén de PostgreSQL incluido: necesita un controlador (dependencia nueva, con versión
+fija) y un servidor para probarlo, y eso no se verificó. SQLite y JSON Lines sí están probados.
 
 ## Qué se recuerda y qué no
 
@@ -100,13 +146,14 @@ distingue por el campo extendido `origen_decision: "memoria"`.
 | Variable | Por defecto | Qué hace |
 |---|---|---|
 | `MEMORIA_RECHAZOS` | vacío (apagada) | `1` la enciende. Solo actúa con `aprobacion_humana` activa |
-| `MEMORIA_RECHAZOS_ARCHIVO` | `/app/memoria/rechazos.jsonl` | Ruta dentro del contenedor |
+| `MEMORIA_RECHAZOS_ALMACEN` | `jsonl:///app/memoria/rechazos.jsonl` | Dónde se guardan: `jsonl://…`, `sqlite://…` u otro registrado |
 | `MEMORIA_RECHAZOS_MAXIMO` | `5000` | Tope de reglas |
 | `MEMORIA_RECHAZOS_VISTA_PREVIA` | `1` | `0` guarda solo la huella, sin vista previa |
 
 ## API (la usa la consola)
 
-- `GET /revision/memoria` — reglas y estado (`activa`, `persistente`); requiere sesión.
+- `GET /revision/memoria` — `activa`, `persistente`, `almacen`, `maximo` y las reglas; requiere
+  sesión. Apagada responde `{"activa": false, "reglas": []}`.
 - `DELETE /revision/memoria/{huella}` — olvida una regla; solo revisores, con token CSRF.
 - `POST /revision/{id}/rechazar` — si recuerda la regla, la respuesta trae `"memoria"`:
   `recordada`, `ya_recordada`, `memoria_llena` o `recordada_sin_guardar`.

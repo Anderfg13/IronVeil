@@ -257,12 +257,34 @@ async def _calentar_modelos() -> None:
             logger.info("Calentamiento de %s completo.", nombre)
 
 
+# El logger de uvicorn es el que muestra su consola (el de `proxy.*` no tiene nivel
+# INFO configurado): lo usan los avisos de estado que quien opera debe leer al arrancar.
+_log_servidor = logging.getLogger("uvicorn.error")
+
+
+def _avisar_estado_de_la_memoria() -> None:
+    """Deja en el log si la memoria de decisiones esta activa, y con que reglas."""
+    if not memoria_decisiones.MEMORIA_RECHAZOS:
+        _log_servidor.info(
+            "Memoria de decisiones: APAGADA (MEMORIA_RECHAZOS=1 para activarla)."
+        )
+        return
+    memoria = memoria_decisiones.obtener()  # carga las reglas ahora
+    if memoria is not None:
+        _log_servidor.info(
+            "Memoria de decisiones: ACTIVA, %d regla(s), almacen: %s.",
+            memoria.tamano(),
+            memoria.descripcion,
+        )
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         modelos_protegidos.resolver("")  # valida MODELOS_REMOTOS al arrancar
     except ErrorConfiguracion as exc:
         logger.error("MODELOS_REMOTOS esta mal configurado: %s", exc)
+    _avisar_estado_de_la_memoria()
     await _calentar_modelos()
     yield
 
