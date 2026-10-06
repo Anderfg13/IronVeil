@@ -185,7 +185,16 @@ def _clases_usadas() -> set[str]:
     return clases
 
 
-COMPARTIDAS = {"barra", "marca", "relleno", "boton-barra", "solo-lectores"}
+COMPARTIDAS = {
+    "barra",
+    "marca",
+    "marca-logo",
+    "nombre-marca",
+    "relleno",
+    "boton-barra",
+    "solo-lectores",
+    "vidrio",
+}
 
 
 @pytest.mark.parametrize(("tema", "tokens"), [("claro", CLARO), ("oscuro", OSCURO)])
@@ -382,3 +391,26 @@ def test_el_rotulo_oculto_del_asistente_no_escapa_del_hilo() -> None:
     burbuja = re.search(r"\.demo-propio \.demo-burbuja \{([^}]*)\}", CSS_DEMO)
     assert burbuja is not None
     assert "position: relative" in burbuja.group(1)
+
+
+# --- Identidad visual del chat (2026-10-06) -------------------------------------------
+
+
+def test_la_caja_del_chat_es_de_vidrio_pero_conserva_su_borde() -> None:
+    assert 'class="demo-caja vidrio"' in HTML
+    regla = _bloque(CSS_DEMO, ".demo-caja {")
+    assert "border: 1px solid var(--borde)" in regla  # limite del campo, 3:1
+    assert "background" not in regla  # el fondo translucido viene de .vidrio
+
+
+def test_la_burbuja_propia_usa_el_azul_de_marca_con_su_texto_de_contraste() -> None:
+    regla = _bloque(CSS_DEMO, ".demo-msg.demo-propio .demo-burbuja {")
+    assert "background: var(--veil)" in regla
+    assert (
+        "color: var(--on-veil)" in regla
+    )  # 5,8:1 claro / 8,5:1 oscuro (pares ya medidos)
+
+
+def test_el_texto_de_ejemplo_del_cuadro_usa_un_color_medido() -> None:
+    """El gris por defecto del navegador no esta en la paleta ni en los tests."""
+    assert "::placeholder { color: var(--ink-3)" in CSS_DEMO

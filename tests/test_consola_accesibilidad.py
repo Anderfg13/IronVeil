@@ -468,3 +468,141 @@ def test_los_campos_tienen_borde_de_3_a_1_y_foco_visible() -> None:
 def test_hay_un_salto_al_expediente_para_teclado() -> None:
     assert 'class="saltar" href="#expediente"' in HTML
     assert 'id="expediente" tabindex="-1"' in HTML
+
+
+# --- Identidad: vidrio, paleta y tipografia (2026-10-06) ------------------------------
+
+
+def _porcentaje(nombre: str, tema: str) -> float:
+    """Opacidad del vidrio (--vidrio-pct / --iron-vidrio-pct) del tema indicado."""
+    desde = (
+        CSS.index("@media (prefers-color-scheme: dark) {") if tema == "oscuro" else 0
+    )
+    inicio = CSS.index(":root {", desde)
+    bloque = CSS[inicio : CSS.index("}", inicio)]
+    return int(re.search(rf"--{nombre}:\s*(\d+)%", bloque).group(1)) / 100  # type: ignore[union-attr]
+
+
+def _mezclar(frente: str, fondo: str, alfa: float) -> str:
+    """Color resultante de poner `frente` con opacidad `alfa` sobre `fondo`."""
+    canales = [
+        round(
+            int(frente[i : i + 2], 16) * alfa + int(fondo[i : i + 2], 16) * (1 - alfa)
+        )
+        for i in (1, 3, 5)
+    ]
+    return "#" + "".join(f"{c:02x}" for c in canales)
+
+
+# Lo que puede haber detras del vidrio: el fondo de la pagina, las dos luces de hielo
+# y las superficies opacas por las que se desplaza el contenido. El desenfoque
+# promedia lo que haya debajo, asi que no se mide contra pixeles de texto sueltos.
+DETRAS = ["bg", "hielo-1", "hielo-2", "panel", "panel-2"]
+
+
+@pytest.mark.parametrize(("tema", "tokens"), TEMAS)
+@pytest.mark.parametrize("texto", ["ink", "ink-2", "ink-3"])
+@pytest.mark.parametrize("detras", DETRAS)
+def test_el_texto_sobre_vidrio_claro_cumple_aa_con_cualquier_fondo(
+    tema: str, tokens: dict[str, str], texto: str, detras: str
+) -> None:
+    """.tarjeta, .vidrio y la caja del chat: panel translucido sobre el hielo."""
+    efectivos = _efectivos(tokens)
+    vidrio = _mezclar(
+        efectivos["panel"], efectivos[detras], _porcentaje("vidrio-pct", tema)
+    )
+
+    ratio = _contraste(efectivos[texto], vidrio)
+
+    assert ratio >= 4.5, f"{tema}: {texto} sobre vidrio/{detras} = {ratio:.2f}:1"
+
+
+@pytest.mark.parametrize(("tema", "tokens"), TEMAS)
+@pytest.mark.parametrize("texto", ["iron-ink", "iron-ink-2", "iron-ink-3"])
+@pytest.mark.parametrize("detras", DETRAS)
+def test_el_texto_sobre_el_vidrio_de_grafito_cumple_aa_con_cualquier_fondo(
+    tema: str, tokens: dict[str, str], texto: str, detras: str
+) -> None:
+    """.barra y .aviso: grafito translucido (el logo y el nombre viven aqui)."""
+    efectivos = _efectivos(tokens)
+    vidrio = _mezclar(
+        efectivos["iron"], efectivos[detras], _porcentaje("iron-vidrio-pct", tema)
+    )
+
+    ratio = _contraste(efectivos[texto], vidrio)
+
+    assert ratio >= 4.5, f"{tema}: {texto} sobre grafito/{detras} = {ratio:.2f}:1"
+
+
+def test_el_vidrio_tiene_alternativa_sin_transparencia_ni_soporte() -> None:
+    """Sin backdrop-filter, con transparencia reducida, contraste alto o colores
+    forzados las superficies pasan a ser opacas: mismo diseno, sin cristal."""
+    assert (
+        "@media (prefers-reduced-transparency: reduce), (prefers-contrast: more)" in CSS
+    )
+    assert "@supports not ((backdrop-filter: blur(1px))" in CSS
+    forzados = CSS[CSS.index("@media (forced-colors: active)") :]
+    assert "backdrop-filter: none" in forzados
+    assert ".acceso form" in forzados
+
+
+def test_el_vidrio_conserva_un_borde_visible_con_contraste_alto() -> None:
+    mas = CSS[CSS.index("@media (prefers-contrast: more) {") :]
+    assert "border-color: var(--borde)" in mas
+
+
+def test_la_tipografia_es_la_del_sistema_sin_fuentes_externas() -> None:
+    """Identidad: tipografia nativa (SF Pro en Apple, Segoe UI Variable en Windows)."""
+    ui = re.search(r"--ui:\s*([^;]+);", CSS).group(1)  # type: ignore[union-attr]
+    assert ui.startswith("system-ui, -apple-system")
+    assert '"SF Pro Text"' in ui and '"Segoe UI Variable Text"' in ui
+    assert "--display:" in CSS and '"SF Pro Display"' in CSS
+    assert "@font-face" not in CSS
+    assert "@import" not in CSS
+    assert "url(" not in CSS  # ningun recurso externo (CSP: font-src/img-src)
+
+
+def test_el_logo_tiene_un_espacio_propio_y_se_reemplaza_por_archivo() -> None:
+    """Un solo archivo (logo.svg) y una sola caja (.marca-logo) en las tres paginas."""
+    assert ".marca-logo {" in CSS and "var(--logo, 36px)" in CSS
+    demo = (panel.DIRECTORIO_ESTATICO / "demo.html").read_text(encoding="utf-8")
+    for pagina in (HTML, LOGIN_HTML, demo):
+        assert 'class="marca-logo"' in pagina
+        assert "/revision/static/logo.svg" in pagina
+        assert "reemplaza proxy/static/logo.svg" in pagina
+
+
+def test_el_logo_es_un_svg_limpio_sin_texto_ni_recursos_externos() -> None:
+    logo = (panel.DIRECTORIO_ESTATICO / "logo.svg").read_text(encoding="utf-8")
+
+    assert 'viewBox="0 0 64 64"' in logo
+    assert 'aria-label="IronVeil"' in logo
+    assert (
+        "<text" not in logo
+    )  # sin tipografia incrustada: escala y no depende de fuentes
+    assert "<image" not in logo and "<script" not in logo
+    assert "http" not in logo.replace('xmlns="http://www.w3.org/2000/svg"', "")
+
+
+def test_el_nombre_de_la_marca_se_escribe_igual_en_las_tres_paginas() -> None:
+    """IronVeil = «Iron» en negrita + «Veil» en regular (texto, no imagen)."""
+    demo = (panel.DIRECTORIO_ESTATICO / "demo.html").read_text(encoding="utf-8")
+    assert "<h1><b>Iron</b>Veil<small>" in HTML
+    assert '<div class="nombre-marca"><b>Iron</b>Veil</div>' in LOGIN_HTML
+    assert '<div class="nombre-marca"><b>Iron</b>Veil</div>' in demo
+
+
+def test_la_paleta_documentada_coincide_con_el_css() -> None:
+    """docs/IDENTIDAD.md es la referencia de la marca: sus hex no pueden desviarse."""
+    from pathlib import Path
+
+    doc = (Path(__file__).resolve().parent.parent / "docs" / "IDENTIDAD.md").read_text(
+        encoding="utf-8"
+    )
+    filas = re.findall(
+        r"\|\s*`--([a-z0-9-]+)`\s*\|\s*`(#[0-9a-f]{6})`\s*\|\s*`(#[0-9a-f]{6})`", doc
+    )
+    assert len(filas) >= 10
+    for nombre, claro, oscuro in filas:
+        assert CLARO[nombre] == claro, nombre
+        assert _efectivos(OSCURO)[nombre] == oscuro, nombre
