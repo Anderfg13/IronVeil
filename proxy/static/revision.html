@@ -39,9 +39,11 @@
         <div class="pestanas" role="tablist" aria-label="Vista de peticiones">
           <button class="pestana" role="tab" id="tab-pendientes" aria-selected="true" aria-controls="panel-lista" tabindex="0" type="button">Pendientes<span class="cuenta" id="cuenta-pendientes">0</span></button>
           <button class="pestana" role="tab" id="tab-historial" aria-selected="false" aria-controls="panel-lista" tabindex="-1" type="button">Historial</button>
+          <button class="pestana" role="tab" id="tab-memoria" aria-selected="false" aria-controls="panel-lista" tabindex="-1" type="button" hidden>Memoria<span class="cuenta" id="cuenta-memoria">0</span></button>
         </div>
         <div class="panel-lista" role="tabpanel" id="panel-lista" aria-labelledby="tab-pendientes">
           <p class="resumen-historial" id="resumen-historial" hidden></p>
+          <p class="resumen-historial" id="resumen-memoria" hidden></p>
           <ul class="elementos" id="elementos"></ul>
         </div>
         <div class="lista-pie">

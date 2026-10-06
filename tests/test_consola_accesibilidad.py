@@ -226,9 +226,13 @@ def test_el_dialogo_de_confirmacion_no_deja_un_boton_predeterminado() -> None:
 def test_las_pestanas_implementan_el_patron_tablist_completo() -> None:
     assert 'role="tablist"' in HTML
     assert 'aria-label="Vista de peticiones"' in HTML
-    assert HTML.count('role="tab"') == 2
+    # Pendientes, Historial y Memoria (esta ultima nace oculta: solo existe si la
+    # extension de memoria de decisiones esta activa en el proxy).
+    assert HTML.count('role="tab"') == 3
     assert 'role="tabpanel" id="panel-lista" aria-labelledby="tab-pendientes"' in HTML
-    assert HTML.count('aria-controls="panel-lista"') == 2
+    assert HTML.count('aria-controls="panel-lista"') == 3
+    assert re.search(r'id="tab-memoria"[^>]*tabindex="-1"[^>]*[ ]hidden>', HTML)
+    assert re.search(r'id="tab-memoria"[^>]*aria-selected="false"', HTML)
     # tabindex itinerante: solo la pestana activa entra en el orden de tabulacion
     assert 'id="tab-pendientes"' in HTML
     assert 'tabindex="0"' in HTML
@@ -237,6 +241,27 @@ def test_las_pestanas_implementan_el_patron_tablist_completo() -> None:
     for tecla in ("ArrowRight", "ArrowLeft", "Home", "End"):
         assert f'"{tecla}"' in JS
     assert '"aria-labelledby", `tab-${nombre}`' in JS
+
+
+# --- Pestana Memoria (extension opcional) ---
+
+
+def test_la_memoria_envia_el_token_csrf_tambien_al_borrar() -> None:
+    assert 'opciones.method === "DELETE"' in JS
+    assert "X-CSRF-Token" in JS
+
+
+def test_la_pestana_memoria_nace_oculta_y_solo_los_revisores_ven_olvidar() -> None:
+    assert re.search(r'id="tab-memoria"[^>]*[ ]hidden>', HTML)
+    assert 'estado.sesion?.rol === "revisor"' in JS
+    assert (
+        'h("span", { class: "solo-lectores" }, " esta regla")' in JS
+    )  # nombre accesible
+
+
+def test_olvidar_una_regla_siempre_pide_confirmacion() -> None:
+    assert "confirmarOlvidar(r)" in JS
+    assert "ok.onclick = () => { dialogo.close(); void olvidar(regla); };" in JS
 
 
 # --- M3: avisos de error ---

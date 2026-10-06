@@ -9,3 +9,6 @@ docs/siem/exportados/
 
 # Clave de la cuenta de demo generada por `python -m proxy.auth --demo` (local, secreta)
 credenciales-demo.local.txt
+
+# Memoria de decisiones humanas (datos locales; docs/MEMORIA_DE_DECISIONES.md)
+memoria/

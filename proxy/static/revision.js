@@ -14,6 +14,7 @@ const CLAVE_ATAJOS = "ironveil-atajos";
 const estado = {
   pendientes: [],
   decisiones: [],
+  memoria: { activa: false, persistente: true, reglas: [] },
   estadisticas: null,
   seleccion: null,
   pestana: "pendientes",
@@ -66,7 +67,7 @@ function hora(iso) {
 
 async function api(ruta, opciones = {}) {
   const cabeceras = { ...opciones.headers };
-  if (opciones.method === "POST" && estado.sesion?.csrf) {
+  if ((opciones.method === "POST" || opciones.method === "DELETE") && estado.sesion?.csrf) {
     cabeceras["X-CSRF-Token"] = estado.sesion.csrf;
   }
   const respuesta = await fetch(ruta, { credentials: "same-origin", ...opciones, headers: cabeceras });
@@ -167,7 +168,9 @@ function construirLista() {
   const ul = $("elementos");
   ul.replaceChildren();
   $("resumen-historial").hidden = estado.pestana !== "historial" || !$("resumen-historial").textContent;
+  $("resumen-memoria").hidden = estado.pestana !== "memoria" || !$("resumen-memoria").textContent;
   if (estado.pestana === "historial") return pintarHistorial(ul);
+  if (estado.pestana === "memoria") return pintarMemoria(ul);
   if (!estado.pendientes.length) {
     ul.append(
       h("li", { class: "vacio" },
@@ -208,6 +211,72 @@ function pintarHistorial(ul) {
           h("strong", { class: d.accion === "aprobada" ? "resultado aprobada" : "resultado rechazada" }, d.accion === "aprobada" ? "Falso positivo · aprobada" : "Ataque · rechazada"),
           h("small", {}, hora(d.decidida_en))),
         h("small", {}, `${d.tipo === "herramienta" ? d.herramienta : d.modelo} · ${d.vector_probado || "sin vector"} · ${d.revisor} · ${duracion(Math.round(d.tiempo_revision_ms / 1000))}`)));
+  }
+}
+
+/* ---------- Memoria de decisiones (extension opcional) ---------- */
+
+const MOTIVOS_MEMORIA = { filtrado: "Filtrado", clasificacion: "Clasificación", minimo_privilegio: "Mínimo privilegio" };
+
+function fechaHora(iso) {
+  const fecha = new Date(iso);
+  return Number.isNaN(fecha.getTime()) ? "" : fecha.toLocaleString("es", { dateStyle: "short", timeStyle: "short" });
+}
+
+function resumenMemoria() {
+  const m = estado.memoria;
+  const n = m.reglas.length;
+  const guardado = m.persistente ? "guardadas en disco" : "SOLO en memoria: se perderán al reiniciar el proxy";
+  return `${n} ${plural(n, "regla", "reglas")} · ${guardado}`;
+}
+
+function pintarMemoria(ul) {
+  const reglas = estado.memoria.reglas;
+  if (!reglas.length) {
+    ul.append(h("li", { class: "vacio" },
+      h("h3", {}, "Aún no hay reglas"),
+      h("p", {}, "Cuando rechaces una petición que un mecanismo retuvo, el proxy la recordará y rechazará sola la próxima vez que llegue igual.")));
+    return;
+  }
+  const revisor = estado.sesion?.rol === "revisor";
+  for (const r of reglas) {
+    const veces = `${r.aciertos} ${plural(r.aciertos, "bloqueo automático", "bloqueos automáticos")}`;
+    ul.append(
+      h("li", { class: "fila-historial" },
+        h("div", { class: "fila" },
+          h("strong", { class: "resultado rechazada" }, "Rechazo recordado"),
+          h("small", {}, fechaHora(r.decidido_en))),
+        r.vista_previa && h("p", { class: "vista-previa" }, r.vista_previa),
+        h("small", {}, `${r.modelo} · ${MOTIVOS_MEMORIA[r.motivo] || r.motivo} · ${r.decidido_por} · ${veces}`),
+        revisor && h("div", {},
+          h("button", { class: "secundario", type: "button", onclick: () => confirmarOlvidar(r) },
+            "Olvidar", h("span", { class: "solo-lectores" }, " esta regla")))));
+  }
+}
+
+function confirmarOlvidar(regla) {
+  const dialogo = $("confirmar");
+  $("confirmar-titulo").textContent = "¿Olvidar esta regla?";
+  $("confirmar-texto").textContent = "La próxima vez que llegue este mensaje volverá a la cola de revisión. Esta acción queda registrada.";
+  const ok = $("confirmar-ok");
+  ok.className = "accion confirmar";
+  ok.textContent = "Olvidar";
+  ok.onclick = () => { dialogo.close(); void olvidar(regla); };
+  $("confirmar-cancelar").onclick = () => dialogo.close();
+  dialogo.showModal();
+  $("confirmar-titulo").focus();
+}
+
+async function olvidar(regla) {
+  try {
+    const respuesta = await api(`/revision/memoria/${encodeURIComponent(regla.huella)}`, { method: "DELETE" });
+    if (respuesta.status === 404) aviso("Esa regla ya no existía. La lista se actualizó.", true);
+    else if (respuesta.status === 403) aviso("Tu cuenta no puede olvidar reglas, o la sesión caducó. Inicia sesión de nuevo con una cuenta de revisor.", true);
+    else if (!respuesta.ok) aviso("No se pudo olvidar la regla. Inténtalo otra vez.", true);
+    else { anunciar("Regla olvidada."); aviso("Regla olvidada: ese mensaje volverá a la cola de revisión."); }
+    await cargar();
+  } catch (e) {
+    if (e.message !== "sesion") aviso("No hay conexión con el proxy y la regla no se olvidó. Comprueba que esté en marcha e inténtalo otra vez.", true);
   }
 }
 
@@ -383,17 +452,18 @@ async function cargar() {
 
 async function cargarAhora() {
   try {
-    const [panel, historial] = await Promise.all([api("/revision/panel").then((r) => r.json()), api("/revision/historial").then((r) => r.json())]);
+    const [panel, historial, memoria] = await Promise.all([api("/revision/panel").then((r) => r.json()), api("/revision/historial").then((r) => r.json()), api("/revision/memoria").then((r) => r.json())]);
     const vistoAntes = estado.pendientes.map((p) => p.id).join();
     const conocidas = new Set(estado.pendientes.map((p) => p.id));
     estado.pendientes = panel.pendientes;
     estado.decisiones = historial.decisiones;
+    pintarPestanaMemoria(memoria);
     estado.ultimaCarga = Date.now();
     pintarEstadisticas(panel.estadisticas);
     const existe = estado.pendientes.some((p) => p.id === estado.seleccion);
     if (!existe && !estado.resultado) estado.seleccion = estado.pendientes[0] ? estado.pendientes[0].id : null;
     const cambio = vistoAntes !== estado.pendientes.map((p) => p.id).join();
-    if (cambio || estado.pestana === "historial") pintarLista();
+    if (cambio || estado.pestana !== "pendientes") pintarLista();
     // El expediente solo se repinta si cambio la peticion mostrada: una llegada
     // nueva no debe borrar el scroll, la seleccion de texto ni el foco.
     if (!document.querySelector("dialog[open]") && !estado.resultado && estado.mostrado !== estado.seleccion) pintarExpediente();
@@ -460,7 +530,20 @@ function iniciarAtajos() {
 
 /* ---------- Pestanas (patron tablist) ---------- */
 
-const PESTANAS = ["pendientes", "historial"];
+const PESTANAS = ["pendientes", "historial", "memoria"];
+
+/* La pestana Memoria solo existe si la extension esta activa en el proxy. */
+function pestanasVisibles() {
+  return PESTANAS.filter((id) => id !== "memoria" || estado.memoria.activa);
+}
+
+function pintarPestanaMemoria(memoria) {
+  estado.memoria = memoria;
+  $("tab-memoria").hidden = !memoria.activa;
+  $("cuenta-memoria").textContent = memoria.reglas.length;
+  $("resumen-memoria").textContent = memoria.activa ? resumenMemoria() : "";
+  if (!memoria.activa && estado.pestana === "memoria") cambiarPestana("pendientes");
+}
 
 function cambiarPestana(nombre, enfocar = false) {
   estado.pestana = nombre;
@@ -476,15 +559,16 @@ function cambiarPestana(nombre, enfocar = false) {
 }
 
 function teclasPestanas(evento) {
-  const idx = PESTANAS.indexOf(estado.pestana);
+  const visibles = pestanasVisibles();
+  const idx = visibles.indexOf(estado.pestana);
   let destino = null;
-  if (evento.key === "ArrowRight") destino = (idx + 1) % PESTANAS.length;
-  else if (evento.key === "ArrowLeft") destino = (idx - 1 + PESTANAS.length) % PESTANAS.length;
+  if (evento.key === "ArrowRight") destino = (idx + 1) % visibles.length;
+  else if (evento.key === "ArrowLeft") destino = (idx - 1 + visibles.length) % visibles.length;
   else if (evento.key === "Home") destino = 0;
-  else if (evento.key === "End") destino = PESTANAS.length - 1;
+  else if (evento.key === "End") destino = visibles.length - 1;
   if (destino === null) return;
   evento.preventDefault();
-  cambiarPestana(PESTANAS[destino], true);
+  cambiarPestana(visibles[destino], true);
 }
 
 /* ---------- Canal en vivo ---------- */

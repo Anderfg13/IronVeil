@@ -41,6 +41,7 @@ import proxy.demo_chat as demo_chat
 import proxy.espera_revision as espera_revision
 import proxy.herramientas as herramientas
 import proxy.mecanismos as mecanismos
+import proxy.memoria_decisiones as memoria_decisiones
 import proxy.modelos_protegidos as modelos_protegidos
 import proxy.notificaciones as notificaciones
 import proxy.revision_panel as revision_panel
@@ -332,6 +333,9 @@ class _MetricasCadena:
     # Que modelo protegido respondio (backend, modelo, destino, estado): el campo
     # extendido `modelo_protegido` del evento. None si el modelo no llego a llamarse.
     detalle_modelo: dict[str, Any] | None = None
+    # "memoria" si la peticion se rechazo por una decision humana recordada (campo
+    # extendido `origen_decision` del evento); None en el resto.
+    origen_decision: str | None = None
 
     def sumar(self, pieza: str, ns: int) -> None:
         """Suma `ns` al tiempo de `pieza` (entrada y salida van al mismo total)."""
@@ -851,6 +855,30 @@ def _gestionar_aprobacion_humana(
     return "aprobacion_humana"
 
 
+def _consultar_memoria(
+    request: ChatRequest, config: dict[str, bool], metricas: _MetricasCadena
+) -> bool:
+    """Extension (apagada por defecto): True si un humano ya rechazo este mensaje.
+
+    Solo con `aprobacion_humana` activa (las decisiones salen de ahi) y
+    MEMORIA_RECHAZOS=1. Se consulta ANTES de todo lo demas: es un hash, cuesta
+    microsegundos y evita que un ataque repetido llene la cola. Un acierto se rechaza
+    ya, sin cola ni aviso (una regla recordada es una decision final del revisor).
+    """
+    if not config["aprobacion_humana"]:
+        return False
+    memoria = memoria_decisiones.obtener()
+    if memoria is None:
+        return False
+    inicio_ns = time.perf_counter_ns()
+    regla = memoria.coincide(request.modelo, request.mensaje)
+    metricas.sumar("memoria", time.perf_counter_ns() - inicio_ns)
+    if regla is None:
+        return False
+    metricas.origen_decision = "memoria"
+    return True
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -912,6 +940,8 @@ def _construir_evento(
     # Que modelo protegido respondio (campo extendido `modelo_protegido`).
     if metricas.detalle_modelo:
         evento["modelo_protegido"] = metricas.detalle_modelo
+    if metricas.origen_decision:
+        evento["origen_decision"] = metricas.origen_decision
     if tiempo_revision_humana_ms is not None:
         evento["tiempo_revision_humana_ms"] = tiempo_revision_humana_ms
     if es_extension:
@@ -1070,7 +1100,9 @@ async def chat(request: ChatRequest, http_request: Request) -> dict[str, Any]:
     # cabecera X-Revision-Id del 429 (el cuerpo no cambia), ver espera_revision.py.
     id_revision = uuid.uuid4().hex if config["aprobacion_humana"] else None
 
-    if config["aprobacion_humana"]:
+    if _consultar_memoria(request, config, metricas):
+        mecanismo_bloqueo = "aprobacion_humana"  # rechazo recordado: final, sin cola
+    elif config["aprobacion_humana"]:
         inicio_ns = time.perf_counter_ns()
         mecanismo_bloqueo = _verificar_limite_de_tasa(
             request, http_request, id_revision
@@ -1114,11 +1146,19 @@ async def chat(request: ChatRequest, http_request: Request) -> dict[str, Any]:
             latencia_ms,
             metricas,
             config,
-            es_extension=_es_extension(request.modelo),
+            es_extension=(
+                _es_extension(request.modelo) or metricas.origen_decision == "memoria"
+            ),
         )
     )
 
     if respuesta is None:
+        if metricas.origen_decision == "memoria":
+            logger.warning(
+                "peticion rechazada por una decision humana recordada (modelo=%s)",
+                _sanear_para_log(request.modelo),
+            )
+            raise HTTPException(status_code=400, detail=_DETALLE_BLOQUEO)
         if mecanismo_bloqueo == "aprobacion_humana":
             logger.warning(
                 "peticion puesta en revision humana (modelo=%s)",
@@ -1188,6 +1228,24 @@ def listar_revision() -> list[dict[str, Any]]:
     return cola.cola_global.listar()
 
 
+def _recordar_rechazo(
+    item: dict[str, Any], revisor: auth.Identidad | None
+) -> str | None:
+    """Extension: recuerda un rechazo humano para que el mismo mensaje no vuelva a la
+    cola. Solo retenciones por contenido y solo peticiones (no herramientas); None si
+    la memoria esta apagada o no corresponde recordarlo."""
+    memoria = memoria_decisiones.obtener()
+    motivo = item.get("motivo")
+    if (
+        memoria is None
+        or item.get("tipo") == "herramienta"
+        or motivo not in memoria_decisiones.MOTIVOS_QUE_SE_RECUERDAN
+    ):
+        return None
+    quien = revisor.usuario if revisor else revision_panel.MODO_LABORATORIO
+    return memoria.recordar_rechazo(item["modelo"], item["mensaje"], quien, motivo)
+
+
 @app.post("/revision/{id_peticion}/rechazar", responses=_RESPUESTAS_RECHAZAR_REVISION)
 def rechazar_revision(
     id_peticion: str,
@@ -1229,10 +1287,12 @@ def rechazar_revision(
         item, "rechazada", revisor, tiempo_revision_humana_ms
     )
     cola.resultados_global.registrar(id_peticion, cola.ESTADO_RECHAZADA)
+    recordada = _recordar_rechazo(item, revisor)
     return {
         "id": id_peticion,
         "estado": "rechazada",
         "tiempo_revision_humana_ms": tiempo_revision_humana_ms,
+        **({"memoria": recordada} if recordada else {}),
     }
 
 

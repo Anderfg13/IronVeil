@@ -99,6 +99,12 @@ services:
       MODELO_PROTEGIDO_HOSTS_PROPIOS: ${MODELO_PROTEGIDO_HOSTS_PROPIOS:-}
       MODELO_PROTEGIDO_OPENAI_API_KEY: ${MODELO_PROTEGIDO_OPENAI_API_KEY:-}
       MODELO_PROTEGIDO_ANTHROPIC_API_KEY: ${MODELO_PROTEGIDO_ANTHROPIC_API_KEY:-}
+      # Memoria de decisiones humanas (opcional, apagada por defecto; docs/MEMORIA_DE_DECISIONES.md):
+      # un rechazo de la revision humana se recuerda y el mismo mensaje se rechaza solo.
+      MEMORIA_RECHAZOS: ${MEMORIA_RECHAZOS:-}
+      MEMORIA_RECHAZOS_ARCHIVO: ${MEMORIA_RECHAZOS_ARCHIVO:-/app/memoria/rechazos.jsonl}
+      MEMORIA_RECHAZOS_MAXIMO: ${MEMORIA_RECHAZOS_MAXIMO:-5000}
+      MEMORIA_RECHAZOS_VISTA_PREVIA: ${MEMORIA_RECHAZOS_VISTA_PREVIA:-1}
       # Exportacion de cada evento a un archivo en formato Wazuh JSON (ver
       # docs/siem/wazuh/LEEME.md). Vacio = apagada. La ruta es DENTRO del
       # contenedor; ./docs/siem/exportados se monta mas abajo.
@@ -130,6 +136,9 @@ services:
       # en el host: son evidencia, no deben perderse si el contenedor cae.
       - ./config.yaml:/app/config.yaml:ro
       - ./resultados:/app/resultados
+      # La memoria de decisiones vive en el host (no en un volumen de Docker): sobrevive
+      # a reinicios, a recrear el contenedor y a `docker compose down -v`.
+      - ./memoria:/app/memoria
       - ./docs/siem/exportados:/app/siem
     depends_on:
       ollama-init:

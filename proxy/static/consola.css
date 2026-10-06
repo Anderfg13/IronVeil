@@ -203,6 +203,8 @@ button:active:not(:disabled) { transform: translateY(1px); }
 .fila-historial { padding: 12px 16px; border-bottom: 1px solid var(--line); }
 .fila-historial .fila { display: flex; justify-content: space-between; gap: 8px; }
 .fila-historial small { color: var(--ink-3); }
+.vista-previa { margin: 6px 0; padding: 6px 10px; background: var(--panel-2); border-radius: 8px; color: var(--ink-2); font-size: 0.8125rem; overflow-wrap: anywhere; }
+.fila-historial .secundario { margin-top: 8px; }
 .lista-pie { border-top: 1px solid var(--line); padding: 10px 16px; display: grid; gap: 4px; color: var(--ink-3); font-size: 0.75rem; }
 .lista-pie p { margin: 0; }
 .lista-pie label { display: flex; align-items: center; gap: 8px; min-height: 28px; color: var(--ink-2); font-size: 0.8125rem; cursor: pointer; }

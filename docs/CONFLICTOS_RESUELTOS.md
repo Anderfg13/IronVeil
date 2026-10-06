@@ -191,6 +191,30 @@ V2–V4**.
 
 ---
 
+## 7. La memoria de decisiones vs. la validez de los resultados (2026-10-06)
+
+**Conflicto.** García pidió que el proxy «aprenda» de las decisiones de la revisión humana: tras
+rechazar un mensaje, el mismo mensaje debe rechazarse solo. Las baterías de ataque repiten el mismo
+payload decenas de veces, así que con la memoria activa el primer rechazo bloquearía el resto y el
+**ASR de C5 y C6 bajaría artificialmente**. Además, un `config.yaml` con una sexta bandera rompe el
+contrato de las 5 claves, y un nombre de mecanismo nuevo rompe las invariantes del esquema de log.
+
+**Decisión.** Se implementa como **extensión opcional apagada por defecto**
+(`proxy/memoria_decisiones.py`, `MEMORIA_RECHAZOS=1`), sin tocar el contrato de `config.yaml`:
+- **solo rechazos** (nunca aprobaciones) y solo retenciones por contenido; coincidencia exacta tras
+  normalizar, por modelo; no frena paráfrasis;
+- **persistente** (archivo JSON Lines con `fsync`, en `./memoria`, fuera de los volúmenes de Docker)
+  y **revocable** desde la consola;
+- se guardan huellas y una vista previa de 60 caracteres con credenciales redactadas;
+- un rechazo por memoria se atribuye a `aprobacion_humana` con el campo extendido
+  `origen_decision: "memoria"` y `es_extension: true`, así que no entra en el núcleo ni en el análisis
+  de costo y el esquema conserva sus invariantes.
+
+**Pendiente (no lo decide el código).** Los resultados de C0–C6 se midieron **sin** la memoria; no
+activarla en una corrida del experimento y presentarla en el informe como extensión aparte.
+
+---
+
 ## Matriz de integración — semana de clasificación
 
 Línea base: `pytest` completo en verde (80 tests) antes de cerrar.

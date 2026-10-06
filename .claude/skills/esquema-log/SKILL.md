@@ -42,6 +42,7 @@ Se pueden agregar campos nuevos. **Nunca se renombran ni se eliminan los 8 base.
 | Campo | Tipo | Cuándo |
 |---|---|---|
 | `latencia_clasificador_ms` | int | mecanismo 3 activo |
+| `origen_decision` | string | `"memoria"` si un humano ya habia rechazado ese mensaje y el proxy lo rechazo solo (memoria de decisiones, `MEMORIA_RECHAZOS=1`). Se atribuye a `aprobacion_humana`, con `latencia_memoria_us` y `es_extension: true` |
 | `modelo_protegido` | objeto | `backend` (`ollama`/`openai`/`anthropic`), `modelo`, `destino` (`local`/`propio`/`tercero`), `estado`; sin texto ni claves. Un modelo remoto además lleva `es_extension: true` |
 | `clasificador_entrada` / `clasificador_salida` | objeto | direcciones clasificadas: `backend`, `modelo`, `destino` (`local`/`propio`/`tercero`), `estado` (`ok` o el motivo del fallo cerrado) y, si aplican, `umbral`, `puntaje`, `etiqueta`. Sin texto del usuario ni claves |
 | `tiempo_revision_humana_ms` | int | petición que pasó por la cola |

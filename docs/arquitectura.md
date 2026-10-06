@@ -320,6 +320,32 @@ con `json.dumps(evento, ensure_ascii=False)` + salto de línea.
     `try/except` y un timeout por canal; un fallo solo pierde la
     notificación. El mensaje lleva mecanismo/motivo, vector, configuración y
     timestamp, nunca el texto de la petición.
+  - `proxy/memoria_decisiones.py` — **memoria de decisiones humanas**
+    (`MEMORIA_RECHAZOS=1`; guía en `docs/MEMORIA_DE_DECISIONES.md`): cuando un
+    revisor **rechaza** una petición que filtrado, clasificación o mínimo
+    privilegio retuvo, `rechazar_revision()` guarda la huella SHA-256 del par
+    (modelo, mensaje normalizado) y `_consultar_memoria()` rechaza solo el mismo
+    mensaje al principio de `/chat` (400 inmediato, sin cola, sin aviso, sin llegar
+    al modelo). Solo rechazos (nunca aprobaciones), por modelo, coincidencia exacta:
+    no frena paráfrasis. **Persistente**: JSON Lines con `fsync` en `./memoria`
+    (carpeta del host), reconstruido al arrancar; revocable desde la pestaña
+    *Memoria* de la consola. Los resultados de C0-C6 se midieron **sin** ella; sus
+    eventos llevan `origen_decision: "memoria"`, `latencia_memoria_us` y
+    `es_extension: true`, y se atribuyen a `aprobacion_humana`.
+  - `proxy/modelos_protegidos.py` — **modelo protegido remoto**
+    (`MODELOS_REMOTOS`; `docs/MODELO_PROTEGIDO_REMOTO.md`): el proxy puede proteger un
+    modelo servido por otra API (`openai`, `anthropic`) en vez de Ollama.
+    `_llamar_modelo_protegido()` despacha y el adaptador devuelve la forma de Ollama,
+    así que los 5 mecanismos no cambian. Un tercero exige
+    `MODELO_PROTEGIDO_PERMITIR_TERCEROS=1`; sus eventos llevan `es_extension`.
+  - `proxy/backends_entrada.py` + `proxy/adaptador_clasificador.py` — **clasificador de
+    entrada intercambiable** (`CLASIFICADOR_ENTRADA_BACKEND`;
+    `docs/CAMBIAR_MODELO_CLASIFICADOR.md`): Prompt Guard local por defecto, o `http`,
+    `ollama`, `openai`, `anthropic`, `jev`. El adaptador traduce el veredicto de cada
+    modelo a «malicioso / no» (etiqueta desconocida = malicioso) y cada evento deja
+    `clasificador_entrada` / `clasificador_salida` con backend, modelo, destino y
+    estado (separa una detección real de una caída del servicio). `clasificar()` no
+    cambia de firma.
   - `proxy/siem.py` — `exportar_a_siem(evento, formato="json"|"cef") -> str`:
     función **pura** (sin red ni disco) que convierte un
     evento del log interno a JSON de una línea para el `log_format json` de

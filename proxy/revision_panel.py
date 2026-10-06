@@ -44,6 +44,7 @@ from pydantic import BaseModel, Field
 import proxy.auth as auth
 import proxy.cola as cola
 import proxy.mecanismos as mecanismos
+import proxy.memoria_decisiones as memoria_decisiones
 
 logger = logging.getLogger(__name__)
 
@@ -533,6 +534,54 @@ def historial_decisiones(
 ) -> Response:
     """Decisiones ya tomadas, la mas reciente primero."""
     return _json({"decisiones": historial.listar()})
+
+
+# --- Memoria de decisiones (extension opcional) ------------------------------
+#
+# Cuando un humano rechaza una peticion retenida, el proxy recuerda ese mensaje y
+# rechaza al instante los identicos (proxy/memoria_decisiones.py). Aqui se ven las
+# reglas y se revocan: un rechazo equivocado no puede ser permanente. Nunca viaja el
+# mensaje completo: solo una vista previa corta con las credenciales redactadas.
+
+_HUELLA_VALIDA = re.compile(r"^[0-9a-f]{64}$")
+
+
+@router.get("/revision/memoria", include_in_schema=False)
+def ver_memoria(
+    _: Annotated[auth.Identidad | None, Depends(auth.exigir_lector)],
+) -> Response:
+    """Reglas recordadas; `activa: false` si la extension esta apagada."""
+    memoria = memoria_decisiones.obtener()
+    if memoria is None:
+        return _json({"activa": False, "reglas": []})
+    return _json(
+        {
+            "activa": True,
+            "persistente": memoria.persistente,
+            "maximo": memoria.maximo,
+            "reglas": memoria.listar(),
+        }
+    )
+
+
+@router.delete("/revision/memoria/{huella}", include_in_schema=False)
+def olvidar_regla(
+    huella: str,
+    revisor: Annotated[auth.Identidad | None, Depends(auth.exigir_revisor)],
+) -> Response:
+    """Revoca una regla (solo revisores, con el token CSRF de la sesion)."""
+    memoria = memoria_decisiones.obtener()
+    if memoria is None or not _HUELLA_VALIDA.match(huella):
+        raise HTTPException(
+            status_code=404, detail="No hay ninguna regla con esa huella."
+        )
+    quien = revisor.usuario if revisor else MODO_LABORATORIO
+    if not memoria.olvidar(huella, quien):
+        raise HTTPException(
+            status_code=404, detail="No hay ninguna regla con esa huella."
+        )
+    logger.info("regla de memoria olvidada (por=%s)", quien)
+    return _json({"huella": huella, "estado": "olvidada"})
 
 
 # --- Canal en vivo (SSE) ----------------------------------------------------
