@@ -16,12 +16,14 @@ import os
 import re
 import secrets
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import httpx
 import yaml
 
+import proxy.adaptador_clasificador as adaptador
 import proxy.cola as cola
 
 logger = logging.getLogger(__name__)
@@ -380,6 +382,24 @@ LLAMA_GUARD_MAX_TOKENS: int = int(os.getenv("LLAMA_GUARD_MAX_TOKENS", "32"))
 # Prompt Guard en media precision (fp16) cuando hay GPU CUDA: menos tiempo y
 # memoria. Sin CUDA no se usa. Se puede apagar con PROMPT_GUARD_FP16=0.
 PROMPT_GUARD_FP16: bool = os.getenv("PROMPT_GUARD_FP16", "1") == "1"
+# Traduccion del veredicto de cada clasificador a "malicioso / no" (adaptador, ver
+# proxy/adaptador_clasificador.py). Vacias = el perfil por defecto del modelo. Solo
+# hace falta declararlas al cambiar a un modelo con etiquetas genericas (LABEL_n).
+CLASIFICADOR_ENTRADA_BACKEND: str = os.getenv(
+    "CLASIFICADOR_ENTRADA_BACKEND", "huggingface"
+)
+CLASIFICADOR_ENTRADA_ETIQUETAS_MALICIOSAS: str = os.getenv(
+    "CLASIFICADOR_ENTRADA_ETIQUETAS_MALICIOSAS", ""
+)
+CLASIFICADOR_ENTRADA_ETIQUETAS_BENIGNAS: str = os.getenv(
+    "CLASIFICADOR_ENTRADA_ETIQUETAS_BENIGNAS", ""
+)
+CLASIFICADOR_SALIDA_VEREDICTOS_INSEGUROS: str = os.getenv(
+    "CLASIFICADOR_SALIDA_VEREDICTOS_INSEGUROS", ""
+)
+CLASIFICADOR_SALIDA_VEREDICTOS_SEGUROS: str = os.getenv(
+    "CLASIFICADOR_SALIDA_VEREDICTOS_SEGUROS", ""
+)
 
 # Llama Guard 3 distingue si esta evaluando lo que dijo el usuario o lo que
 # respondio el modelo (plantilla oficial, ver docstring de clasificar()).
@@ -418,6 +438,41 @@ HF_TOKEN: str | None = os.getenv("HF_TOKEN")
 # _registro_lock en proxy/main.py: el V5 dispara rafagas reales).
 _pipeline_prompt_guard: Any = None
 _lock_pipeline_prompt_guard = threading.Lock()
+# Si el modelo cargo pero sus etiquetas no se saben interpretar, se recuerda el motivo
+# para fallar cerrado de inmediato en cada peticion, sin recargar el modelo cada vez.
+_error_config_prompt_guard: str | None = None
+
+
+def _perfil_entrada() -> adaptador.PerfilVeredicto:
+    """Perfil de etiquetas del clasificador de entrada segun el modelo y el `.env`."""
+    return adaptador.perfil_entrada(
+        MODELO_PROMPT_GUARD_ID,
+        CLASIFICADOR_ENTRADA_ETIQUETAS_MALICIOSAS,
+        CLASIFICADOR_ENTRADA_ETIQUETAS_BENIGNAS,
+    )
+
+
+def _perfil_salida() -> adaptador.PerfilVeredicto:
+    """Perfil del veredicto del clasificador de salida segun el `.env`."""
+    return adaptador.perfil_salida(
+        CLASIFICADOR_SALIDA_VEREDICTOS_INSEGUROS,
+        CLASIFICADOR_SALIDA_VEREDICTOS_SEGUROS,
+    )
+
+
+def _validar_etiquetas_del_pipeline(clasificador: Any) -> None:
+    """Lanza ValueError si el modelo cargado trae una clase que el perfil no conoce.
+
+    Se hace una vez al cargar, para enterarse al arrancar y no con un ataque que se
+    cuele. Si el objeto no expone `model.config.id2label` no hay nada que comprobar
+    aqui (cada veredicto se sigue validando en la peticion).
+    """
+    config = getattr(getattr(clasificador, "model", None), "config", None)
+    id2label = getattr(config, "id2label", None)
+    if id2label:
+        _perfil_entrada().validar(
+            id2label.values(), f"El modelo {MODELO_PROMPT_GUARD_ID}"
+        )
 
 
 def clasificar(texto: str, direccion: str) -> bool:
@@ -467,9 +522,38 @@ def clasificar(texto: str, direccion: str) -> bool:
         raise ValueError(f"direccion invalida para clasificar(): {direccion!r}")
 
     if direccion == "entrada":
-        return _clasificar_entrada_prompt_guard(texto)
+        return _clasificar_entrada(texto)
 
     return _clasificar_salida_llama_guard(texto, direccion)
+
+
+def _backends_entrada() -> dict[str, Callable[[str], bool]]:
+    """Backends de clasificacion de entrada disponibles, por nombre.
+
+    Cada uno recibe el texto y devuelve True = malicioso, y debe fallar cerrado ante
+    cualquier error. Para sumar otro modelo con otro transporte (p. ej. una API
+    remota con su propia clave y formato de respuesta) se agrega aqui una funcion
+    `(texto) -> bool` y se elige con CLASIFICADOR_ENTRADA_BACKEND; `clasificar()` y
+    el resto de la cadena no cambian. Un backend remoto envia texto FUERA del
+    laboratorio: requiere aprobacion expresa del equipo (CLAUDE.md, regla 1) y
+    dejarlo anotado en docs/CONFLICTOS_RESUELTOS.md. Ver
+    docs/CAMBIAR_MODELO_CLASIFICADOR.md.
+    """
+    return {"huggingface": _clasificar_entrada_prompt_guard}
+
+
+def _clasificar_entrada(texto: str) -> bool:
+    """Despacha al backend elegido en CLASIFICADOR_ENTRADA_BACKEND (fail closed)."""
+    backend = _backends_entrada().get(CLASIFICADOR_ENTRADA_BACKEND.strip().lower())
+    if backend is None:
+        logger.error(
+            "clasificar(): CLASIFICADOR_ENTRADA_BACKEND=%r no existe "
+            "(disponibles: %s); fail closed (unsafe).",
+            CLASIFICADOR_ENTRADA_BACKEND,
+            sorted(_backends_entrada()),
+        )
+        return True
+    return backend(texto)
 
 
 # Cliente httpx compartido hacia Ollama para Llama Guard (mecanismo 3,
@@ -554,11 +638,13 @@ def _obtener_pipeline_prompt_guard() -> Any:
     falla por cualquier otro motivo -- quien llama (
     `_clasificar_entrada_prompt_guard`) atrapa esto y falla cerrado.
     """
-    global _pipeline_prompt_guard
+    global _pipeline_prompt_guard, _error_config_prompt_guard
     if _pipeline_prompt_guard is not None:
         return _pipeline_prompt_guard
 
     with _lock_pipeline_prompt_guard:
+        if _error_config_prompt_guard is not None:
+            raise RuntimeError(_error_config_prompt_guard)
         if _pipeline_prompt_guard is None:
             if not HF_TOKEN:
                 raise RuntimeError(
@@ -583,13 +669,19 @@ def _obtener_pipeline_prompt_guard() -> Any:
                 dispositivo,
                 "fp16" if opciones else "fp32",
             )
-            _pipeline_prompt_guard = _crear_pipeline(
+            nuevo = _crear_pipeline(
                 "text-classification",
                 model=MODELO_PROMPT_GUARD_ID,
                 token=HF_TOKEN,
                 device=dispositivo,
                 **opciones,
             )
+            try:
+                _validar_etiquetas_del_pipeline(nuevo)
+            except ValueError as exc:
+                _error_config_prompt_guard = str(exc)
+                raise RuntimeError(_error_config_prompt_guard) from exc
+            _pipeline_prompt_guard = nuevo
     return _pipeline_prompt_guard
 
 
@@ -602,8 +694,10 @@ def _obtener_pipeline_prompt_guard() -> Any:
 # empiricamente con texto de prueba conocido: frases de inyeccion en
 # espanol e ingles obtuvieron score > 0.999 para "LABEL_1"; texto legitimo,
 # score > 0.999 para "LABEL_0" -- ver docs/FUENTE_DE_VERDAD.md, seccion 4,
-# para el detalle completo (incluido el script de verificacion). Si un
-# futuro checkpoint trae labels con nombre, hay que revisar esta constante.
+# para el detalle completo (incluido el script de verificacion). Esta
+# constante solo documenta el valor del modelo actual: quien decide que es
+# malicioso es el perfil de proxy/adaptador_clasificador.py, que ademas cubre
+# otros modelos (un test comprueba que los dos coinciden).
 _ETIQUETA_PROMPT_GUARD_MALICIOSO = "LABEL_1"
 
 
@@ -634,6 +728,7 @@ def _clasificar_entrada_prompt_guard(texto: str) -> bool:
     """
     try:
         etiqueta = _predecir_prompt_guard(texto)
+        veredicto = _perfil_entrada().evaluar(etiqueta)
     except Exception as exc:  # noqa: BLE001 -- fail closed ante cualquier fallo
         logger.exception(
             "clasificar(): error usando Prompt Guard (%s): %s; fail closed (unsafe).",
@@ -641,7 +736,17 @@ def _clasificar_entrada_prompt_guard(texto: str) -> bool:
             exc,
         )
         return True
-    return etiqueta == _ETIQUETA_PROMPT_GUARD_MALICIOSO
+    if veredicto is None:
+        # Etiqueta que el perfil no conoce: jamas se toma por benigna.
+        logger.error(
+            "clasificar(): %s devolvio la etiqueta %r, que el perfil no conoce; "
+            "fail closed (unsafe). Declara las etiquetas en "
+            "CLASIFICADOR_ENTRADA_ETIQUETAS_*.",
+            MODELO_PROMPT_GUARD_ID,
+            etiqueta,
+        )
+        return True
+    return veredicto
 
 
 def _interpretar_respuesta_llama_guard(contenido: str) -> bool:
@@ -653,12 +758,15 @@ def _interpretar_respuesta_llama_guard(contenido: str) -> bool:
     asumir un booleano por defecto silencioso, y se registra un error.
     """
     lineas = contenido.strip().splitlines()
-    primera_linea = lineas[0].strip().lower() if lineas else ""
+    primera_linea = lineas[0].strip() if lineas else ""
 
-    if primera_linea == "safe":
-        return False
-    if primera_linea == "unsafe":
+    try:
+        veredicto = _perfil_salida().evaluar(primera_linea)
+    except ValueError as exc:  # variables de perfil mal declaradas
+        logger.error("clasificar(): perfil de salida invalido: %s", exc)
         return True
+    if veredicto is not None:
+        return veredicto
 
     logger.error(
         "clasificar(): respuesta inesperada de %s (no empieza por 'safe' ni "

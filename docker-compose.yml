@@ -62,6 +62,13 @@ services:
       # la respuesta de Llama Guard y media precision de Prompt Guard con GPU.
       LLAMA_GUARD_MAX_TOKENS: ${LLAMA_GUARD_MAX_TOKENS:-32}
       PROMPT_GUARD_FP16: ${PROMPT_GUARD_FP16:-1}
+      # Adaptador del clasificador (proxy/adaptador_clasificador.py): vacias = el
+      # perfil por defecto del modelo. Ver docs/CAMBIAR_MODELO_CLASIFICADOR.md.
+      CLASIFICADOR_ENTRADA_BACKEND: ${CLASIFICADOR_ENTRADA_BACKEND:-huggingface}
+      CLASIFICADOR_ENTRADA_ETIQUETAS_MALICIOSAS: ${CLASIFICADOR_ENTRADA_ETIQUETAS_MALICIOSAS:-}
+      CLASIFICADOR_ENTRADA_ETIQUETAS_BENIGNAS: ${CLASIFICADOR_ENTRADA_ETIQUETAS_BENIGNAS:-}
+      CLASIFICADOR_SALIDA_VEREDICTOS_INSEGUROS: ${CLASIFICADOR_SALIDA_VEREDICTOS_INSEGUROS:-}
+      CLASIFICADOR_SALIDA_VEREDICTOS_SEGUROS: ${CLASIFICADOR_SALIDA_VEREDICTOS_SEGUROS:-}
       # Cuanto tiempo mantiene Ollama un modelo cargado en memoria tras la
       # ultima peticion (nativo de su API). 30m por defecto, mas que el 5m
       # de Ollama, para que una pausa entre peticiones (demo en vivo,
