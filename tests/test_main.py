@@ -221,7 +221,7 @@ def _mockear_clasificador(
     monkeypatch: pytest.MonkeyPatch,
     veredicto: bool | dict[str, bool],
 ) -> list[tuple[str, str]]:
-    """Reemplaza mecanismos.clasificar por un doble determinista, sin red.
+    """Reemplaza mecanismos.clasificar_con_detalle por un doble determinista, sin red.
 
     `veredicto` puede ser un bool (mismo resultado en entrada y salida) o un
     dict {"entrada": bool, "salida": bool}. Devuelve la lista de llamadas
@@ -230,13 +230,16 @@ def _mockear_clasificador(
     """
     llamadas: list[tuple[str, str]] = []
 
-    def _fake_clasificar(texto: str, direccion: str) -> bool:
+    def _fake_clasificar(
+        texto: str, direccion: str
+    ) -> tuple[bool, mecanismos.DetalleClasificacion]:
         llamadas.append((texto, direccion))
-        if isinstance(veredicto, dict):
-            return veredicto[direccion]
-        return veredicto
+        inseguro = veredicto[direccion] if isinstance(veredicto, dict) else veredicto
+        return inseguro, mecanismos.DetalleClasificacion(
+            backend="falso", modelo="falso", destino="local", estado="ok"
+        )
 
-    monkeypatch.setattr(mecanismos, "clasificar", _fake_clasificar)
+    monkeypatch.setattr(mecanismos, "clasificar_con_detalle", _fake_clasificar)
     return llamadas
 
 

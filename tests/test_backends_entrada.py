@@ -211,7 +211,7 @@ def test_la_clave_nunca_aparece_en_el_log(
 def test_el_veredicto_del_juez_solo_acepta_las_dos_palabras(
     respuesta: Any, esperado: bool
 ) -> None:
-    assert be._veredicto_del_juez(respuesta) is esperado
+    assert be._resultado_del_juez(respuesta).malicioso is esperado
 
 
 def test_el_texto_va_entre_marcadores_aleatorios_distintos_en_cada_peticion() -> None:

@@ -317,6 +317,11 @@ class _MetricasCadena:
 
     latencia_clasificador_ms: int = 0
     tiempos_ns: dict[str, int] = field(default_factory=dict)
+    # Detalle de que clasificador respondio, por direccion ("entrada" | "salida"), tal
+    # como lo devuelve `mecanismos.clasificar_con_detalle()`. Alimenta los campos
+    # extendidos `clasificador_entrada` / `clasificador_salida` del evento. Solo estan
+    # las direcciones que SI se clasificaron.
+    detalles_clasificacion: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def sumar(self, pieza: str, ns: int) -> None:
         """Suma `ns` al tiempo de `pieza` (entrada y salida van al mismo total)."""
@@ -360,9 +365,12 @@ async def _paso_clasificacion(
     quien llama responde 400).
     """
     inicio = time.perf_counter()
-    inseguro = await run_in_threadpool(mecanismos.clasificar, texto, direccion)
+    inseguro, detalle = await run_in_threadpool(
+        mecanismos.clasificar_con_detalle, texto, direccion
+    )
     transcurrido = time.perf_counter() - inicio
     metricas.latencia_clasificador_ms += int(transcurrido * 1000)
+    metricas.detalles_clasificacion[direccion] = detalle.como_dict()
     # Por direccion (entrada = Prompt Guard, salida = Llama Guard): permite saber cual
     # de los dos pesa. Se suma ademas a `clasificacion` en _ejecutar_cadena().
     metricas.sumar(f"clasificacion_{direccion}", int(transcurrido * 1e9))
@@ -799,6 +807,9 @@ def _construir_evento(
     mecanismo 3 este activo (aunque haya bloqueado antes de llamarlo: en ese
     caso vale 0). Agrega `latencia_<pieza>_us` por cada pieza que corrio (los
     mecanismos y `modelo`, el tiempo del modelo protegido). Agrega
+    `clasificador_entrada` / `clasificador_salida` (que clasificador respondio, con que
+    modelo, hacia que destino, con que estado y puntaje) por cada direccion
+    clasificada. Agrega
     `tiempo_revision_humana_ms` solo si se pasa
     explicitamente (peticion que paso por la cola de revision): es un
     evento aparte del que ya escribio `/chat` al encolar, nunca lo
@@ -821,6 +832,10 @@ def _construir_evento(
     # solo las piezas que se ejecutaron en esta peticion.
     for pieza, ns in metricas.tiempos_ns.items():
         evento[f"latencia_{pieza}_us"] = round(ns / 1000)
+    # Que clasificador respondio y como (campos extendidos `clasificador_<direccion>`):
+    # solo las direcciones que se clasificaron.
+    for direccion, detalle in metricas.detalles_clasificacion.items():
+        evento[f"clasificador_{direccion}"] = detalle
     if tiempo_revision_humana_ms is not None:
         evento["tiempo_revision_humana_ms"] = tiempo_revision_humana_ms
     if es_extension:

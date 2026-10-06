@@ -16,7 +16,6 @@ import os
 import re
 import secrets
 import threading
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +25,7 @@ import yaml
 import proxy.adaptador_clasificador as adaptador
 import proxy.backends_entrada as backends_entrada
 import proxy.cola as cola
+from proxy.adaptador_clasificador import DetalleClasificacion, ResultadoBackend
 
 logger = logging.getLogger(__name__)
 
@@ -446,19 +446,25 @@ _error_config_prompt_guard: str | None = None
 
 def _perfil_entrada() -> adaptador.PerfilVeredicto:
     """Perfil de etiquetas del clasificador de entrada segun el modelo y el `.env`."""
-    return adaptador.perfil_entrada(
-        MODELO_PROMPT_GUARD_ID,
-        CLASIFICADOR_ENTRADA_ETIQUETAS_MALICIOSAS,
-        CLASIFICADOR_ENTRADA_ETIQUETAS_BENIGNAS,
-    )
+    try:
+        return adaptador.perfil_entrada(
+            MODELO_PROMPT_GUARD_ID,
+            CLASIFICADOR_ENTRADA_ETIQUETAS_MALICIOSAS,
+            CLASIFICADOR_ENTRADA_ETIQUETAS_BENIGNAS,
+        )
+    except ValueError as exc:
+        raise adaptador.ErrorConfiguracion(str(exc)) from exc
 
 
 def _perfil_salida() -> adaptador.PerfilVeredicto:
     """Perfil del veredicto del clasificador de salida segun el `.env`."""
-    return adaptador.perfil_salida(
-        CLASIFICADOR_SALIDA_VEREDICTOS_INSEGUROS,
-        CLASIFICADOR_SALIDA_VEREDICTOS_SEGUROS,
-    )
+    try:
+        return adaptador.perfil_salida(
+            CLASIFICADOR_SALIDA_VEREDICTOS_INSEGUROS,
+            CLASIFICADOR_SALIDA_VEREDICTOS_SEGUROS,
+        )
+    except ValueError as exc:
+        raise adaptador.ErrorConfiguracion(str(exc)) from exc
 
 
 def _validar_etiquetas_del_pipeline(clasificador: Any) -> None:
@@ -519,6 +525,21 @@ def clasificar(texto: str, direccion: str) -> bool:
     puede devolver la latencia como parte del resultado sin romper la firma
     congelada `-> bool` del contrato compartido.
     """
+    return clasificar_con_detalle(texto, direccion)[0]
+
+
+def clasificar_con_detalle(
+    texto: str, direccion: str
+) -> tuple[bool, DetalleClasificacion]:
+    """Como `clasificar()`, pero ademas dice QUE clasificador respondio y COMO.
+
+    Devuelve `(malicioso, detalle)`. El detalle (backend, modelo, destino, estado,
+    umbral, puntaje, etiqueta) es el bloque `clasificador_<direccion>` del evento de
+    log: sin el, un fallo del servicio resuelto fallando cerrado (timeout, 429...) se
+    veria en los resultados igual que una deteccion real, y no se sabria con que
+    clasificador se corrio. Nunca incluye el texto del usuario ni claves. Lo usa el
+    endpoint; `clasificar() -> bool` sigue siendo el contrato estable.
+    """
     if direccion not in _ROL_LLAMA_GUARD:
         raise ValueError(f"direccion invalida para clasificar(): {direccion!r}")
 
@@ -528,26 +549,25 @@ def clasificar(texto: str, direccion: str) -> bool:
     return _clasificar_salida_llama_guard(texto, direccion)
 
 
-def _backends_entrada() -> dict[str, Callable[[str], bool]]:
+def _backends_entrada() -> dict[str, Any]:
     """Backends de clasificacion de entrada disponibles, por nombre.
 
-    Cada uno recibe el texto y devuelve True = malicioso, y debe fallar cerrado ante
-    cualquier error. "huggingface" (local) vive aqui; ollama, openai, anthropic y jev
-    estan en proxy/backends_entrada.py. Para sumar otro se escribe una funcion
-    `(texto) -> bool` y se registra; se elige con CLASIFICADOR_ENTRADA_BACKEND y
-    `clasificar()` no cambia. Un backend remoto envia texto FUERA del laboratorio: esta
-    apagado salvo CLASIFICADOR_PERMITIR_REMOTO=1 (CLAUDE.md, regla 1; decision en
-    docs/CONFLICTOS_RESUELTOS.md). Ver docs/CAMBIAR_MODELO_CLASIFICADOR.md.
+    "huggingface" (local) vive aqui; http, ollama, openai, anthropic y jev estan en
+    proxy/backends_entrada.py. Cada uno decide True = malicioso y falla cerrado ante
+    cualquier error. Para sumar otro se escribe una funcion y se registra (como
+    `backends_entrada.Backend`, que ademas aporta el detalle del log, o como una
+    funcion `(texto) -> bool` simple); se elige con CLASIFICADOR_ENTRADA_BACKEND y
+    `clasificar()` no cambia. Un backend de un TERCERO envia texto FUERA del
+    laboratorio: esta apagado salvo CLASIFICADOR_PERMITIR_REMOTO=1 (CLAUDE.md, regla 1;
+    decision en docs/CONFLICTOS_RESUELTOS.md). Ver docs/CAMBIAR_MODELO_CLASIFICADOR.md.
     """
-    return {
-        "huggingface": _clasificar_entrada_prompt_guard,
-        **backends_entrada.BACKENDS,
-    }
+    return {"huggingface": _BACKEND_HUGGINGFACE, **backends_entrada.BACKENDS}
 
 
-def _clasificar_entrada(texto: str) -> bool:
+def _clasificar_entrada(texto: str) -> tuple[bool, DetalleClasificacion]:
     """Despacha al backend elegido en CLASIFICADOR_ENTRADA_BACKEND (fail closed)."""
-    backend = _backends_entrada().get(CLASIFICADOR_ENTRADA_BACKEND.strip().lower())
+    nombre = CLASIFICADOR_ENTRADA_BACKEND.strip().lower()
+    backend = _backends_entrada().get(nombre)
     if backend is None:
         logger.error(
             "clasificar(): CLASIFICADOR_ENTRADA_BACKEND=%r no existe "
@@ -555,8 +575,30 @@ def _clasificar_entrada(texto: str) -> bool:
             CLASIFICADOR_ENTRADA_BACKEND,
             sorted(_backends_entrada()),
         )
-        return True
-    return backend(texto)
+        return True, DetalleClasificacion(
+            backend=nombre, modelo="", destino=None, estado="backend_desconocido"
+        )
+    if isinstance(backend, backends_entrada.Backend):
+        return backend.evaluar_con_detalle(texto)
+    # Una funcion simple (p. ej. enchufada en una prueba): da el veredicto, sin detalle.
+    try:
+        malicioso = bool(backend(texto))
+    except Exception as exc:  # noqa: BLE001 -- fail closed ante cualquier fallo
+        logger.exception(
+            "clasificar(): backend %r fallo (%s): %s; fail closed (unsafe).",
+            nombre,
+            type(exc).__name__,
+            exc,
+        )
+        return True, DetalleClasificacion(
+            backend=nombre,
+            modelo="",
+            destino=None,
+            estado=backends_entrada.estado_de_excepcion(exc),
+        )
+    return malicioso, DetalleClasificacion(
+        backend=nombre, modelo="", destino=None, estado=adaptador.ESTADO_OK
+    )
 
 
 # Cliente httpx compartido hacia Ollama para Llama Guard (mecanismo 3,
@@ -581,8 +623,22 @@ def _obtener_cliente_http_llama_guard() -> httpx.Client:
     return _cliente_http_llama_guard
 
 
-def _clasificar_salida_llama_guard(texto: str, direccion: str) -> bool:
-    """Mecanismo 3, direccion "salida": Llama Guard 3 via Ollama.
+def _clasificar_salida_llama_guard(
+    texto: str, direccion: str
+) -> tuple[bool, DetalleClasificacion]:
+    """Mecanismo 3, direccion "salida": Llama Guard 3 via Ollama, con su detalle."""
+    resultado = _evaluar_salida_llama_guard(texto, direccion)
+    return resultado.malicioso, DetalleClasificacion(
+        backend="llama_guard",
+        modelo=MODELO_CLASIFICADOR,
+        destino=backends_entrada.clasificar_destino(OLLAMA_BASE_URL),
+        estado=resultado.estado,
+        etiqueta=resultado.etiqueta,
+    )
+
+
+def _evaluar_salida_llama_guard(texto: str, direccion: str) -> ResultadoBackend:
+    """Envia `texto` a Llama Guard 3 via Ollama y devuelve el veredicto y el estado.
 
     Envia `texto` a MODELO_CLASIFICADOR via `POST {OLLAMA_BASE_URL}/api/chat`
     como turno "assistant" (formato oficial de Llama Guard 3:
@@ -593,10 +649,12 @@ def _clasificar_salida_llama_guard(texto: str, direccion: str) -> bool:
     "unsafe" -> True); ignora la segunda linea con las categorias violadas
     (p. ej. "S1,S2"), porque esta funcion solo promete un bool.
 
-    Fail closed:
-    - Timeout (TIMEOUT_CLASIFICADOR_S) o error de conexion -> True.
-    - Respuesta que no empieza por "safe" ni "unsafe" -> True, con un
-      logger.error() describiendo la respuesta cruda recibida.
+    Fail closed (el `estado` dice por que):
+    - Timeout (TIMEOUT_CLASIFICADOR_S) -> True, "timeout".
+    - Error de conexion o HTTP -> True, "error_red" / "error_http_<codigo>".
+    - Cuerpo que no es JSON o con otra forma -> True, "respuesta_invalida".
+    - Respuesta que no empieza por "safe" ni "unsafe" -> True, "respuesta_invalida",
+      con un logger.error() describiendo la respuesta cruda recibida.
     """
     payload = {
         "model": MODELO_CLASIFICADOR,
@@ -616,17 +674,26 @@ def _clasificar_salida_llama_guard(texto: str, direccion: str) -> bool:
             TIMEOUT_CLASIFICADOR_S,
             MODELO_CLASIFICADOR,
         )
-        return True
+        return ResultadoBackend(True, "timeout")
     except httpx.HTTPError as exc:
         logger.exception(
             "clasificar(): error llamando a %s: %s; fail closed (unsafe).",
             MODELO_CLASIFICADOR,
             exc,
         )
-        return True
+        return ResultadoBackend(True, backends_entrada.estado_de_excepcion(exc))
 
-    contenido = respuesta.json().get("message", {}).get("content", "")
-    return _interpretar_respuesta_llama_guard(contenido)
+    try:
+        contenido = respuesta.json().get("message", {}).get("content", "")
+    except (ValueError, AttributeError) as exc:
+        logger.error(
+            "clasificar(): %s devolvio un cuerpo que no se entiende (%s); "
+            "fail closed (unsafe).",
+            MODELO_CLASIFICADOR,
+            type(exc).__name__,
+        )
+        return ResultadoBackend(True, adaptador.ESTADO_RESPUESTA_INVALIDA)
+    return _resultado_respuesta_llama_guard(contenido)
 
 
 def _obtener_pipeline_prompt_guard() -> Any:
@@ -647,10 +714,10 @@ def _obtener_pipeline_prompt_guard() -> Any:
 
     with _lock_pipeline_prompt_guard:
         if _error_config_prompt_guard is not None:
-            raise RuntimeError(_error_config_prompt_guard)
+            raise adaptador.ErrorConfiguracion(_error_config_prompt_guard)
         if _pipeline_prompt_guard is None:
             if not HF_TOKEN:
-                raise RuntimeError(
+                raise adaptador.ErrorConfiguracion(
                     "HF_TOKEN no esta configurado (.env) -- requerido para "
                     f"descargar {MODELO_PROMPT_GUARD_ID}, un modelo con "
                     "licencia restringida en Hugging Face."
@@ -681,9 +748,9 @@ def _obtener_pipeline_prompt_guard() -> Any:
             )
             try:
                 _validar_etiquetas_del_pipeline(nuevo)
-            except ValueError as exc:
+            except (ValueError, adaptador.ErrorConfiguracion) as exc:
                 _error_config_prompt_guard = str(exc)
-                raise RuntimeError(_error_config_prompt_guard) from exc
+                raise adaptador.ErrorConfiguracion(_error_config_prompt_guard) from exc
             _pipeline_prompt_guard = nuevo
     return _pipeline_prompt_guard
 
@@ -704,72 +771,79 @@ def _obtener_pipeline_prompt_guard() -> Any:
 _ETIQUETA_PROMPT_GUARD_MALICIOSO = "LABEL_1"
 
 
-def _predecir_prompt_guard(texto: str) -> str:
-    """Corre Prompt Guard sobre `texto` y devuelve la etiqueta cruda.
+def _predecir_prompt_guard(texto: str) -> tuple[str, float | None]:
+    """Corre Prompt Guard sobre `texto` y devuelve (etiqueta cruda, puntaje).
 
     Etiquetas reales del modelo (binarias, ver _ETIQUETA_PROMPT_GUARD_
-    MALICIOSO arriba): "LABEL_0" (benigno) | "LABEL_1" (malicioso). Aislada
-    en su propia funcion, separada de _clasificar_entrada_prompt_guard(),
-    para que los tests puedan mockear esta unica linea sin descargar el
-    modelo real ni depender de transformers/torch instalados (misma logica
-    que ya usa el resto del proyecto para clasificar() con mocks de
+    MALICIOSO arriba): "LABEL_0" (benigno) | "LABEL_1" (malicioso). El puntaje es el
+    de esa etiqueta (None si el pipeline no lo trae). Aislada en su propia funcion,
+    separada de _evaluar_prompt_guard(), para que los tests puedan mockear esta unica
+    linea sin descargar el modelo real ni depender de transformers/torch instalados
+    (misma logica que ya usa el resto del proyecto para clasificar() con mocks de
     Ollama).
     """
     clasificador = _obtener_pipeline_prompt_guard()
-    return clasificador(texto)[0]["label"]
+    salida = clasificador(texto)[0]
+    puntaje = salida.get("score")
+    return salida["label"], (float(puntaje) if puntaje is not None else None)
 
 
-def _clasificar_entrada_prompt_guard(texto: str) -> bool:
-    """Mecanismo 3, direccion "entrada": Llama Prompt Guard 2 (Meta).
+def _evaluar_prompt_guard(texto: str) -> ResultadoBackend:
+    """Mecanismo 3, direccion "entrada": Llama Prompt Guard 2 (Meta), local.
 
-    Fail closed ante CUALQUIER fallo -- descarga/carga del modelo (incluido
-    HF_TOKEN ausente o invalido), o error de inferencia: se trata como
-    malicioso y se registra con logger.error() la excepcion real, para
-    poder diagnosticar sin adivinar que paso (mismo criterio que
-    _clasificar_salida_llama_guard(), aplicado a un modelo local en vez de
-    una llamada HTTP).
+    Cualquier fallo -- descarga/carga del modelo (incluido HF_TOKEN ausente o invalido)
+    o error de inferencia -- lo convierte `backends_entrada.Backend` en malicioso (fail
+    closed) con el motivo en el `estado` y la excepcion real en el log. Una etiqueta que
+    el perfil no conoce tambien bloquea: jamas se toma por benigna.
     """
-    try:
-        etiqueta = _predecir_prompt_guard(texto)
-        veredicto = _perfil_entrada().evaluar(etiqueta)
-    except Exception as exc:  # noqa: BLE001 -- fail closed ante cualquier fallo
-        logger.exception(
-            "clasificar(): error usando Prompt Guard (%s): %s; fail closed (unsafe).",
-            MODELO_PROMPT_GUARD_ID,
-            exc,
-        )
-        return True
+    etiqueta, puntaje = _predecir_prompt_guard(texto)
+    veredicto = _perfil_entrada().evaluar(etiqueta)
+    corta = str(etiqueta)[:40]
     if veredicto is None:
-        # Etiqueta que el perfil no conoce: jamas se toma por benigna.
         logger.error(
             "clasificar(): %s devolvio la etiqueta %r, que el perfil no conoce; "
             "fail closed (unsafe). Declara las etiquetas en "
             "CLASIFICADOR_ENTRADA_ETIQUETAS_*.",
             MODELO_PROMPT_GUARD_ID,
-            etiqueta,
+            corta,
         )
-        return True
-    return veredicto
+        return ResultadoBackend(
+            True, adaptador.ESTADO_RESPUESTA_INVALIDA, puntaje, corta
+        )
+    return ResultadoBackend(veredicto, adaptador.ESTADO_OK, puntaje, corta)
 
 
-def _interpretar_respuesta_llama_guard(contenido: str) -> bool:
+def _describir_prompt_guard() -> dict[str, Any]:
+    return {"modelo": MODELO_PROMPT_GUARD_ID, "destino": adaptador.DESTINO_LOCAL}
+
+
+_BACKEND_HUGGINGFACE = backends_entrada.Backend(
+    "huggingface", _evaluar_prompt_guard, _describir_prompt_guard
+)
+
+
+def _resultado_respuesta_llama_guard(contenido: object) -> ResultadoBackend:
     """Interpreta la respuesta cruda de Llama Guard 3 como unsafe (True) / safe (False).
 
     La primera linea no vacia debe ser exactamente "safe" o "unsafe" (formato
     oficial, sin importar mayusculas/espacios extra). Cualquier otra cosa es
     una respuesta malformada: se trata como "unsafe" (fail closed) en vez de
-    asumir un booleano por defecto silencioso, y se registra un error.
+    asumir un booleano por defecto silencioso, y se registra un error. Solo se guarda
+    como `etiqueta` el veredicto reconocido.
     """
-    lineas = contenido.strip().splitlines()
+    texto = contenido if isinstance(contenido, str) else ""
+    lineas = texto.strip().splitlines()
     primera_linea = lineas[0].strip() if lineas else ""
 
     try:
         veredicto = _perfil_salida().evaluar(primera_linea)
-    except ValueError as exc:  # variables de perfil mal declaradas
+    except adaptador.ErrorConfiguracion as exc:  # variables de perfil mal declaradas
         logger.error("clasificar(): perfil de salida invalido: %s", exc)
-        return True
+        return ResultadoBackend(True, "error_configuracion")
     if veredicto is not None:
-        return veredicto
+        return ResultadoBackend(
+            veredicto, adaptador.ESTADO_OK, etiqueta=primera_linea.lower()
+        )
 
     logger.error(
         "clasificar(): respuesta inesperada de %s (no empieza por 'safe' ni "
@@ -777,7 +851,12 @@ def _interpretar_respuesta_llama_guard(contenido: str) -> bool:
         MODELO_CLASIFICADOR,
         contenido,
     )
-    return True
+    return ResultadoBackend(True, adaptador.ESTADO_RESPUESTA_INVALIDA)
+
+
+def _interpretar_respuesta_llama_guard(contenido: str) -> bool:
+    """Solo el veredicto de `_resultado_respuesta_llama_guard()` (True = unsafe)."""
+    return _resultado_respuesta_llama_guard(contenido).malicioso
 
 
 # Mecanismo 4 (minimo privilegio). Prefijo de credencial que le pertenece a

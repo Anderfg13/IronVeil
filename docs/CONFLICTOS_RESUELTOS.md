@@ -150,7 +150,15 @@ tratan como reales: V4 paso 2 los lleva dentro del mensaje).
 - todos fallan cerrado y nunca escriben claves ni el texto del usuario en el log;
 - solo sustituyen al clasificador de **entrada** (el de salida sigue siendo Llama Guard).
 
-**Pendiente (no lo decide el código).** Antes de usar un backend remoto en corridas del
+**Ajuste (2026-10-05, a pedido de García): remoto no es lo mismo que de un tercero.** Un Prompt
+Guard desplegado en la nube de la propia organización mantiene el texto dentro de su perímetro.
+Se distinguen tres destinos: `local`, `propio` (hosts declarados en `CLASIFICADOR_HOSTS_PROPIOS`:
+exigen HTTPS y clave, no el permiso) y `tercero` (todo lo demás: sigue apagado salvo
+`CLASIFICADOR_PERMITIR_REMOTO=1`). Se agregó el backend `http` para un clasificador servido
+remotamente. Cada evento registra el `destino` y el `estado` del clasificador
+(`clasificador_entrada` / `clasificador_salida`).
+
+**Pendiente (no lo decide el código).** Antes de usar un backend de un tercero en corridas del
 informe: aprobación del equipo, revisar los términos de uso del proveedor para pruebas de
 seguridad, y anotar en cada corrida qué backend, modelo y umbral se usó (el log de eventos
 no lo guarda). Mientras tanto, el valor por defecto sigue siendo Prompt Guard 2 86M local.

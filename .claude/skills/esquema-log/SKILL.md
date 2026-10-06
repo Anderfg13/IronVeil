@@ -42,6 +42,7 @@ Se pueden agregar campos nuevos. **Nunca se renombran ni se eliminan los 8 base.
 | Campo | Tipo | Cuándo |
 |---|---|---|
 | `latencia_clasificador_ms` | int | mecanismo 3 activo |
+| `clasificador_entrada` / `clasificador_salida` | objeto | direcciones clasificadas: `backend`, `modelo`, `destino` (`local`/`propio`/`tercero`), `estado` (`ok` o el motivo del fallo cerrado) y, si aplican, `umbral`, `puntaje`, `etiqueta`. Sin texto del usuario ni claves |
 | `tiempo_revision_humana_ms` | int | petición que pasó por la cola |
 | `tipo_variante` | `original` \| `nueva` | V3 desde la semana del 12 de septiembre |
 | `paso_bloqueado` | `1` \| `2` \| null | V4 (movimiento lateral) |

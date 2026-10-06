@@ -24,10 +24,70 @@ Pasos para cambiar de modelo: docs/CAMBIAR_MODELO_CLASIFICADOR.md.
 from __future__ import annotations
 
 import functools
+import math
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from typing import Any
 
 MODELO_VERIFICADO_ENTRADA = "meta-llama/Llama-Prompt-Guard-2-86M"
+
+# A donde va el texto cuando se clasifica (campo `destino` del detalle):
+DESTINO_LOCAL = "local"  # esta maquina o el propio stack: no sale del laboratorio
+DESTINO_PROPIO = "propio"  # un servicio de la organizacion, fuera de esta maquina
+DESTINO_TERCERO = "tercero"  # otra organizacion: el texto sale del laboratorio
+
+ESTADO_OK = "ok"
+ESTADO_RESPUESTA_INVALIDA = "respuesta_invalida"
+
+
+class ErrorConfiguracion(RuntimeError):
+    """El clasificador esta mal configurado (falta una variable, destino no permitido,
+    etiquetas sin declarar...). Se distingue de un fallo del servicio para que el log
+    pueda decir "error_configuracion" y no "error_interno".
+    """
+
+
+@dataclass(frozen=True)
+class ResultadoBackend:
+    """Lo que devuelve un backend: el veredicto y como llego a el.
+
+    `estado` es "ok" o el motivo de un fallo que se resolvio fallando cerrado
+    (`timeout`, `error_http_429`, `respuesta_invalida`...): sin esto, una caida del
+    servicio se veria en los resultados igual que una deteccion real. `etiqueta` y
+    `puntaje` son los del veredicto (nunca el texto del usuario).
+    """
+
+    malicioso: bool
+    estado: str = ESTADO_OK
+    puntaje: float | None = None
+    etiqueta: str | None = None
+
+
+@dataclass(frozen=True)
+class DetalleClasificacion:
+    """Que clasificador respondio y como: el bloque `clasificador_<direccion>` del log.
+
+    Esquema comun a todos los backends; cada uno rellena lo que le aplica y el resto
+    se omite. No contiene el texto del usuario ni claves.
+    """
+
+    backend: str
+    modelo: str
+    destino: str | None
+    estado: str
+    umbral: float | None = None
+    puntaje: float | None = None
+    etiqueta: str | None = None
+
+    def como_dict(self) -> dict[str, Any]:
+        """Los campos con valor; sin None ni numeros no finitos (no son JSON valido)."""
+        return {
+            clave: valor
+            for clave, valor in asdict(self).items()
+            if valor is not None
+            and not (isinstance(valor, float) and not math.isfinite(valor))
+            and valor != ""
+        }
 
 
 def normalizar(valor: object) -> str:

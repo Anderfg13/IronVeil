@@ -70,13 +70,26 @@ basta un perfil de etiquetas. Se elige un **backend de entrada** con
 cambian. Solo sustituyen al clasificador de **entrada**; el de salida sigue siendo Llama
 Guard.
 
-| Backend | Dónde corre | Qué es | ¿Necesita permiso? |
+| Backend | Dónde corre | Qué es | ¿Necesita permiso de terceros? |
 |---|---|---|---|
 | `huggingface` | local | clasificador de Hugging Face (Prompt Guard u otro) | no |
+| `http` | local, propio o tercero | un clasificador servido por HTTP (p. ej. Prompt Guard en la nube de tu empresa) | solo si es de un tercero |
 | `ollama` | local | un LLM del propio Ollama que hace de juez | no |
-| `openai` | local **o** remoto | API tipo `chat/completions` | solo si el destino no es local |
-| `anthropic` | remoto | API de mensajes de Anthropic | sí |
-| `jev` | remoto | Jev de TypeSafe: una pregunta sí/no que devuelve 0–1 | sí |
+| `openai` | local, propio o tercero | API tipo `chat/completions` | solo si es de un tercero |
+| `anthropic` | tercero | API de mensajes de Anthropic | sí |
+| `jev` | tercero | Jev de TypeSafe: una pregunta sí/no que devuelve 0–1 | sí |
+
+### A dónde va el texto: local, propio o tercero
+Lo que importa de un servicio remoto no es la red sino **quién recibe el texto**. El proxy
+lo clasifica por el nombre del host (y lo deja en el log como `destino`):
+- **`local`**: esta máquina o el propio stack (`localhost`, `127.0.0.1`, `::1`,
+  `host.docker.internal`, el `ollama` del compose). No exige nada.
+- **`propio`**: un servicio de **tu organización** fuera de esta máquina, p. ej. tu Prompt
+  Guard desplegado en tu nube. Se declara en `CLASIFICADOR_HOSTS_PROPIOS` (nombres
+  exactos, separados por comas; ni subdominios ni sufijos cuentan). El texto no cambia de
+  dueño, así que **no** necesita `CLASIFICADOR_PERMITIR_REMOTO`, pero sí **HTTPS** y **clave**.
+- **`tercero`**: cualquier otro host. El texto sale del laboratorio: apagado salvo
+  `CLASIFICADOR_PERMITIR_REMOTO=1`, y siempre con HTTPS y clave.
 
 ### Recetas (en `.env`)
 
@@ -92,6 +105,22 @@ CLASIFICADOR_ENTRADA_BACKEND=openai
 CLASIFICADOR_ENTRADA_URL_BASE=http://localhost:1234/v1
 CLASIFICADOR_ENTRADA_MODELO=<nombre del modelo>
 ```
+
+**Prompt Guard desplegado en la nube de tu organización:**
+```
+CLASIFICADOR_ENTRADA_BACKEND=http
+CLASIFICADOR_ENTRADA_URL_BASE=https://prompt-guard.tuempresa.com/clasificar
+CLASIFICADOR_HOSTS_PROPIOS=prompt-guard.tuempresa.com
+CLASIFICADOR_ENTRADA_API_KEY=<clave del servicio>   # solo en .env
+CLASIFICADOR_ENTRADA_MODELO=meta-llama/Llama-Prompt-Guard-2-86M
+```
+Se envía `{"inputs": "<texto>"}` (la convención de Hugging Face Inference Endpoints; **no
+se verificó contra ningún servidor concreto**) con `Authorization: Bearer`, y se espera una
+lista de `{label, score}` (también `[[...]]` o un solo objeto). Se toma la clase de mayor
+puntaje y se traduce con el adaptador: con `CLASIFICADOR_ENTRADA_MODELO` igual al id de Prompt
+Guard 2 se usa su perfil verificado (`LABEL_1` malicioso); con otro modelo de etiquetas
+genéricas hay que declararlas (caso 1). Con el mismo modelo y la misma precisión las
+decisiones son las mismas que en local; cambian la latencia (red) y la disponibilidad.
 
 **Modelo de frontera por API (requiere permiso):**
 ```
@@ -124,13 +153,38 @@ se bloquea si `noul >= JEV_UMBRAL`.
   para actuar). Calíbralo con los mensajes legítimos y los ataques del proyecto: un umbral
   bajo da falsos positivos; uno alto, ataques que pasan.
 
+### Qué queda en el log: `clasificador_entrada` y `clasificador_salida`
+Cada evento del proxy (`eventos.jsonl`) trae, para cada dirección que **se clasificó**, un
+bloque con el **mismo esquema para todos los backends** (cada uno rellena lo que le aplica;
+lo vacío se omite). No es un formato por backend: así C3 y C6 con clasificadores distintos
+siguen siendo comparables. Los backends no escriben el log: devuelven el detalle y lo escribe
+el endpoint.
+
+| Campo | Qué dice |
+|---|---|
+| `backend` | `huggingface`, `http`, `ollama`, `openai`, `anthropic`, `jev` o `llama_guard` (salida) |
+| `modelo` | el modelo usado |
+| `destino` | `local`, `propio` o `tercero` |
+| `estado` | `ok`, o por qué se falló cerrado: `timeout`, `error_red`, `error_http_<código>`, `respuesta_invalida`, `error_configuracion`, `sin_memoria`, `error_interno`, `backend_desconocido` |
+| `umbral` | el umbral de bloqueo, si el backend usa uno (Jev) |
+| `puntaje` | la probabilidad o el puntaje que devolvió |
+| `etiqueta` | la clase o veredicto reconocido (`LABEL_1`, `unsafe`, `INJECTION`…) |
+
+**Por qué importa `estado`:** si el servicio falla, el proxy bloquea (fail closed) y el evento
+sale `bloqueado` por `clasificacion`, igual que una detección real. Sin el `estado`, una caída
+de Jev (o un `OutOfMemory` de la GPU) durante una corrida **inflaría la protección aparente**.
+Al analizar C3 y C6, separa los bloqueos con `estado == "ok"` de los demás.
+
+Nunca lleva el texto del usuario ni claves; de un juez LLM solo se guarda la palabra si es
+`INJECTION` o `SAFE`. Es un campo extendido: los 8 campos base no cambian.
+
 ### Qué hace el proxy ante fallos
 Todo backend **falla cerrado**: clave ausente, timeout, 401/422/429/529, error de red,
 respuesta que no se entiende o fuera de rango (p. ej. `noul` > 1 o no numérico) ⇒ bloquea.
 Consecuencia: **si el proveedor remoto cae o limita, el proxy bloquea todas las peticiones**
 (no hay reintentos, para no inflar la latencia). Es el costo de no fallar abierto.
 
-### Lo que hay que saber antes de activar un backend remoto
+### Lo que hay que saber antes de activar un backend de un tercero
 1. **El texto de cada petición sale del laboratorio**, en C3 y C6, incluida la prueba de
    V4 paso 2 que contiene el canario `SPT-DEMO-8841`/`RRHH-DEMO-2291` (ficticio, pero la
    regla 2 pide tratarlo como real). Choca con la regla 1 y con el criterio de que todo sea
@@ -142,8 +196,7 @@ Consecuencia: **si el proveedor remoto cae o limita, el proxy bloquea todas las 
    periodo de retención ni el lugar de procesamiento, ni si sus términos permiten pruebas de
    seguridad (están en sus documentos legales). Revísalo antes de enviar ataques.
 3. **El resultado depende del modelo**: anota en el informe qué backend, modelo y umbral se
-   usó en cada corrida. El log de eventos **no** guarda hoy cuál clasificador de entrada
-   respondió; si las corridas se mezclan, no se podrá reconstruir.
+   usó en cada corrida. Desde 2026-10-05 cada evento lo dice (ver «Qué queda en el log»).
 4. **Latencia y costo**: una API remota suma red y tiempo del proveedor (y se factura). La
    latencia medida de C3 y C6 dejaría de ser comparable con la de Prompt Guard local.
 

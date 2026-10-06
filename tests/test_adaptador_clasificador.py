@@ -112,7 +112,9 @@ def test_validar_nombra_las_clases_desconocidas_y_las_variables_a_configurar() -
 
 
 def _predictor(monkeypatch: pytest.MonkeyPatch, etiqueta: str) -> None:
-    monkeypatch.setattr(mecanismos, "_predecir_prompt_guard", lambda texto: etiqueta)
+    monkeypatch.setattr(
+        mecanismos, "_predecir_prompt_guard", lambda texto: (etiqueta, None)
+    )
 
 
 def test_una_etiqueta_desconocida_bloquea_y_se_registra(

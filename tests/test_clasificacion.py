@@ -79,12 +79,12 @@ def _mockear_prompt_guard(
     """
     llamadas: list[str] = []
 
-    def _falso(texto: str) -> str:
+    def _falso(texto: str) -> tuple[str, float | None]:
         llamadas.append(texto)
         if excepcion is not None:
             raise excepcion
         assert etiqueta is not None
-        return etiqueta
+        return etiqueta, None
 
     monkeypatch.setattr(mecanismos, "_predecir_prompt_guard", _falso)
     return llamadas
