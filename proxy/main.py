@@ -278,6 +278,19 @@ def _avisar_estado_de_la_memoria() -> None:
         )
 
 
+def _avisar_estado_del_siem() -> None:
+    """Deja en el log a que SIEM se exportan los eventos (o que esta apagado)."""
+    exportador = siem.obtener_exportador()
+    if exportador is None:
+        _log_servidor.info(
+            "Exportacion a SIEM: APAGADA (SIEM_DESTINOS para activarla)."
+        )
+        return
+    _log_servidor.info(
+        "Exportacion a SIEM: ACTIVA, destinos: %s.", exportador.descripcion
+    )
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
@@ -285,9 +298,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     except ErrorConfiguracion as exc:
         logger.error("MODELOS_REMOTOS esta mal configurado: %s", exc)
     _avisar_estado_de_la_memoria()
+    _avisar_estado_del_siem()
     await _calentar_modelos()
     yield
     memoria_decisiones.cerrar()  # libera el almacen (conexiones de la base de datos)
+    siem.cerrar()  # entrega lo pendiente y cierra los conectores del SIEM
 
 
 app = FastAPI(title="IronVeil Proxy", version="0.1.0", lifespan=_lifespan)
@@ -567,8 +582,9 @@ def _registrar_evento(evento: dict[str, Any]) -> None:
     (V5) pueden pisarse la escritura entre si y perder eventos completos.
 
     Despues de la escritura del dataset (nunca en vez de ella) llama a
-    `_exportar_a_siem()`, que solo hace algo si `SIEM_ARCHIVO_WAZUH` esta
-    definida. El SIEM es un consumidor adicional: no reemplaza el dataset.
+    `siem.exportar_evento()`, que solo hace algo si hay destinos SIEM configurados
+    (`SIEM_DESTINOS` o `SIEM_ARCHIVO_WAZUH`). El SIEM es un consumidor adicional:
+    no reemplaza el dataset y su fallo no rompe la peticion.
     """
     fecha = datetime.now().astimezone().strftime("%Y-%m-%d")
     directorio = RESULTADOS_DIR / fecha
@@ -577,45 +593,7 @@ def _registrar_evento(evento: dict[str, Any]) -> None:
         "a", encoding="utf-8"
     ) as f:
         f.write(json.dumps(evento, ensure_ascii=False) + "\n")
-    _exportar_a_siem(evento)
-
-
-# Variable de entorno con la ruta del archivo JSON Lines que vigila Wazuh
-# (`<localfile>` con `log_format json`). Vacia/ausente = exportacion apagada,
-# el proxy se comporta exactamente como antes. Se lee en cada llamada (no al
-# importar) para poder cambiarla sin reiniciar pruebas ni recargar modulos.
-SIEM_ARCHIVO_ENV = "SIEM_ARCHIVO_WAZUH"
-
-# Lock propio, distinto de `_registro_lock`: el SIEM es otro destino y no
-# debe competir por el mismo lock que protege el dataset del experimento.
-_siem_lock = threading.Lock()
-
-
-def _exportar_a_siem(evento: dict[str, Any]) -> None:
-    """Agrega `evento` en formato Wazuh JSON al archivo de `SIEM_ARCHIVO_WAZUH`.
-
-    **Sincrono a proposito**: el transporte es un append de UNA linea a un
-    archivo local (microsegundos, sin red); Wazuh es quien lo lee despues.
-    Un hilo aparte solo agregaria concurrencia y riesgo de perder eventos al
-    cerrar el proceso. Si el transporte fuese de red habria que desacoplarlo.
-
-    **Nunca rompe la peticion**: cualquier fallo (disco lleno, ruta
-    invalida, evento incompleto) se loggea con el tipo de excepcion y se
-    descarta -- la peticion y el dataset del experimento ya quedaron
-    registrados. Sin la variable definida no hace nada.
-    """
-    ruta = os.environ.get(SIEM_ARCHIVO_ENV, "").strip()
-    if not ruta:
-        return
-    try:
-        with _siem_lock:
-            siem.enviar_a_siem(
-                evento,
-                siem.FormateadorWazuhJSON(),
-                siem.ConectorArchivoLocal(Path(ruta)),
-            )
-    except Exception:  # noqa: BLE001 - el SIEM no debe tumbar /chat
-        logger.exception("exportacion a SIEM fallida (el evento quedo en el dataset)")
+    siem.exportar_evento(evento)
 
 
 def _sanear_para_log(valor: str) -> str:

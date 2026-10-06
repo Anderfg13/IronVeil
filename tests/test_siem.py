@@ -1,4 +1,4 @@
-"""Pruebas unitarias del andamiaje SIEM (patron Adapter, proxy/siem.py).
+"""Pruebas unitarias del andamiaje SIEM (patron Adapter, proxy/siem/).
 
 No prueban ningun SIEM real (todavia no existe esa integracion) -- solo que
 los dos adapters de referencia funcionan y que enviar_a_siem() los compone
@@ -217,7 +217,7 @@ def test_resultado_fuera_del_contrato_falla() -> None:
 
 def test_formato_desconocido_falla() -> None:
     with pytest.raises(ValueError, match="formato"):
-        exportar_a_siem(EVENTO_EJEMPLO, "leef")
+        exportar_a_siem(EVENTO_EJEMPLO, "formato_que_no_existe")
 
 
 def _partir_cef(linea: str) -> tuple[list[str], str]:

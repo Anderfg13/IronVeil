@@ -110,6 +110,26 @@ services:
       # docs/siem/wazuh/LEEME.md). Vacio = apagada. La ruta es DENTRO del
       # contenedor; ./docs/siem/exportados se monta mas abajo.
       SIEM_ARCHIVO_WAZUH: ${SIEM_ARCHIVO_WAZUH:-}
+      # Exportacion a cualquier SIEM (docs/SIEM.md): lista separada por comas de
+      # [formato@]esquema://destino. Vacio = apagada. Los destinos de red se
+      # entregan en un hilo aparte: un SIEM caido nunca frena /chat.
+      SIEM_DESTINOS: ${SIEM_DESTINOS:-}
+      SIEM_ADAPTADORES: ${SIEM_ADAPTADORES:-}
+      SIEM_CA_ARCHIVO: ${SIEM_CA_ARCHIVO:-}
+      # Credenciales de cada destino: SOLO aqui (.env), nunca dentro de la URL.
+      SIEM_HTTPS_TOKEN: ${SIEM_HTTPS_TOKEN:-}
+      SIEM_SPLUNK_TOKEN: ${SIEM_SPLUNK_TOKEN:-}
+      SIEM_ELASTIC_API_KEY: ${SIEM_ELASTIC_API_KEY:-}
+      SIEM_ELASTIC_USUARIO: ${SIEM_ELASTIC_USUARIO:-}
+      SIEM_ELASTIC_CLAVE: ${SIEM_ELASTIC_CLAVE:-}
+      SIEM_AZURE_TENANT_ID: ${SIEM_AZURE_TENANT_ID:-}
+      SIEM_AZURE_CLIENT_ID: ${SIEM_AZURE_CLIENT_ID:-}
+      SIEM_AZURE_CLIENT_SECRET: ${SIEM_AZURE_CLIENT_SECRET:-}
+      SIEM_AZURE_ALCANCE: ${SIEM_AZURE_ALCANCE:-}
+      SIEM_AZURE_AUTORIDAD: ${SIEM_AZURE_AUTORIDAD:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
       # Login de la consola de revision humana (vacio = sin login, como antes).
       # Genera cada cuenta con: python -m proxy.auth USUARIO [revisor|observador]
       # Pantalla de chat de la demo en /demo (vacio = apagada). Usa POST /chat.

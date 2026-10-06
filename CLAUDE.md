@@ -171,10 +171,16 @@ Esta es la estructura **objetivo**. Lo marcado `[ya existe]` está en el repo ho
 
 ```
 /proxy/                 main.py (FastAPI) [ya existe], mecanismos.py, cola.py,
-                        siem.py (Adapter + exportar_a_siem() hacia Wazuh/CEF, cableado
-                        a /chat de forma opcional via SIEM_ARCHIVO_WAZUH;
-                        incluye exportar_a_siem(evento, "json"|"cef"), funcion pura,
-                        y docs/siem/wazuh/ con reglas y guia de despliegue)
+                        siem/ (PAQUETE con puertos y adaptadores, cableado a /chat de forma
+                        opcional: puertos FormateadorSIEM y ConectorSIEM, servicio, registro,
+                        formatos/ json|cef|leef|ecs y transportes/ archivo, syslog UDP/TCP/TLS,
+                        https, Splunk, Elastic, Azure Monitor y CloudWatch; los de red se
+                        entregan en un hilo aparte; SIEM_DESTINOS elige formato y destino, y
+                        SIEM_ADAPTADORES conecta otro SIEM sin editar IronVeil;
+                        exportar_a_siem(evento, "json"|"cef"|"leef"|"ecs") sigue siendo una
+                        funcion pura; docs/SIEM.md y docs/siem/wazuh/)
+                        complementos.py (carga de modulos de terceros que registran adaptadores,
+                        compartida por la memoria de decisiones y el SIEM)
                         memoria_decisiones/ (EXTENSION opcional, PAQUETE con puertos y adaptadores:
                         dominio, puerto AlmacenMemoria, servicio, registro, almacenes/ y composicion;
                         recuerda los rechazos de la revision humana y rechaza solo el mismo mensaje;
@@ -328,6 +334,48 @@ Sobre el código que sí es "nuestro":
   que `CONFLICTOS_RESUELTOS.md` exige registrar toda decisión de diseño no
   obvia.
 
+### Principios de diseño (SOLID y código limpio)
+
+Valen para **todo código nuevo o que se toque**. El patrón de referencia del repositorio son
+`proxy/memoria_decisiones/` y `proxy/siem/`: léelos antes de diseñar otra extensión.
+
+**SOLID**
+- **S — una sola razón para cambiar.** Un módulo o clase hace una cosa: el dominio no sabe de E/S, el
+  servicio no sabe de archivos ni de redes, un adaptador no sabe de otro adaptador. Si para describir
+  una clase necesitas «y», parte la clase.
+- **O — abierto a extensión, cerrado a modificación.** Un destino, un formato o una base de datos
+  nuevos son **un módulo nuevo registrado por configuración**, nunca un `if/elif` más en el núcleo.
+- **L — sustituibles.** Todo adaptador cumple el contrato del puerto completo (mismas excepciones,
+  mismas garantías: `ErrorSIEM`, `ErrorAlmacen`); si hace falta la prueba compartida
+  (`tests/contrato_almacen.py`), existe.
+- **I — contratos pequeños.** Un puerto expone lo mínimo (`formatear`, `enviar`); lo opcional va en
+  otro (`Cerrable`). Nadie implementa un método que no usa.
+- **D — depender de abstracciones.** El núcleo depende de `Protocol`s; los adaptadores concretos se
+  inyectan desde **un único lugar de composición** (`composicion.py`), el único que lee el entorno.
+
+**Código limpio**
+- Nombres que dicen la intención; funciones cortas con una sola tarea; sin números ni textos mágicos
+  (constantes con nombre, definidas una vez).
+- Sin duplicación: si dos módulos hacen lo mismo se extrae (`proxy/complementos.py`).
+- Los errores se traducen en la frontera (el adaptador lanza el error del puerto) y **nunca** llevan
+  claves ni contenido del usuario; nada de `pass` silencioso.
+- Estado compartido solo detrás de un objeto con su lock; nada de diccionarios globales mutables
+  (un **registro es un objeto**).
+- Sin dependencias ocultas: lo que una clase necesita (reloj, cliente HTTP, redactor) se recibe, no se
+  importa a mano ni se lee de `os.environ`.
+
+**Cómo se vigila.** Cada paquete con puertos y adaptadores lleva **pruebas de arquitectura** con `ast`
+(`tests/test_siem_arquitectura.py`, `tests/test_memoria_servicio.py`): qué capa puede importar a cuál,
+quién puede leer el entorno, que no se desactive TLS. Si una te falla, el acoplamiento es real:
+corrige el diseño, no la prueba.
+
+**Estado honesto (2026-10-06).** Aplicado de punta a punta en `memoria_decisiones/` y `siem/`. **Aún no**
+lo cumplen, y se refactorizan al tocarlos (no en bloque, para no romper un experimento ya medido):
+`proxy/main.py` (~1400 líneas: endpoint, orquestación de la cadena, construcción del evento, métricas),
+`proxy/mecanismos.py` (~950), `backends_entrada.py` (diccionario de backends en vez de un registro
+objeto) y `modelos_protegidos.py`. Cambiar la cadena de mecanismos exige además repetir la validación
+de las 7 configuraciones.
+
 ---
 
 ## 8. Coordinación del equipo
@@ -362,5 +410,7 @@ Cuatro personas trabajan sobre el mismo repo en paralelo. Reparto grueso:
 - [ ] Los criterios de aceptación de la tarea de la semana están todos marcados.
 - [ ] Si cambió un contrato compartido, este archivo está actualizado en el mismo commit.
 - [ ] Si se resolvió un conflicto de integración, quedó en `CONFLICTOS_RESUELTOS.md`.
+- [ ] El código nuevo respeta los principios de diseño de la sección 7 (puertos y adaptadores, un solo lugar
+      que lee el entorno, sin duplicación) y sus pruebas de arquitectura pasan.
 - [ ] Sin credenciales/tokens hardcodeados, sin `yaml.load()` sin `Loader`, sin `subprocess(shell=True)` con entrada externa, sin TLS deshabilitado (ver sección 7, "Seguridad del código").
 - [ ] Commit con mensaje descriptivo y push.

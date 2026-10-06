@@ -183,8 +183,10 @@ SIEM, no en la pantalla. Apagada por defecto. Ver `docs/DEMO.md`.
 
 ## Wazuh / SIEM (extensión opcional, **pesada**)
 
-`proxy/siem.py` → `exportar_a_siem(evento)` convierte un evento del log a JSON
-para Wazuh (o a CEF con `formato="cef"`). Para probar la ingesta hay un Wazuh
+`proxy/siem/` exporta cada evento a **cualquier SIEM** con `SIEM_DESTINOS`: formatos JSON
+(Wazuh), CEF, LEEF y ECS; transportes archivo, syslog (UDP/TCP/TLS), HTTPS, Splunk, Elastic,
+Azure Monitor y CloudWatch, y un módulo propio si tu SIEM es otro. Guía: `docs/SIEM.md`.
+Para probar la ingesta con Wazuh hay un Wazuh
 en Docker **aparte** de este `docker-compose.yml`; no se levanta con el resto
 del proyecto. **Antes de intentarlo en tu máquina:**
 

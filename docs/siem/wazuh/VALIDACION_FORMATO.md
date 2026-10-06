@@ -6,7 +6,7 @@
 > mejor), solo evidencia de aplicabilidad.
 
 Fecha: 2026-10-03 · Wazuh 4.14.8 (single-node, Docker) · Función validada:
-`proxy/siem.py::exportar_a_siem()`.
+`proxy/siem/` (`exportar_a_siem()`).
 
 ## Conclusión
 

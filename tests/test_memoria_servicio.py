@@ -382,8 +382,15 @@ def test_el_servicio_no_toca_ni_archivos_ni_bases_de_datos() -> None:
     assert not libres & {"os", "sqlite3", "json", "pathlib", "importlib", "subprocess"}
 
 
-def test_el_registro_solo_conoce_el_puerto() -> None:
-    assert _internas(PAQUETE / "registro.py") == {f"{BASE}.puerto"}
+def test_el_registro_solo_conoce_el_puerto_y_el_cargador_compartido() -> None:
+    assert _internas(PAQUETE / "registro.py") == {
+        f"{BASE}.puerto",
+        "proxy.complementos",
+    }
+
+
+def test_el_cargador_compartido_no_depende_de_nada_del_proyecto() -> None:
+    assert _internas(PAQUETE.parent / "complementos.py") == set()
 
 
 @pytest.mark.parametrize("adaptador", ["jsonl.py", "sqlite.py"])

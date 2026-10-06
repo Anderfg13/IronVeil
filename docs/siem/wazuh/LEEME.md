@@ -2,7 +2,7 @@
 
 Cómo exportar los eventos del log de IronVeil a Wazuh y verificar que los
 ingiere. **No es parte del núcleo del experimento** y el proxy aún no envía
-nada a Wazuh por su cuenta: `exportar_a_siem()` (`proxy/siem.py`) es una
+nada a Wazuh por su cuenta: `exportar_a_siem()` (`proxy/siem/`) es una
 función pura y el envío se hace hoy por lotes (ver abajo).
 
 ## ⚠ Requisitos de recursos (leer antes de levantarlo)

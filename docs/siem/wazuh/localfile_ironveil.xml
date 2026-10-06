@@ -1,4 +1,4 @@
-  <!-- IronVeil: un objeto JSON por linea (ver proxy/siem.py).
+  <!-- IronVeil: un objeto JSON por linea (ver proxy/siem/).
        Pegar dentro de <ossec_config> en
        single-node/config/wazuh_cluster/wazuh_manager.conf, ANTES de levantar
        el stack. -->

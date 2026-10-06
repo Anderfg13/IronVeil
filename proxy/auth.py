@@ -13,7 +13,7 @@ inicio de sesion, sin dependencias nuevas (solo biblioteca estandar):
   genera `python -m proxy.auth` (scrypt con sal propia): nunca hay claves en
   texto plano ni valores por defecto.
 - **Conexion con la empresa.** `ProveedorAutenticacion` es la interfaz (patron
-  Adapter, igual que `proxy/siem.py`): una organizacion que quiera validar
+  Adapter, igual que `proxy/siem/`): una organizacion que quiera validar
   contra su LDAP, su base de datos de usuarios o su SSO implementa
   `autenticar(usuario, clave) -> Identidad | None` y la registra con
   `registrar_proveedor()`. El resto (sesiones, CSRF, limite de intentos) no
