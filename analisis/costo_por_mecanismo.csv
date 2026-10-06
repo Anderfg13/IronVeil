@@ -1,8 +1,8 @@
-Configuración,n,"Total, mediana (ms)","Modelo, mediana (ms)","Sobrecosto propio, mediana (ms)","Sobrecosto propio, p95 (ms)","Suma de mecanismos, mediana (ms)",Filtrado (ms),Delimitación (ms),Clasificación (ms),Mín. privilegio (ms),Límite de peticiones (ms),Aprob. humana (revisar si retener) (ms)
-C0,72,271.500,271.305,0.184,0.628,0.000,,,,,,
-C1,63,305.000,304.584,0.426,1.170,0.115,0.115,,,,,
-C2,72,228.000,227.947,0.233,0.773,0.011,,0.011,,,,
-C3,62,392.000,310.626,80.773,133.163,79.613,,,79.613,,,
-C4,70,275.000,274.584,0.272,0.964,0.025,,,,0.025,,
-C5,72,340.000,339.644,0.212,0.750,0.019,,,,,0.018,0.001
-C6,57,407.000,293.984,75.992,159.821,75.517,0.099,0.013,75.376,0.029,0.018,0.001
+Configuración,n,"Total, mediana (ms)","Modelo, mediana (ms)","Sobrecosto propio, mediana (ms)","Sobrecosto propio, p95 (ms)","Suma de mecanismos, mediana (ms)",Filtrado (ms),Delimitación (ms),Clasificación (ms),Mín. privilegio (ms),Límite de peticiones (ms),Aprob. humana (revisar si retener) (ms),Clasificación de entrada (ms),Clasificación de salida (ms)
+C0,72,258.500,258.332,0.232,0.666,0.000,,,,,,,,
+C1,61,261.000,259.998,0.400,1.002,0.110,0.110,,,,,,,
+C2,72,222.500,222.672,0.287,0.857,0.011,,0.011,,,,,,
+C3,62,351.500,277.963,76.582,90.600,76.040,,,76.040,,,,38.668,37.567
+C4,70,263.000,262.951,0.458,0.953,0.031,,,,0.031,,,,
+C5,72,341.500,341.283,0.346,0.847,0.019,,,,,0.018,0.001,,
+C6,58,394.000,312.962,75.204,94.881,75.067,0.102,0.012,74.989,0.030,0.017,0.001,32.473,35.751

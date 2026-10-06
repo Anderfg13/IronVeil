@@ -174,15 +174,17 @@ def graficar_sobrecosto_por_config(
     barras = ax.bar(configs, mediana, color="#2c7fb8", label="Mediana")
     ax.scatter(configs, p95, color="#d95f0e", zorder=3, marker="D", label="p95")
     ax.set_yscale("log")
-    ax.set_ylim(min(mediana) * 0.5, max(p95) * 2.5)
-    for barra, valor in zip(barras, mediana, strict=True):
+    ax.set_ylim(min(mediana) * 0.5, max(p95) * 6)
+    # La etiqueta va por encima del valor MAYOR (el p95): puesta junto a la mediana, el
+    # rombo del p95 la tapaba en las barras de clasificacion (C3 y C6).
+    for barra, valor, alto in zip(barras, mediana, p95, strict=True):
         ax.text(
             barra.get_x() + barra.get_width() / 2,
-            valor * 1.15,
-            f"{valor:.2f} ms",
+            max(valor, alto) * 1.25,
+            f"{valor:.2f} ms" + chr(10) + f"(p95 {alto:.2f})",
             ha="center",
             va="bottom",
-            fontsize=9,
+            fontsize=8.5,
         )
     ax.set_xlabel(COL_CONFIGURACION)
     ax.set_ylabel("Sobrecosto propio (ms, escala logarítmica)")
