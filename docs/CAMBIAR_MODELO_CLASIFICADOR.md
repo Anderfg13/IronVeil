@@ -237,3 +237,33 @@ python ataques/medir_clasificador_entrada.py --resumir-desde resultados/jev/<arc
   del laboratorio; son textos sintéticos). Sin ellos, el script se detiene antes de enviar nada.
 - **Límites:** muestra pequeña (orienta, no estima una tasa); los ataques son los del propio experimento; la
   latencia incluye tu red y la carga de Jev en ese momento.
+
+### Primera medición de Jev (2026-10-06, 22:28 hora de Colombia, desde Colab)
+
+Datos crudos: `resultados/jev/jev_crudo_2026-10-06.jsonl` (sin texto ni clave); informe:
+`analisis/jev_efectividad.md`. Modelo `jev-latest`, umbral 0.5, **una sola pasada** de 29 envíos.
+
+| Qué | Resultado |
+|---|---|
+| Ataques detectados | 13/13 (IC95 % 77–100 %) |
+| Legítimas bloqueadas por error | 0/16 (IC95 % 0–19 %) |
+| Fallos del servicio | 0 de 29 |
+| Latencia | p50 92 ms · p95 128 ms · máximo 489 ms (el primer envío, conexión en frío) |
+| Puntajes | ataques de 0,82 a 0,99; legítimas de 0,01 a 0,03 |
+
+**Lo que sí se puede decir:** con estos textos Jev separa limpiamente los dos grupos (el ataque peor
+puntuado, V3-F, saca 0,82; la legítima peor, 0,03), así que cualquier umbral entre 0,1 y 0,8 da el mismo
+resultado: el 0,5 no es delicado. No falló ninguna vez.
+
+**Lo que no se puede decir:**
+- **No es «100 % de protección».** El intervalo va de 77 % a 100 %, y la muestra son 13 ataques escritos
+  por el propio equipo, no un conjunto externo.
+- **Las 16 legítimas son en realidad ~10 textos distintos** (en los 12 de `PROMPTS_LEGITIMOS` los medianos y
+  los largos solo cambian un número), así que 0/16 pesa menos de lo que parece.
+- **No hay comparación con Prompt Guard sobre estos mismos textos.** Jev tardó ~92 ms de mediana y la
+  clasificación de entrada con Prompt Guard medía 32–39 ms en `analisis/costo_por_mecanismo.md`, pero son
+  condiciones distintas (red de Colab frente a clasificador local, otra muestra), no una comparación justa.
+- Una sola hora y una sola pasada: no sabemos cuánto varían la latencia ni los puntajes. Con carga distinta
+  la latencia puede cambiar.
+- No cubre ataques en otros idiomas, codificados ni de varios turnos reales.
+- Jev es un tercero y de pago: cada petición del proxy enviaría el texto fuera del laboratorio.
