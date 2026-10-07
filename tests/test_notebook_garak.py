@@ -167,3 +167,17 @@ def test_la_primera_celda_muestra_la_version_de_python(
     notebook: dict[str, Any],
 ) -> None:
     assert "!python --version" in _codigo(notebook)[0]
+
+
+def test_antes_de_gastar_media_hora_se_comprueba_que_los_dos_clasificadores_responden(
+    notebook: dict[str, Any],
+) -> None:
+    """Un clasificador que da timeout hace que el proxy bloquee todo (fail closed) y el
+    ASR de C3/C6sinH salga falsamente en 0 %: ya paso en una corrida real."""
+    codigo = _codigo(notebook)
+    previa = next(i for i, c in enumerate(codigo) if "def ultimo_evento" in c)
+    humo = next(i for i, c in enumerate(codigo) if 'correr_garak("humo"' in c)
+
+    assert previa < humo
+    assert '{"entrada": "ok", "salida": "ok"}' in codigo[previa]
+    assert "raise RuntimeError" in codigo[previa]

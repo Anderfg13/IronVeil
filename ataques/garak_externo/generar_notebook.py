@@ -264,6 +264,47 @@ print(f"Proxy listo en {time.time() - inicio:.0f}s")
 **Revisa `ollama ps`:** `PROCESSOR` debe decir `100% GPU`. Y en el log, `Prompt Guard cargado en device=0` (si dice `device=-1`, corre en CPU).
 """),
         _md("""
+## 10b. Comprobación previa: ¿responden los dos clasificadores?
+
+**No te saltes esta celda.** Si un clasificador no contesta (timeout, error), el proxy **bloquea por defecto** (fail closed) y esas peticiones parecen «ataques frenados» cuando en realidad nadie las evaluó: el ASR de C3 y de `C6sinH` saldría artificialmente bajo. En una corrida anterior, Llama Guard (la clasificación de la respuesta) dio timeout en el 100 % de las peticiones y nadie lo notó hasta analizar los datos. Aquí se manda un mensaje legítimo y se exige que Prompt Guard (entrada) **y** Llama Guard (salida) respondan con `estado: ok`. La primera vez puede tardar por la carga en frío; se reintenta 3 veces.
+"""),
+        _codigo("""
+import glob, json, urllib.error, urllib.request
+
+
+def ultimo_evento():
+    rutas = sorted(glob.glob(f"{REPO}/resultados/*/eventos.jsonl"))
+    lineas = open(rutas[-1], encoding="utf-8").read().splitlines() if rutas else []
+    return json.loads(lineas[-1]) if lineas else {}
+
+
+escribir_config("C3")
+cuerpo = json.dumps({"modelo": "soporte", "mensaje": "Hola, necesito ayuda con mi cuenta."}).encode()
+estado = {}
+for intento in range(1, 4):
+    try:
+        urllib.request.urlopen(urllib.request.Request(
+            f"{URL_PROXY}/chat", data=cuerpo, method="POST",
+            headers={"Content-Type": "application/json"}), timeout=180)
+    except urllib.error.HTTPError as exc:
+        print(f"intento {intento}: el proxy contesto HTTP {exc.code}")
+    evento = ultimo_evento()
+    estado = {"entrada": (evento.get("clasificador_entrada") or {}).get("estado"),
+              "salida": (evento.get("clasificador_salida") or {}).get("estado")}
+    print(f"intento {intento}: {estado}")
+    if estado == {"entrada": "ok", "salida": "ok"}:
+        break
+else:
+    for orden in (["grep", "-iE", "timeout|llama", "/content/proxy.log"], ["ollama", "ps"]):
+        print("$", " ".join(orden))
+        print(subprocess.run(orden, capture_output=True, text=True).stdout[-1500:])
+    raise RuntimeError(
+        f"Un clasificador no responde ({estado}). NO sigas: el ASR de C3 y C6sinH saldria "
+        "artificialmente bajo (fail closed). Revisa la salida de arriba y /content/ollama.log."
+    )
+print("Los dos clasificadores responden: se puede seguir.")
+"""),
+        _md("""
 ## 11. Prueba de humo (1 minuto): ¿cargan todos los probes?
 
 Un prompt por probe, en C0. Si falta un dato o una dependencia de algún probe, falla **aquí** y no a los 30 minutos. Se excluye `dan.Ablation_Dan_11_0` (127 prompts y el tope no lo recorta).

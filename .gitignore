@@ -15,3 +15,8 @@ memoria/
 
 # Cache de Hugging Face de la segunda instancia del proxy para Garak (cientos de MB, no es evidencia)
 resultados/garak/**/hf_cache/
+
+# Resultados crudos de Garak: llevan prompts de ataque y respuestas del modelo con credenciales
+# filtradas (regla 2 de CLAUDE.md), y el HTML pesa ~1,7 MB por configuracion. Se conservan en el zip;
+# lo derivado (analisis/garak_resumen.*, resultados/graficas_garak/) si se versiona.
+resultados/garak/
