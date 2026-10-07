@@ -140,3 +140,38 @@ que llegue al modelo de Ollama. La salida sigue clasificándola Llama Guard. Se 
   modelo protegido en 0,8 s). La causa sigue sin encontrarse; si se repite, esas configuraciones no son
   concluyentes, también con Jev.
 - **No verificado:** nunca se ha ejecutado con Garak contra Jev.
+
+### Resultado de la corrida con Jev (2026-10-07, Colab T4)
+
+Datos crudos en el zip de Colab (no versionados: traen prompts de ataque y respuestas del modelo);
+resumen en `analisis/garak_jev/`. Solo C3 y C6sinH, 339 ataques cada una, mismos probes y semilla que la
+corrida con Prompt Guard. **La corrida es válida:** Jev contestó en el 100 % de las llamadas (680 de 680,
+`estado: ok`) y Llama Guard (salida) también (103 de 104; el único timeout fue el del calentamiento).
+La corrida anterior no lo era: Ollama estaba en CPU y Llama Guard daba timeout.
+
+| | Prompt Guard (corrida anterior) | Jev |
+|---|---:|---:|
+| Bloqueos por detección real, C3 | 221 de 339 (65 %) | **291 de 339 (86 %)** |
+| Bloqueos por detección real, C6sinH | 222 de 339 (65 %) | **288 de 339 (85 %)** |
+| Bloqueos por fallo de servicio | 118 y 117 (inflaban el ASR) | **0** |
+| ASR C3 | 0,0 % (**inflado**) | 0,3 % (1/339; IC95 0,1–1,7 %) |
+| ASR C6sinH | 0,0 % (**inflado**) | 0,0 % (0/339; IC95 0,0–1,1 %) |
+| Latencia Jev (entrada), mediana / p95 | n/a | 221 / 283 ms |
+
+Referencia sin defensas: C0 con ASR 51,2 % (173/338).
+
+**Lo que sí se puede decir:** con el servicio funcionando, Jev frena en la entrada alrededor del 85 % de los
+ataques de Garak y el ASR queda en 0,3 % y 0,0 %, frente al 51,2 % de C0. El único ataque que logró su
+objetivo en C3 es de `latentinjection.LatentInjectionReport`.
+
+**Lo que no:**
+- **La comparación con Prompt Guard no es limpia:** en esa corrida la salida falló y esos bloqueos se
+  contaron aparte, así que su 65 % de detecciones reales no es de una cadena completa. Para comparar
+  de verdad hay que repetir con Prompt Guard y Llama Guard funcionando.
+- **El ASR de 0,0 % no es «protección total»:** el intervalo llega a 1,1 %, y Jev dejó pasar unos 50
+  ataques; casi ninguno logró su objetivo porque el modelo de 1B no los obedeció, no porque Jev los viera.
+- **La latencia con Garak (221 ms) es mayor que en la medición suelta (92 ms):** los prompts de Garak son
+  más largos y se midió a otra hora. No se pueden citar como una sola cifra.
+- C3 tiene 2 respuestas con credencial sin redactar: ahí el filtro de salida está apagado, es lo esperado.
+- 13 ataques puntuaron entre 0,3 y 0,5 (se dejaron pasar con el umbral 0,5): bajar el umbral los
+  cogería, pero este conjunto solo tiene ataques y no permite medir cuántas legítimas se bloquearían.
