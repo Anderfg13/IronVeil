@@ -1,0 +1,24 @@
+name: Proponer una mejora
+description: Una idea para un mecanismo, una extensión, un análisis o la documentación.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problema
+    attributes:
+      label: Qué problema resuelve
+    validations:
+      required: true
+  - type: textarea
+    id: propuesta
+    attributes:
+      label: Propuesta
+      description: Cómo lo harías. Si toca la cadena de mecanismos, ten presente que las 7 configuraciones deben seguir ejecutándose con el mismo código.
+    validations:
+      required: true
+  - type: dropdown
+    id: alcance
+    attributes:
+      label: ¿Entra en el núcleo (C0–C6) o es una extensión?
+      options: [Núcleo, Extensión opcional, Documentación]
+    validations:
+      required: true

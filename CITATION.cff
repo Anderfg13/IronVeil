@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+message: "Si usas IronVeil en un trabajo académico, cítalo con estos datos."
+title: "IronVeil: defensa en profundidad para LLMs autoalojados expuestos en internet"
+type: software
+abstract: >-
+  Framework académico que compara cinco mecanismos defensivos (filtrado, delimitación, clasificación, mínimo
+  privilegio y aprobación humana) en un proxy FastAPI frente a un backend Ollama, y mide cuánto reducen la tasa de éxito
+  de ataque (ASR) frente a cinco vectores en siete configuraciones.
+authors:
+  - family-names: "Garcia Nieto"
+    given-names: "Anderson Fabian"
+  - family-names: "Fiquitiva Poveda"
+    given-names: "Ana Gabriela"
+  - family-names: "Piedrahita Arango"
+    given-names: "Carlos Mario"
+  - family-names: "Sabogal Wilches"
+    given-names: "Andres Felipe"
+repository-code: "https://github.com/Anderfg13/IronVeil"
+license: MIT
+keywords:
+  - llm-security
+  - prompt-injection
+  - defense-in-depth
+  - ollama
+  - fastapi
+  - red-teaming
+date-released: "2026-10-31"

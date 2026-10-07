@@ -275,4 +275,6 @@ docker pull ghcr.io/anderfg13/ironveil-proxy:entrega-final-2026-10-31
 
 **Anderson Fabian Garcia Nieto** (infraestructura, filtrado, clasificación, mínimo privilegio, cola y costo) · **Carlos Mario Piedrahita Arango** (configuración, delimitación, integración, interfaz de aprobación y SIEM) · **Andres Felipe Sabogal Wilches** (ejecución de los vectores de ataque) · **Ana Gabriela Fiquitiva Poveda** (esquema de log, consolidación, gráficas e informe). Las reglas de trabajo, los contratos estables y la lista de comprobación de cada tarea están en [`CLAUDE.md`](CLAUDE.md); las PR usan la [plantilla](.github/PULL_REQUEST_TEMPLATE.md).
 
+[Cómo contribuir](CONTRIBUTING.md) · [Seguridad](SECURITY.md) · [Código de conducta](CODE_OF_CONDUCT.md) · [Cómo citar](CITATION.cff)
+
 Licencia [MIT](LICENSE) · uso exclusivamente académico y en laboratorio propio.

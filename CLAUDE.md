@@ -243,7 +243,7 @@ Esta es la estructura **objetivo**. Lo marcado `[ya existe]` está en el repo ho
 LICENSE (MIT) · docker-compose.yml [ya existe] · config.yaml · .env.example [ya existe] · README.md [ya existe]
 ```
 
-Nada suelto en la raíz salvo lo listado arriba.
+Nada suelto en la raíz salvo lo listado arriba y los archivos de comunidad de GitHub (`LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CITATION.cff`).
 
 ---
 

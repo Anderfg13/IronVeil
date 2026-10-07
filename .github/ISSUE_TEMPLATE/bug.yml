@@ -1,0 +1,34 @@
+name: Reportar un error
+description: Algo del proxy, los análisis o los scripts no se comporta como dice la documentación.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Antes de empezar: IronVeil es un laboratorio. Reporta solo lo que ocurre contra **tu propio stack**
+        (localhost/Docker) y no pegues credenciales reales.
+  - type: textarea
+    id: que-paso
+    attributes:
+      label: Qué pasó
+      description: Qué esperabas y qué obtuviste.
+    validations:
+      required: true
+  - type: textarea
+    id: reproducir
+    attributes:
+      label: Cómo reproducirlo
+      description: Pasos o comandos, y la configuración (C0–C6 o banderas de `config.yaml`).
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Commit o versión
+      placeholder: "p. ej. 46a3558"
+  - type: textarea
+    id: entorno
+    attributes:
+      label: Entorno y logs
+      description: Sistema, Python, Docker, y el evento relevante de `eventos.jsonl` (sin texto de usuarios reales).
+      render: text
