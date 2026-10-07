@@ -27,3 +27,4 @@ select = ["E", "F", "B", "I", "UP", "TRY004"]
 # columnas lo hace ilegible y no cambia lo que muestra el notebook.
 [lint.per-file-ignores]
 "ataques/garak_externo/generar_notebook.py" = ["E501"]
+"ataques/generar_notebook_jev.py" = ["E501"]

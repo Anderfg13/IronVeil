@@ -213,3 +213,27 @@ malicioso), decórala con `@_a_prueba_de_fallos("nombre")` y regístrala en `BAC
 pasar por `_autorizar_destino()` si habla con un servidor, no desactivar TLS, no escribir
 claves ni el texto del usuario en el log, y tener pruebas con la respuesta **simulada**
 (la suite no usa red).
+## Medir un clasificador (Jev u otro) gastando lo mínimo
+
+`ataques/medir_clasificador_entrada.py` envía 13 ataques (V2/V3) y 16 consultas legítimas al backend
+elegido y resume latencia (p50/p95), % de ataques detectados, falsos positivos, fallos y cómo cambiaría
+el resultado con otro umbral. Con Jev **cada envío se paga**, así que el script está hecho para sacar lo
+máximo de cada uno:
+
+```
+python ataques/medir_clasificador_entrada.py --simular        # dice cuántos envíos haría; no llama a nadie
+python ataques/medir_clasificador_entrada.py                  # 29 envíos
+python ataques/medir_clasificador_entrada.py --repeticiones 3 # mide también si Jev es estable
+python ataques/medir_clasificador_entrada.py --resumir-desde resultados/jev/<archivo>.jsonl   # gratis
+```
+
+- **Cada envío se guarda al instante** en `resultados/jev/jev_crudo_<fecha>.jsonl` (id, tamaño, puntaje,
+  veredicto, estado, ms, modelo y umbral; **nunca el texto ni la clave**). Si el proceso se corta, lo pagado
+  no se pierde, y cualquier análisis nuevo (otro umbral, otra gráfica) se hace desde el archivo sin pagar.
+- **Corta tras 3 fallos seguidos** (clave inválida, sin crédito, límite de uso): seguir solo gastaría.
+- **Los fallos se cuentan aparte** de las detecciones: un timeout el proxy lo trata como bloqueo, y mezclarlo
+  inflaría la protección (la trampa de Garak con Llama Guard).
+- Necesita `TYPESAFE_API_KEY` y `CLASIFICADOR_PERMITIR_REMOTO=1` en `.env` (Jev es un tercero: el texto sale
+  del laboratorio; son textos sintéticos). Sin ellos, el script se detiene antes de enviar nada.
+- **Límites:** muestra pequeña (orienta, no estima una tasa); los ataques son los del propio experimento; la
+  latencia incluye tu red y la carga de Jev en ese momento.

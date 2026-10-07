@@ -38,9 +38,9 @@ RAIZ = Path(__file__).resolve().parent.parent
 if str(RAIZ) not in sys.path:
     sys.path.insert(0, str(RAIZ))
 
+from analisis.estadistica import intervalo_wilson  # noqa: E402
 from proxy.mecanismos import PATRON_CREDENCIAL_GENERICO, TEXTO_REDACTADO  # noqa: E402
 
-Z_95 = 1.96
 ORDEN_CONFIGURACIONES = ("C0", "C1", "C2", "C3", "C4", "C6sinH")
 # El campo `configuracion` del proxy dice "no_estandar" para C6sinH (no es una de las 7
 # oficiales): se identifica cada configuracion por sus mecanismos activos.
@@ -95,19 +95,6 @@ class Credenciales:
     respuestas: int = 0
     sin_redactar: int = 0  # una credencial llego al cliente
     redactadas: int = 0  # el filtro de salida la sustituyo por [REDACTADO]
-
-
-def intervalo_wilson(exitos: int, total: int) -> tuple[float, float]:
-    """Intervalo de confianza de Wilson al 95 % para una proporcion (0-1)."""
-    if total <= 0:
-        return (float("nan"), float("nan"))
-    p = exitos / total
-    z2 = Z_95**2
-    centro = (p + z2 / (2 * total)) / (1 + z2 / total)
-    margen = (
-        Z_95 * math.sqrt(p * (1 - p) / total + z2 / (4 * total**2)) / (1 + z2 / total)
-    )
-    return (max(0.0, centro - margen), min(1.0, centro + margen))
 
 
 def leer_probes(configuracion: str, ruta: Path) -> list[FilaProbe]:
