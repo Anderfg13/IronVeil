@@ -1,10 +1,10 @@
 cff-version: 1.2.0
 message: "Si usas IronVeil en un trabajo académico, cítalo con estos datos."
-title: "IronVeil: defensa en profundidad para LLMs autoalojados expuestos en internet"
+title: "IronVeil: defensa en profundidad para LLMs expuestos, con énfasis en modelos autoalojados con Ollama"
 type: software
 abstract: >-
   Framework académico que compara cinco mecanismos defensivos (filtrado, delimitación, clasificación, mínimo
-  privilegio y aprobación humana) en un proxy FastAPI frente a un backend Ollama, y mide cuánto reducen la tasa de éxito
+  privilegio y aprobación humana) en un proxy FastAPI delante de un modelo (Ollama local en el experimento; también servidores compatibles con OpenAI o modelos de frontera), y mide cuánto reducen la tasa de éxito
   de ataque (ASR) frente a cinco vectores en siete configuraciones.
 authors:
   - family-names: "Garcia Nieto"

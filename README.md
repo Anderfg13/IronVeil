@@ -4,7 +4,8 @@
 
 # IronVeil
 
-**Defensa en profundidad para LLMs autoalojados (Ollama) expuestos por accidente en internet.**
+**Defensa en profundidad para proteger un LLM, local o de frontera, de la inyección de prompt y la extracción de datos.**
+Pensado para los modelos autoalojados con Ollama que quedan expuestos por accidente en internet, y válido para cualquier otro modelo detrás del proxy.
 Cinco mecanismos defensivos activables por bandera, siete configuraciones experimentales y una pregunta:
 *¿qué combinación ofrece la mejor relación protección / utilidad / costo?*
 
@@ -26,17 +27,26 @@ Cinco mecanismos defensivos activables por bandera, siete configuraciones experi
 
 ## Qué es IronVeil
 
-Un servidor Ollama expuesto a internet sin protección permite a cualquiera extraer el *system prompt*, inyectar instrucciones, moverse entre modelos o agotar los recursos. IronVeil es un **proxy FastAPI** que se sienta entre el cliente y Ollama e implementa cinco defensas, **cada una apagada o encendida con una sola línea de `config.yaml`**:
+Un modelo de lenguaje expuesto sin protección permite a cualquiera extraer el *system prompt*, inyectar instrucciones, moverse entre modelos o agotar los recursos. El caso más común y el que motiva el proyecto es un servidor **Ollama autoalojado** publicado en internet por accidente, pero el problema es el mismo con cualquier modelo. IronVeil es un **proxy FastAPI** que se sienta entre el cliente y el modelo e implementa cinco defensas, **cada una apagada o encendida con una sola línea de `config.yaml`**:
 
 | # | Mecanismo | Bandera | Naturaleza |
 |---|-----------|---------|------------|
 | 1 | **Filtrado** | `filtrado` | Determinista: patrones/regex sobre entrada y salida |
 | 2 | **Delimitación** (spotlighting) | `delimitacion` | Determinista: reestructura el prompt con marcadores aleatorios; no bloquea |
-| 3 | **Clasificación** | `clasificacion` | Probabilístico: Prompt Guard 2 (entrada) + Llama Guard 3 (salida); falla cerrada |
+| 3 | **Clasificación** | `clasificacion` | Probabilístico: por defecto Prompt Guard 2 (entrada) + Llama Guard 3 (salida), intercambiables por otro modelo local o de frontera; falla cerrada |
 | 4 | **Mínimo privilegio** | `minimo_privilegio` | Determinista: rechaza una credencial de otro dominio |
 | 5 | **Aprobación humana + rate limit** | `aprobacion_humana` | Humano en el bucle: encola (429) en vez de rechazar (400) |
 
 El experimento mide cuánto reduce cada mecanismo —solo o combinado— la **Tasa de Éxito de Ataque (ASR)** frente a cinco vectores: **V1** reconocimiento · **V2** extracción de system prompt · **V3** inyección de prompt · **V4** movimiento lateral · **V5** agotamiento de recursos. Dos modelos (`soporte` y `rrhh`) guardan un secreto ficticio (canario) en su *system prompt*; si el canario aparece en la respuesta, el ataque tuvo éxito.
+
+### Qué modelos puede proteger
+
+Los cinco mecanismos no dependen del modelo: trabajan sobre el texto que entra y el que sale, así que el proxy sirve igual para:
+
+- **Modelos locales con Ollama** (el caso del experimento: `soporte` y `rrhh`).
+- **Cualquier servidor compatible con la API de OpenAI** (vLLM, LM Studio…) y **modelos de frontera** (OpenAI, Anthropic). Es una extensión opcional (`MODELOS_REMOTOS`): los terceros están apagados salvo permiso explícito, porque el texto sale de tu red. Guía: [`docs/MODELO_PROTEGIDO_REMOTO.md`](docs/MODELO_PROTEGIDO_REMOTO.md).
+
+El **clasificador** también es intercambiable (Prompt Guard, Llama Guard, Jev, un modelo de frontera como juez…): [`docs/CAMBIAR_MODELO_CLASIFICADOR.md`](docs/CAMBIAR_MODELO_CLASIFICADOR.md). Lo que está **medido** en este repositorio es el caso de Ollama con `llama3.2:1b`; los demás modelos se admiten pero no se evaluaron con la misma batería (ver [`docs/GUIA_PARA_EL_PAPER.md`](docs/GUIA_PARA_EL_PAPER.md)).
 
 > **Es un trabajo académico.** Todo el laboratorio corre en Docker, en tu propia máquina. Nunca apuntes estos ataques contra servidores de terceros. Las credenciales (`SPT-DEMO-*`, `RRHH-DEMO-*`) son **ficticias** y viven solo en `.env` / Modelfiles.
 
@@ -60,7 +70,7 @@ flowchart LR
         OL --> S1["1 · Filtrado salida"] --> S3["3 · Clasificación salida<br/>Llama Guard 3"]
         S3 --> LOG[("eventos.jsonl")]
     end
-    OL[("Ollama :11434<br/>red interna Docker<br/>soporte · rrhh")]
+    OL[("Modelo protegido<br/>hoy: Ollama :11434 (red interna)<br/>o servidor OpenAI-compatible / frontera")]
     Q -. "persona aprueba" .-> OL
     S3 --> C
     style OL fill:#2e1065,stroke:#a78bfa,color:#fff
@@ -89,7 +99,7 @@ sequenceDiagram
     participant K as Cadena (1·3·4)
     participant Q as Cola humana (5)
     actor H as Revisor
-    participant O as Ollama
+    participant O as Modelo protegido
     A->>P: POST /chat {modelo, mensaje}
     P->>K: filtrar → clasificar → validar_privilegio
     K-->>P: clasificación = unsafe (primer bloqueo gana)
@@ -97,7 +107,7 @@ sequenceDiagram
     P-->>A: 429 pendiente (cabecera X-Revision-Id)
     H->>Q: GET /revision/ui → rechazar
     Q-->>A: GET /chat/revision/{id} → rechazada
-    Note over P,O: Ollama nunca fue llamado
+    Note over P,O: el modelo nunca fue llamado
     P->>P: eventos.jsonl (resultado=bloqueado, mecanismo_que_bloqueo=clasificacion)
 ```
 
