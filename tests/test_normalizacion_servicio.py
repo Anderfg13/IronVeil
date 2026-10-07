@@ -276,7 +276,8 @@ def test_encendida_analiza_y_cambiar_el_entorno_reconstruye(
     solo_hex = composicion.obtener()
 
     assert todos is not solo_hex
-    assert solo_hex is not None and solo_hex.decodificadores == ("hex",)
+    assert solo_hex is not None
+    assert solo_hex.decodificadores == ("hex",)
     assert "ACTIVA" in composicion.descripcion()
 
 

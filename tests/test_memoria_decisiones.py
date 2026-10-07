@@ -102,7 +102,7 @@ def api(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[dict[str, A
         archivos = list((tmp_path / "resultados").glob("*/eventos.jsonl"))
         return json.loads(archivos[0].read_text(encoding="utf-8").splitlines()[-1])
 
-    yield {
+    return {
         "usar": usar,
         "enviar": enviar,
         "rechazar": rechazar_el_pendiente,
@@ -254,7 +254,8 @@ def test_la_lista_muestra_la_regla_sin_el_mensaje_completo(api: dict[str, Any]) 
 
     cuerpo = api["http"].get("/revision/memoria").json()
 
-    assert cuerpo["activa"] is True and cuerpo["persistente"] is True
+    assert cuerpo["activa"] is True
+    assert cuerpo["persistente"] is True
     assert cuerpo["almacen"] == "JSON Lines (rechazos.jsonl)"
     regla = cuerpo["reglas"][0]
     assert (regla["modelo"], regla["motivo"], regla["aciertos"]) == (

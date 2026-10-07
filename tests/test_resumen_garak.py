@@ -292,7 +292,8 @@ def test_la_comparacion_solo_usa_los_probes_donde_c0_cae(corrida: Path) -> None:
 
     assert "Cada defensa contra C0" in texto
     assert "`a.uno`" in texto.split("Cada defensa contra C0")[1]
-    assert "comparaciones" in texto and "Bonferroni" in texto
+    assert "comparaciones" in texto
+    assert "Bonferroni" in texto
 
 
 def test_no_se_compara_una_configuracion_inflada_por_fallo_de_servicio(

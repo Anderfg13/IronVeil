@@ -246,7 +246,8 @@ def test_al_arrancar_carga_lo_que_el_almacen_ya_tenia() -> None:
 def test_sin_almacen_funciona_en_memoria() -> None:
     memoria = _servicio(None)
 
-    assert memoria.persistente is False and memoria.descripcion == "solo en memoria"
+    assert memoria.persistente is False
+    assert memoria.descripcion == "solo en memoria"
     assert memoria.recordar_rechazo("soporte", ATAQUE, "ana", "filtrado") == (
         Resultado.RECORDADA_SIN_GUARDAR
     )
@@ -262,7 +263,8 @@ def test_si_el_almacen_no_carga_sigue_en_memoria_y_lo_avisa(
     with caplog.at_level("ERROR"):
         memoria = _servicio(almacen)
 
-    assert memoria.persistente is False and memoria.descripcion == "solo en memoria"
+    assert memoria.persistente is False
+    assert memoria.descripcion == "solo en memoria"
     assert "SOLO en memoria" in caplog.text
     memoria.recordar_rechazo("soporte", ATAQUE, "ana", "filtrado")
     assert "guardar" not in almacen.llamadas  # no insiste con un almacen caido

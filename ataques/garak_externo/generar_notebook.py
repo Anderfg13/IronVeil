@@ -248,7 +248,7 @@ for intento in range(1, 4):
     if estado == {"entrada": "ok", "salida": "ok"} and backend == BACKEND_ENTRADA_ESPERADO:
         break
 else:
-    for orden in (["grep", "-iE", "timeout|llama|error", "/content/proxy.log"],
+    for orden in (["grep", "-iE", "timeout|llama|error", LOG_PROXY],
                   ["tail", "-n", "40", "/content/ollama.log"],
                   ["ollama", "ps"],
                   ["nvidia-smi", "--query-gpu=memory.used,memory.total", "--format=csv"]):
@@ -356,6 +356,7 @@ def construir_notebook(variante: Variante = LOCAL) -> dict[str, Any]:
 %cd /content
 !test -d IronVeil || git clone https://github.com/Anderfg13/IronVeil.git
 REPO = "/content/IronVeil"
+LOG_PROXY = "/content/proxy.log"
 %cd {REPO}
 !git checkout develop
 !git pull
@@ -498,7 +499,7 @@ print("Listo:", len(PROBES), "probes,", len(CONFIGS_A_CORRER), "configuraciones.
 escribir_config("C3")  # clasificacion=true => el calentamiento carga los clasificadores
 proxy_proc = subprocess.Popen(
     ["uvicorn", "proxy.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-server-header"],
-    cwd=REPO, stdout=open("/content/proxy.log", "w"), stderr=subprocess.STDOUT,
+    cwd=REPO, stdout=open(LOG_PROXY, "w"), stderr=subprocess.STDOUT,
 )
 
 inicio = time.time()
@@ -509,10 +510,10 @@ while time.time() - inicio < 900:
     except Exception:
         time.sleep(5)
 else:
-    raise RuntimeError("El proxy no respondio en 15 min; revisa /content/proxy.log")
+    raise RuntimeError(f"El proxy no respondio en 15 min; revisa {LOG_PROXY}")
 
 print(f"Proxy listo en {time.time() - inicio:.0f}s")
-!grep -iE "calentamiento|Prompt Guard cargado" /content/proxy.log
+!grep -iE "calentamiento|Prompt Guard cargado" {LOG_PROXY}
 !ollama ps
 """),
         _md(variante.md_revisar),
@@ -547,7 +548,7 @@ for probe in PROBES_HUMO:
         print(f"{probe}: FALLO, exit {r.returncode} ({time.time() - t0:.0f} s)")
         print((r.stdout + r.stderr)[-1200:])
 if problemas:
-    for orden in (["tail", "-n", "40", "/content/proxy.log"], ["ollama", "ps"]):
+    for orden in (["tail", "-n", "40", LOG_PROXY], ["ollama", "ps"]):
         print("$", " ".join(orden))
         print(subprocess.run(orden, capture_output=True, text=True).stdout[-2000:])
     raise RuntimeError(

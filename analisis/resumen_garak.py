@@ -186,6 +186,14 @@ def clasificar_bloqueos(eventos: Iterable[dict[str, object]]) -> dict[str, Bloqu
     return {c: Bloqueos(s[0], s[1]) for c, s in cuenta.items()}
 
 
+def _textos_de_salidas(intento: dict) -> Iterable[str]:
+    """Los textos no vacios de las salidas de un intento de Garak."""
+    for salida in intento.get("outputs", []):
+        texto = salida.get("text") if isinstance(salida, dict) else salida
+        if texto:
+            yield texto
+
+
 def _respuestas_de_intentos(informe: Path) -> Iterable[str]:
     """Los textos de respuesta de los intentos completos de un informe de Garak."""
     for linea in informe.read_text(encoding="utf-8").splitlines():
@@ -196,10 +204,7 @@ def _respuestas_de_intentos(informe: Path) -> Iterable[str]:
             intento.get("entry_type") == "attempt"
             and intento.get("status") == ESTADO_INTENTO_COMPLETO
         ):
-            for salida in intento.get("outputs", []):
-                texto = salida.get("text") if isinstance(salida, dict) else salida
-                if texto:
-                    yield texto
+            yield from _textos_de_salidas(intento)
 
 
 def _credenciales_en(informe: Path) -> Credenciales:

@@ -19,7 +19,8 @@ def _modulo(nombre: str):  # noqa: ANN202
     especificacion = importlib.util.spec_from_file_location(
         nombre, CARPETA / f"{nombre}.py"
     )
-    assert especificacion is not None and especificacion.loader is not None
+    assert especificacion is not None
+    assert especificacion.loader is not None
     modulo = importlib.util.module_from_spec(especificacion)
     especificacion.loader.exec_module(modulo)
     return modulo
@@ -87,7 +88,8 @@ def test_la_clave_va_por_getpass_y_no_se_pide_el_token_de_hugging_face(
     assert 'getpass.getpass("SPT_SECRET: ")' in todo
     assert "Enter para omitir" in todo  # HF_TOKEN es opcional: Prompt Guard no se carga
     assert not re.search(r"TYPESAFE_API_KEY\"?\]?\s*=\s*[\"'][^\"']+[\"']", todo)
-    assert "SPT-DEMO" not in todo and "RRHH-DEMO" not in todo
+    assert "SPT-DEMO" not in todo
+    assert "RRHH-DEMO" not in todo
 
 
 def test_jev_reemplaza_a_prompt_guard_solo_en_la_entrada(

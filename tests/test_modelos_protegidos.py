@@ -114,7 +114,8 @@ def test_un_modelo_declarado_se_resuelve_con_sus_valores_por_defecto(
     openai = mp.resolver("nube")
     anthropic = mp.resolver("claude")
 
-    assert openai is not None and anthropic is not None
+    assert openai is not None
+    assert anthropic is not None
     assert openai.url_base == "https://api.openai.com/v1"
     assert openai.clave_env == "MODELO_PROTEGIDO_OPENAI_API_KEY"
     assert openai.parametros == {}
@@ -198,8 +199,9 @@ def test_una_variable_ausente_es_un_error_que_no_revela_ningun_valor(
         n=_openai(sistema="${SISTEMA_PRUEBA_SECRETO} y ${VARIABLE_QUE_NO_EXISTE}"),
     )
 
+    modelo = mp.resolver("n")
     with pytest.raises(adaptador.ErrorConfiguracion) as error:
-        mp.construir_sistema(mp.resolver("n"))  # type: ignore[arg-type]
+        mp.construir_sistema(modelo)  # type: ignore[arg-type]
 
     assert "VARIABLE_QUE_NO_EXISTE" in str(error.value)
     assert CANARIO not in str(error.value)
@@ -210,8 +212,9 @@ def test_un_archivo_de_system_prompt_inexistente_es_un_error(
 ) -> None:
     _declarar(monkeypatch, n=_openai(sistema_archivo=str(tmp_path / "no-existe.txt")))
 
+    modelo = mp.resolver("n")
     with pytest.raises(adaptador.ErrorConfiguracion, match="archivo"):
-        mp.construir_sistema(mp.resolver("n"))  # type: ignore[arg-type]
+        mp.construir_sistema(modelo)  # type: ignore[arg-type]
 
 
 # --- A donde va el prompt: local, propio o tercero ---
@@ -407,8 +410,9 @@ def test_anthropic_con_una_respuesta_sin_texto_es_un_error(
 ) -> None:
     _declarar(monkeypatch, c=_anthropic())
 
+    cliente = _Cliente(datos)
     with pytest.raises((KeyError, TypeError, ValueError)):
-        _llamar(monkeypatch, _Cliente(datos), "c")
+        _llamar(monkeypatch, cliente, "c")
 
 
 @pytest.mark.parametrize(
@@ -419,8 +423,9 @@ def test_openai_con_una_respuesta_sin_texto_es_un_error(
 ) -> None:
     _declarar(monkeypatch, n=_openai())
 
+    cliente = _Cliente(datos)
     with pytest.raises((KeyError, IndexError, TypeError)):
-        _llamar(monkeypatch, _Cliente(datos))
+        _llamar(monkeypatch, cliente)
 
 
 def test_un_error_http_del_proveedor_se_propaga(

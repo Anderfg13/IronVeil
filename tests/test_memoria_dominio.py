@@ -66,7 +66,8 @@ def test_la_vista_previa_pasa_por_el_redactor_y_se_corta() -> None:
         "clave SECRETO " + "x" * 200, lambda t: t.replace("SECRETO", "[R]")
     )
 
-    assert "SECRETO" not in previa and "[R]" in previa
+    assert "SECRETO" not in previa
+    assert "[R]" in previa
     assert len(previa) == LARGO_VISTA_PREVIA + 1  # el recorte y los puntos suspensivos
     assert previa.endswith("…")
 

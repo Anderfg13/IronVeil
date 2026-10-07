@@ -19,7 +19,8 @@ def _generador():  # noqa: ANN202
     especificacion = importlib.util.spec_from_file_location(
         "generar_notebook_jev", RAIZ / "ataques" / "generar_notebook_jev.py"
     )
-    assert especificacion is not None and especificacion.loader is not None
+    assert especificacion is not None
+    assert especificacion.loader is not None
     modulo = importlib.util.module_from_spec(especificacion)
     especificacion.loader.exec_module(modulo)
     return modulo

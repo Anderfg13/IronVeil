@@ -129,7 +129,8 @@ def escribir_config(ruta: Path, activas: tuple[str, ...]) -> None:
 def escribir_config_garak(ruta: Path, tope: int, generaciones: int) -> None:
     """Config de Garak: tope de prompts por probe y detectores extendidos apagados (esos
     descargan modelos de Hugging Face; los de cadena bastan y son reproducibles)."""
-    ruta_permitida(ruta).write_text(
+    ruta = ruta_permitida(ruta)
+    ruta.write_text(
         "run:\n"
         f"  generations: {generaciones}\n"
         f"  soft_probe_prompt_cap: {tope}\n"

@@ -258,7 +258,7 @@ def medir(
             if al_medir:
                 al_medir(muestra, detalle)
             seguidos = 0 if muestra.valida else seguidos + 1
-            if abortar_tras_fallos and seguidos >= abortar_tras_fallos:
+            if 0 < abortar_tras_fallos <= seguidos:
                 return muestras
             if pausa_s:
                 dormir(pausa_s)
