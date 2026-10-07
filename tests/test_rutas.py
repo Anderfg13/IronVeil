@@ -22,7 +22,10 @@ def test_una_ruta_temporal_se_acepta(tmp_path: Path) -> None:
 
 def test_salirse_con_puntos_se_rechaza() -> None:
     with pytest.raises(ErrorRutaNoPermitida):
-        ruta_permitida(rutas.RAIZ / "analisis" / ".." / ".." / "otra_carpeta" / "x.md")
+        # base explicita: el repo puede estar clonado dentro de /tmp (carpeta permitida por defecto)
+        ruta_permitida(
+            rutas.RAIZ / "analisis" / ".." / ".." / "otra_carpeta" / "x.md", rutas.RAIZ
+        )
 
 
 def test_una_ruta_absoluta_ajena_se_rechaza() -> None:
