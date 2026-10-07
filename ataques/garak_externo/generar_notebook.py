@@ -514,7 +514,14 @@ else:
 
 print(f"Proxy listo en {time.time() - inicio:.0f}s")
 !grep -iE "calentamiento|Prompt Guard cargado" {LOG_PROXY}
-!ollama ps
+ps = subprocess.run(["ollama", "ps"], capture_output=True, text=True).stdout
+print(ps)
+if "CPU" in ps or "GPU" not in ps:
+    raise RuntimeError(
+        "Ollama NO esta usando la GPU (ollama ps no dice GPU). En CPU Llama Guard da timeout y "
+        "goodside.Tag no termina. Revisa que el entorno sea T4 GPU (la celda 1 debe mostrar la "
+        "tarjeta) y, si lo es, reinicia la sesion y repite desde la celda 1."
+    )
 """),
         _md(variante.md_revisar),
         _md("""

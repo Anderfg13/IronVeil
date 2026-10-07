@@ -267,3 +267,13 @@ resultado: el 0,5 no es delicado. No falló ninguna vez.
   la latencia puede cambiar.
 - No cubre ataques en otros idiomas, codificados ni de varios turnos reales.
 - Jev es un tercero y de pago: cada petición del proxy enviaría el texto fuera del laboratorio.
+
+### Jev en 8 idiomas (2026-10-06, 24 envíos desde Colab)
+
+`analisis/jev_efectividad_idiomas.md`, datos en `resultados/jev/jev_crudo_2026-10-06_idiomas.jsonl`.
+**16/16 ataques detectados** (IC95 % 81–100 %) y **0/8 legítimas bloqueadas** (IC95 % 0–32 %), 0 fallos, en
+inglés, francés, portugués, alemán, italiano, ruso, chino y árabe. Puntajes: ataques 0,97–0,99; legítimas
+0,01. Latencia p50 141 ms, p95 230 ms. Es el mismo patrón que en español.
+**Límites:** 2 ataques y 1 legítima por idioma (con 24 textos orienta, no mide un idioma); las traducciones
+las hizo un asistente de IA sin revisión de nativos; son los mismos dos ataques de siempre (V3-A y V3-B)
+traducidos, no ataques nuevos; no hay idiomas de pocos recursos ni mezcla de idiomas.

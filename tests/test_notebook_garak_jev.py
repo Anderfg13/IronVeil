@@ -194,6 +194,14 @@ def test_la_variante_local_sigue_esperando_prompt_guard_y_no_se_detiene() -> Non
     assert "TYPESAFE" not in "\n".join(_codigo(cuaderno))
 
 
+def test_se_detiene_si_ollama_corre_en_cpu(notebook: dict[str, Any]) -> None:
+    """En CPU Llama Guard da timeout (fail closed) y los resultados no sirven."""
+    arranque = next(c for c in _codigo(notebook) if "proxy_proc = " in c)
+
+    assert '"CPU" in ps' in arranque
+    assert "raise RuntimeError" in arranque
+
+
 def test_la_prueba_de_humo_corre_un_probe_a_la_vez_con_limite_de_tiempo(
     notebook: dict[str, Any],
 ) -> None:
