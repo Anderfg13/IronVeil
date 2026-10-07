@@ -19,6 +19,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 DESTINO = RAIZ / "resultados" / "JEV_COLAB.ipynb"
 ARCHIVOS_EMBEBIDOS = (
     "analisis/estadistica.py",
+    "ataques/corpus_multilingue.py",
     "ataques/medir_clasificador_entrada.py",
 )
 
@@ -54,7 +55,9 @@ def construir_notebook() -> dict[str, Any]:
         _md("""
 # IronVeil — medir a Jev (TypeSafe) desde Colab (extensión)
 
-**Objetivo:** enviar a Jev 13 ataques del experimento (V2/V3) y 16 consultas legítimas, y sacar de **cada** envío: latencia (p50/p95), cuántos ataques detecta, cuántas consultas legítimas bloquea por error, cuántas veces falla y por qué, y cómo cambiaría el resultado con otro umbral. Es una **extensión**: no es el núcleo C0–C6 y no entra en las tablas del experimento. Guía: `docs/CAMBIAR_MODELO_CLASIFICADOR.md`.
+**Objetivo:** enviar a Jev ataques y consultas legítimas, y sacar de **cada** envío: latencia (p50/p95), cuántos ataques detecta, cuántas consultas legítimas bloquea por error, cuántas veces falla y por qué, y cómo cambiaría el resultado con otro umbral. Es una **extensión**: no es el núcleo C0–C6 y no entra en las tablas del experimento. Guía: `docs/CAMBIAR_MODELO_CLASIFICADOR.md`.
+
+**Qué se envía (lo eliges en la celda 4):** `MODO = "solo_idiomas"` (por defecto) envía **24 textos en 8 idiomas** (inglés, francés, portugués, alemán, italiano, ruso, chino y árabe: 2 ataques y 1 consulta legítima por idioma); el español ya se midió el 2026-10-06 y no se vuelve a pagar. `"todo"` envía los 29 en español **más** los 24 (53). `"espanol"` envía solo los 29 en español. Las traducciones las hizo un asistente de IA, sin revisión de hablantes nativos.
 
 **No necesita GPU:** el modelo corre en TypeSafe, no aquí. Sirve el entorno de ejecución normal (CPU). Ejecuta las celdas en orden.
 
@@ -108,13 +111,15 @@ print("Listo (la clave no se imprime).")
         _md("""
 ## 4. Cuántos envíos se harán (no llama a nadie, no cuesta)
 
-Si el número no es el que esperas, cámbialo en `REPETICIONES` antes de seguir. Con `1` se hace **un** envío por texto; con `3` se mide además si Jev da siempre el mismo puntaje, pero triplica el costo.
+Si el número no es el que esperas, cámbialo en `MODO` o `REPETICIONES` antes de seguir. Con `1` se hace **un** envío por texto; con `3` se mide además si Jev da siempre el mismo puntaje, pero triplica el costo.
 """),
         _codigo("""
 REPETICIONES = 1
+MODO = "solo_idiomas"   # "solo_idiomas" (24), "todo" (53) o "espanol" (29)
+BANDERAS = {"solo_idiomas": "--solo-idiomas", "todo": "--con-idiomas", "espanol": ""}[MODO]
 SALIDA = "/content/jev_out"
 !mkdir -p {SALIDA}
-!cd /content/IronVeil && python ataques/medir_clasificador_entrada.py --simular --repeticiones {REPETICIONES}
+!cd /content/IronVeil && python ataques/medir_clasificador_entrada.py --simular --repeticiones {REPETICIONES} {BANDERAS}
 """),
         _md("""
 ## 5. La medición (aquí sí se paga)
@@ -122,7 +127,7 @@ SALIDA = "/content/jev_out"
 Se registra la hora de cada envío (`momento` en el archivo): sirve para saber con qué carga del servicio se midió la latencia. Una pausa de 0,2 s entre envíos evita saturar el límite de uso.
 """),
         _codigo("""
-!cd /content/IronVeil && python ataques/medir_clasificador_entrada.py --repeticiones {REPETICIONES} --crudo {SALIDA}/jev_crudo.jsonl --salida {SALIDA}/jev_efectividad.md
+!cd /content/IronVeil && python ataques/medir_clasificador_entrada.py --repeticiones {REPETICIONES} {BANDERAS} --crudo {SALIDA}/jev_crudo.jsonl --salida {SALIDA}/jev_efectividad.md
 """),
         _md("""
 ## 6. Re-analizar sin pagar

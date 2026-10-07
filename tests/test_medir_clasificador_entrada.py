@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import pytest
 
 from ataques import medir_clasificador_entrada as m
+from ataques.corpus_multilingue import IDIOMAS as IDIOMAS_ESPERADOS
 
 
 @dataclass
@@ -20,11 +21,12 @@ def _muestra(id_, clase, ms, malicioso, puntaje=None, estado="ok"):
 
 
 def test_los_casos_cubren_ataques_y_legitimas() -> None:
-    clases = [clase for _, clase, _ in m.casos()]
+    clases = [caso.clase for caso in m.casos()]
     assert clases.count(m.CLASE_ATAQUE) == len(m.ATAQUES)
     assert clases.count(m.CLASE_LEGITIMA) > len(m.ATAQUES)
-    ids = [i for i, _, _ in m.casos()]
+    ids = [caso.id for caso in m.casos()]
     assert len(ids) == len(set(ids))
+    assert {caso.idioma for caso in m.casos()} == {m.IDIOMA_BASE}
 
 
 def test_percentil_por_rango_mas_cercano() -> None:
@@ -240,3 +242,98 @@ def test_estabilidad_senala_textos_que_cambian_entre_repeticiones() -> None:
 def test_sin_repeticiones_no_hay_seccion_de_estabilidad() -> None:
     informe = m.resumir([_muestra("V3-A", m.CLASE_ATAQUE, 1, True, 0.9)])
     assert "Estabilidad" not in informe
+
+
+def test_con_idiomas_suma_los_textos_de_ocho_idiomas() -> None:
+    base, con_idiomas = m.casos(), m.casos(con_idiomas=True)
+    extra = con_idiomas[len(base) :]
+    assert con_idiomas[: len(base)] == base
+    assert {c.idioma for c in extra} == set(IDIOMAS_ESPERADOS)
+    for idioma in IDIOMAS_ESPERADOS:
+        clases = [c.clase for c in extra if c.idioma == idioma]
+        assert sorted(clases) == [m.CLASE_ATAQUE, m.CLASE_ATAQUE, m.CLASE_LEGITIMA]
+    ids = [c.id for c in con_idiomas]
+    assert len(ids) == len(set(ids))
+
+
+def test_el_corpus_multilingue_usa_las_mismas_clases_del_script() -> None:
+    from ataques.corpus_multilingue import CORPUS_MULTILINGUE, IDIOMAS
+
+    assert {clase for _, _, clase, _ in CORPUS_MULTILINGUE} == {
+        m.CLASE_ATAQUE,
+        m.CLASE_LEGITIMA,
+    }
+    assert {idioma for idioma, *_ in CORPUS_MULTILINGUE} == set(IDIOMAS)
+    assert all(texto.strip() for *_, texto in CORPUS_MULTILINGUE)
+
+
+def test_medir_conserva_el_idioma_de_cada_caso() -> None:
+    muestras = m.medir(
+        lambda _: (True, _Detalle("ok", 0.9)),
+        [m.Caso("A", m.CLASE_ATAQUE, "x"), m.Caso("B", m.CLASE_ATAQUE, "y", "fr")],
+    )
+    assert [x.idioma for x in muestras] == [m.IDIOMA_BASE, "fr"]
+
+
+def test_el_informe_separa_los_resultados_por_idioma() -> None:
+    informe = m.resumir(
+        [
+            m.Muestra("A", m.CLASE_ATAQUE, 1, "ok", True, 0.9, idioma="es"),
+            m.Muestra("B", m.CLASE_ATAQUE, 1, "ok", False, 0.2, idioma="zh"),
+            m.Muestra("C", m.CLASE_LEGITIMA, 1, "ok", False, 0.0, idioma="zh"),
+            m.Muestra("D", m.CLASE_ATAQUE, 1, "ok", True, 0.8, idioma="zh"),
+        ]
+    )
+    assert "| es | 1/1 | 0/0 |" in informe
+    assert "| zh | 1/2 | 0/1 |" in informe
+    assert informe.index("| es |") < informe.index("| zh |")
+    assert "traducciones hechas por un asistente de IA" in informe
+
+
+def test_sin_otros_idiomas_no_hay_seccion_por_idioma() -> None:
+    informe = m.resumir([_muestra("V3-A", m.CLASE_ATAQUE, 1, True, 0.9)])
+    assert "## Por idioma" not in informe
+    assert "--con-idiomas" in informe
+
+
+def test_las_muestras_viejas_sin_idioma_se_leen_como_espanol() -> None:
+    antigua = {
+        "id": "V3-A",
+        "clase": m.CLASE_ATAQUE,
+        "latencia_ms": 1.0,
+        "estado": "ok",
+        "malicioso": True,
+        "puntaje": 0.9,
+    }
+    assert m.Muestra.desde_dict(antigua).idioma == m.IDIOMA_BASE
+
+
+def test_simular_con_idiomas_cuenta_los_textos_extra(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(m, "cargar_env", lambda _: None)
+    monkeypatch.setenv("TYPESAFE_API_KEY", "clave-ficticia-de-prueba")
+    monkeypatch.setenv("CLASIFICADOR_PERMITIR_REMOTO", "1")
+    assert m.main(["--simular", "--con-idiomas"]) == 0
+    assert (
+        f"Se haran {len(m.casos(con_idiomas=True))} envios" in capsys.readouterr().err
+    )
+
+
+def test_solo_idiomas_no_reenvia_el_espanol() -> None:
+    solo = m.casos(solo_idiomas=True)
+    assert len(solo) == len(m.casos(con_idiomas=True)) - len(m.casos())
+    assert all(c.idioma != m.IDIOMA_BASE for c in solo)
+
+
+def test_los_limites_cuentan_lo_realmente_enviado() -> None:
+    informe = m.resumir(
+        [m.Muestra("ML-fr-A", m.CLASE_ATAQUE, 1, "ok", True, 0.9, idioma="fr")]
+    )
+    assert "(1 ataques, 0 legitimas)" in informe
+
+
+def test_simular_solo_idiomas_cuenta_solo_los_nuevos(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(m, "cargar_env", lambda _: None)
+    monkeypatch.setenv("TYPESAFE_API_KEY", "clave-ficticia-de-prueba")
+    monkeypatch.setenv("CLASIFICADOR_PERMITIR_REMOTO", "1")
+    assert m.main(["--simular", "--solo-idiomas"]) == 0
+    assert "Se haran 24 envios" in capsys.readouterr().err

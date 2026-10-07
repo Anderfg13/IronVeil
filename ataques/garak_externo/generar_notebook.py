@@ -14,11 +14,13 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 AQUI = Path(__file__).resolve().parent
 RAIZ = AQUI.parent.parent
 DESTINO = RAIZ / "resultados" / "GARAK_COLAB_T4.ipynb"
+DESTINO_JEV = RAIZ / "resultados" / "GARAK_JEV_COLAB_T4.ipynb"
+MAXIMO_DE_FALLOS = 0.20  # fraccion de llamadas a un clasificador que puede fallar
 
 
 def _cargar(nombre: str):  # noqa: ANN202 -- un modulo hermano, sin paquete
@@ -50,18 +52,23 @@ def _codigo(texto: str) -> dict[str, Any]:
     }
 
 
-def construir_notebook() -> dict[str, Any]:
-    """El notebook completo (nbformat 4.5), a partir de los archivos del repo."""
-    ejecutar = _cargar("ejecutar_garak")
-    puente = (AQUI / "ironveil_garak.py").read_text(encoding="utf-8")
-    probes = json.dumps(list(ejecutar.PROBES_POR_DEFECTO), indent=4)
-    configuraciones = json.dumps(
-        {nombre: list(activas) for nombre, activas in ejecutar.CONFIGURACIONES.items()},
-        indent=4,
-    )
+class Variante(NamedTuple):
+    """Lo que cambia entre el notebook local (Prompt Guard) y el de Jev (de pago)."""
 
-    celdas = [
-        _md("""
+    destino: Path
+    zip_resultados: str
+    configuraciones: tuple[str, ...]
+    intro: str
+    secretos: str
+    md_arranque: str
+    md_revisar: str
+    backend_de_entrada: str  # el que la comprobacion previa exige ver en el log
+    detener_si_falla: bool  # cortar la corrida si un clasificador falla demasiado
+    comprobacion_antes_del_zip: str = ""
+    limpieza_final: str = ""
+
+
+INTRO_LOCAL = """
 # IronVeil — validación externa con Garak en Colab GPU (extensión)
 
 **Objetivo:** correr el catálogo de ataques de **Garak** (NVIDIA) contra el proxy, en varias configuraciones, y llevarte los resultados. Es una **extensión** (validación externa con ataques que no escribió el equipo): **no** es el núcleo C0–C6 y nada de esto entra en las tablas del experimento. Guía completa: `docs/GARAK.md`.
@@ -73,7 +80,273 @@ def construir_notebook() -> dict[str, Any]:
 **Tiempo estimado:** 40–70 min en total (instalar ≈ 10 min; la corrida ≈ 5–10 min por configuración).
 
 **Qué NO está verificado:** este notebook nunca se ha ejecutado en Colab. Sus piezas (el puente, los argumentos de Garak y el formato del informe) sí se probaron localmente con Docker; lo demás (instalación de Ollama y de Garak en Colab) sigue el notebook de la re-corrida C0–C6, que sí funcionó. Si una celda falla, copia el error tal cual.
-"""),
+"""
+SECRETOS_LOCAL = """
+import getpass, os
+
+os.environ["HF_TOKEN"] = getpass.getpass("HF_TOKEN: ")
+os.environ["SPT_SECRET"] = getpass.getpass("SPT_SECRET: ")
+os.environ["RRHH_SECRET"] = getpass.getpass("RRHH_SECRET: ")
+
+os.environ.update({
+    "BASE_MODEL": "llama3.2:1b",
+    "MODELO_CLASIFICADOR": "llama-guard3:1b",
+    "MODELO_PROMPT_GUARD_ID": "meta-llama/Llama-Prompt-Guard-2-86M",
+    "OLLAMA_HOST": "http://localhost:11434",       # lo usa ollama/init.sh
+    "OLLAMA_BASE_URL": "http://localhost:11434",   # lo usa el proxy
+    "OLLAMA_KEEP_ALIVE": "30m",
+})
+print("Variables listas (secretos no se imprimen).")
+"""
+ARRANQUE_LOCAL = """
+## 10. Arrancar el proxy (con el clasificador activo para que se **precaliente**)
+
+El proxy precalienta Prompt Guard y Llama Guard solo si `clasificacion` está en `true` al arrancar. Por eso se arranca con la bandera de C3: la carga en frío ocurre ahora y no ensucia la primera configuración. Después `config.yaml` se reescribe por configuración (el proxy lo lee en cada petición, no hace falta reiniciarlo). Puede tardar varios minutos la primera vez.
+"""
+REVISAR_LOCAL = """
+**Revisa `ollama ps`:** `PROCESSOR` debe decir `100% GPU`. Y en el log, `Prompt Guard cargado en device=0` (si dice `device=-1`, corre en CPU).
+"""
+
+INTRO_JEV = """
+# IronVeil — Garak con Jev (TypeSafe) protegiendo la entrada (extensión)
+
+**Objetivo:** repetir la validación externa con **Garak** (ataques que no escribió el equipo), pero con **Jev** (remoto, de pago) en lugar de Llama Prompt Guard como clasificador de la **entrada**: Jev decide si cada mensaje es una inyección **antes** de que llegue al modelo de Ollama (`soporte`/`rrhh`), igual que en la medición del 2026-10-06. La **salida** sigue clasificándola Llama Guard (Ollama). Es una **extensión**: no es el núcleo C0–C6 y nada de esto entra en las tablas del experimento.
+
+**Qué se corre:** solo **C3** (solo clasificación) y **C6sinH** (las 4 defensas automáticas juntas), que son las únicas que usan el clasificador. C0, C1, C2 y C4 no lo llaman, así que sus resultados de la corrida anterior (con Prompt Guard) siguen valiendo y no se repiten ni se pagan.
+
+**Qué se va a medir, sin decidirlo de antemano:** cuántos ataques de Garak logran su objetivo con Jev frente a los de la corrida con Prompt Guard, cuántas peticiones frenó Jev **de verdad** (clasificación real) frente a cuántas «frenó» porque falló (fail closed), y la latencia. Lo que salga se reporta tal cual, con sus intervalos de confianza y sus límites, aunque no sea espectacular.
+
+**Cuesta dinero.** Cada petición que llega a la clasificación hace **una llamada a Jev**: **hasta ~680 en total**: en la corrida con Prompt Guard, las 339 peticiones de C3 y las 339 de `C6sinH` pasaron por el clasificador de entrada; más 1 del calentamiento y de 1 a 3 de la comprobación previa. Para no gastar de más:
+- La celda 10b comprueba **los dos clasificadores antes de lanzar Garak**. Si no responden, se detiene y gastas 1–3 llamadas, no ~680.
+- Si fallan más del 20 % de las llamadas a un clasificador en una configuración, la corrida **se detiene** al terminar esa configuración.
+- Los resultados traen el estado de cada llamada a Jev, para separar detecciones reales de fallos.
+
+**Atención con Llama Guard (la salida):** en la corrida anterior dio timeout en el 100 % de las peticiones, a los 10 s exactos y desde la primera; la causa no se ha encontrado. Si vuelve a pasar, la celda 10b te lo muestra con un diagnóstico y se detiene antes de gastar.
+
+**Privacidad:** Jev es un **tercero**. A Jev solo se envía el texto de la **petición** (nunca la respuesta del modelo), pero ese texto sale de tu laboratorio. Son ataques de Garak, sin datos reales. La celda 4 activa `CLASIFICADOR_PERMITIR_REMOTO=1` a la vista: es el permiso que el equipo debe aprobar.
+
+**Antes de empezar:** Entorno de ejecución → Cambiar tipo de entorno → **T4 GPU** (la necesitan Ollama y Llama Guard; Jev corre en TypeSafe). Luego ejecuta las celdas en orden.
+
+**Seguridad:** `TYPESAFE_API_KEY`, `SPT_SECRET` y `RRHH_SECRET` los escribes TÚ en la celda 4 (`getpass`). Nunca los pegues en una celda como texto, ni en un chat. Antes de empaquetar se comprueba que la clave no aparezca en ningún archivo. Los ataques solo van contra el proxy de **esta** sesión (localhost).
+
+**Tiempo estimado:** 30–50 min (instalar ≈ 10 min; ≈ 8–12 min por configuración).
+
+**Qué NO está verificado:** nunca se ha ejecutado contra Jev con Garak. La parte de Garak es la misma de la corrida local con Prompt Guard, que sí funcionó; lo nuevo (Jev como entrada dentro del proxy) se probó con pruebas automáticas y con 29 + 24 envíos sueltos, no con ~680 seguidos. Si una celda falla, copia el error tal cual.
+"""
+SECRETOS_JEV = """import getpass, os
+
+os.environ["TYPESAFE_API_KEY"] = getpass.getpass("TYPESAFE_API_KEY: ")
+os.environ["SPT_SECRET"] = getpass.getpass("SPT_SECRET: ")
+os.environ["RRHH_SECRET"] = getpass.getpass("RRHH_SECRET: ")
+
+os.environ.update({
+    "BASE_MODEL": "llama3.2:1b",
+    "MODELO_CLASIFICADOR": "llama-guard3:1b",       # clasificador de SALIDA (Ollama)
+    "CLASIFICADOR_ENTRADA_BACKEND": "jev",          # clasificador de ENTRADA: Jev en vez de Prompt Guard
+    "CLASIFICADOR_PERMITIR_REMOTO": "1",            # PERMISO: el texto de cada peticion sale a TypeSafe
+    "JEV_MODELO": "jev-latest",
+    "JEV_UMBRAL": "0.5",
+    "OLLAMA_HOST": "http://localhost:11434",       # lo usa ollama/init.sh
+    "OLLAMA_BASE_URL": "http://localhost:11434",   # lo usa el proxy
+    "OLLAMA_KEEP_ALIVE": "30m",
+})
+print("Variables listas (secretos no se imprimen).")
+"""
+ARRANQUE_JEV = """
+## 10. Arrancar el proxy (con el clasificador activo para que se **precaliente**)
+
+El proxy precalienta los clasificadores solo si `clasificacion` está en `true` al arrancar. Por eso se arranca con la bandera de C3: la carga de Llama Guard en frío ocurre ahora y no ensucia la primera configuración. El calentamiento hace **una** llamada a Jev con el texto «hola» (se cobra). Después `config.yaml` se reescribe por configuración (el proxy lo lee en cada petición, no hace falta reiniciarlo). Puede tardar varios minutos la primera vez.
+"""
+REVISAR_JEV = """
+**Revisa `ollama ps`:** `PROCESSOR` debe decir `100% GPU` y debe aparecer `llama-guard3:1b`. Con Jev no se carga Prompt Guard (corre en TypeSafe).
+"""
+
+COMPROBACION_CLAVE = """
+# La clave de Jev no debe aparecer en ningun archivo que se vaya a compartir.
+import glob, os
+
+clave = os.environ["TYPESAFE_API_KEY"].encode()
+rutas = glob.glob(f"{SALIDA}/**/*", recursive=True) + glob.glob(
+    f"{REPO}/resultados/**/eventos.jsonl", recursive=True)
+for ruta in rutas:
+    if os.path.isfile(ruta) and clave in open(ruta, "rb").read():
+        raise RuntimeError(f"La clave aparece en {ruta}: NO empaquetes ni compartas esto.")
+print("OK: la clave de Jev no aparece en los resultados")
+"""
+
+LOCAL = Variante(
+    destino=DESTINO,
+    zip_resultados="resultados_garak_colab.zip",
+    configuraciones=("C0", "C1", "C2", "C3", "C4", "C6sinH"),
+    intro=INTRO_LOCAL,
+    secretos=SECRETOS_LOCAL,
+    md_arranque=ARRANQUE_LOCAL,
+    md_revisar=REVISAR_LOCAL,
+    backend_de_entrada="huggingface",
+    detener_si_falla=False,
+)
+JEV = Variante(
+    destino=DESTINO_JEV,
+    zip_resultados="resultados_garak_jev_colab.zip",
+    configuraciones=("C3", "C6sinH"),
+    intro=INTRO_JEV,
+    secretos=SECRETOS_JEV,
+    md_arranque=ARRANQUE_JEV,
+    md_revisar=REVISAR_JEV,
+    backend_de_entrada="jev",
+    detener_si_falla=True,
+    comprobacion_antes_del_zip=COMPROBACION_CLAVE,
+    limpieza_final='os.environ.pop("TYPESAFE_API_KEY", None)',
+)
+VARIANTES_DEL_NOTEBOOK = (LOCAL, JEV)
+
+
+CELDA_PREVIA = """
+import glob, json, urllib.error, urllib.request
+
+
+def ultimo_evento():
+    rutas = sorted(glob.glob(f"{REPO}/resultados/*/eventos.jsonl"))
+    lineas = open(rutas[-1], encoding="utf-8").read().splitlines() if rutas else []
+    return json.loads(lineas[-1]) if lineas else {}
+
+
+def sondear_llama_guard():
+    # Pregunta DIRECTO a Ollama (sin pasar por el proxy) para separar "Ollama/modelo" de "proxy".
+    modelo = os.environ["MODELO_CLASIFICADOR"]
+    cuerpo = json.dumps({"model": modelo, "stream": False,
+                         "messages": [{"role": "assistant", "content": "Hola, claro, te ayudo."}],
+                         "options": {"temperature": 0, "num_predict": 20}}).encode()
+    t0 = time.time()
+    try:
+        r = urllib.request.urlopen(urllib.request.Request(
+            "http://localhost:11434/api/chat", data=cuerpo, method="POST",
+            headers={"Content-Type": "application/json"}), timeout=180)
+        print(f"Ollama -> {modelo}: contesto en {time.time() - t0:.1f} s:", r.read()[:300])
+    except Exception as exc:
+        print(f"Ollama -> {modelo}: NO contesto ({time.time() - t0:.1f} s): {type(exc).__name__}: {exc}")
+
+
+escribir_config("C3")
+cuerpo = json.dumps({"modelo": "soporte", "mensaje": "Hola, necesito ayuda con mi cuenta."}).encode()
+estado = {}
+backend = None
+for intento in range(1, 4):
+    try:
+        urllib.request.urlopen(urllib.request.Request(
+            f"{URL_PROXY}/chat", data=cuerpo, method="POST",
+            headers={"Content-Type": "application/json"}), timeout=180)
+    except urllib.error.HTTPError as exc:
+        print(f"intento {intento}: el proxy contesto HTTP {exc.code}")
+    evento = ultimo_evento()
+    backend = (evento.get("clasificador_entrada") or {}).get("backend")
+    estado = {"entrada": (evento.get("clasificador_entrada") or {}).get("estado"),
+              "salida": (evento.get("clasificador_salida") or {}).get("estado")}
+    print(f"intento {intento}: {estado} (clasificador de entrada: {backend})")
+    if estado == {"entrada": "ok", "salida": "ok"} and backend == BACKEND_ENTRADA_ESPERADO:
+        break
+else:
+    for orden in (["grep", "-iE", "timeout|llama|error", "/content/proxy.log"],
+                  ["tail", "-n", "40", "/content/ollama.log"],
+                  ["ollama", "ps"],
+                  ["nvidia-smi", "--query-gpu=memory.used,memory.total", "--format=csv"]):
+        print("$", " ".join(orden))
+        print(subprocess.run(orden, capture_output=True, text=True).stdout[-1800:])
+    sondear_llama_guard()
+    raise RuntimeError(
+        f"Un clasificador no responde o no es el esperado ({estado}; entrada={backend}, "
+        f"se esperaba {BACKEND_ENTRADA_ESPERADO}). NO sigas: el ASR de C3 y C6sinH saldria "
+        "artificialmente bajo (fail closed). Revisa la salida de arriba y /content/ollama.log."
+    )
+print("Los dos clasificadores responden: se puede seguir.")
+"""
+
+CELDA_DE_CORRIDA = """
+open("/content/inicio_garak", "w").close()   # marca de tiempo: solo se empaquetan los eventos nuevos del proxy
+
+import glob
+from collections import Counter
+
+
+def lineas_de_eventos():
+    lineas = []
+    for ruta in sorted(glob.glob(f"{REPO}/resultados/*/eventos.jsonl")):
+        lineas += open(ruta, encoding="utf-8").read().splitlines()
+    return lineas
+
+
+def estados_de_clasificadores(lineas):
+    cuenta = {"entrada": Counter(), "salida": Counter()}
+    for linea in lineas:
+        if not linea.strip():
+            continue
+        evento = json.loads(linea)
+        for direccion in cuenta:
+            detalle = evento.get(f"clasificador_{direccion}")
+            if detalle:
+                cuenta[direccion][detalle.get("estado")] += 1
+    return cuenta
+
+
+def fraccion_de_fallos(cuenta):
+    llamadas = sum(sum(c.values()) for c in cuenta.values())
+    fallos = sum(n for c in cuenta.values() for estado, n in c.items() if estado != "ok")
+    return fallos / llamadas if llamadas else 0.0
+
+
+for nombre in CONFIGS_A_CORRER:
+    print("=" * 70)
+    print(f"{nombre}: config.yaml ->")
+    print(escribir_config(nombre))
+    antes = len(lineas_de_eventos())
+    t0 = time.time()
+    r = correr_garak(nombre, PROBES, tope=TOPE)
+    print(f"--- {nombre}: {time.time() - t0:.0f} s (exit {r.returncode})")
+    print((r.stdout + r.stderr)[-1500:])
+    if r.returncode != 0:
+        print(f"!!! Garak FALLO en {nombre}; revisa la salida de arriba antes de seguir.")
+    cuenta = estados_de_clasificadores(lineas_de_eventos()[antes:])
+    for direccion, estados in cuenta.items():
+        if estados:
+            print(f"    clasificador de {direccion}: {dict(estados)}")
+    if fraccion_de_fallos(cuenta) > MAXIMO_DE_FALLOS:
+        print(f"!!! En {nombre} fallo mas del {MAXIMO_DE_FALLOS:.0%} de las llamadas a un clasificador: "
+              "el ASR de esta configuracion NO es concluyente (fail closed).")
+        if DETENER_SI_FALLA:
+            print("!!! Se detiene aqui para no seguir gastando. Revisa la causa antes de repetir.")
+            break
+"""
+
+
+def _celda_previa(variante: Variante) -> str:
+    """La comprobacion previa: los dos clasificadores responden y el de entrada es el esperado."""
+    return (
+        f'BACKEND_ENTRADA_ESPERADO = "{variante.backend_de_entrada}"\n'
+        + CELDA_PREVIA.strip("\n")
+    )
+
+
+def _celda_de_corrida(variante: Variante) -> str:
+    """La corrida completa, que ademas cuenta como respondio cada clasificador."""
+    return (
+        f"DETENER_SI_FALLA = {variante.detener_si_falla}\n"
+        f"MAXIMO_DE_FALLOS = {MAXIMO_DE_FALLOS}\n" + CELDA_DE_CORRIDA.strip("\n")
+    )
+
+
+def construir_notebook(variante: Variante = LOCAL) -> dict[str, Any]:
+    """El notebook completo (nbformat 4.5), a partir de los archivos del repo."""
+    ejecutar = _cargar("ejecutar_garak")
+    configs_a_correr = json.dumps(list(variante.configuraciones))
+    puente = (AQUI / "ironveil_garak.py").read_text(encoding="utf-8")
+    probes = json.dumps(list(ejecutar.PROBES_POR_DEFECTO), indent=4)
+    configuraciones = json.dumps(
+        {nombre: list(activas) for nombre, activas in ejecutar.CONFIGURACIONES.items()},
+        indent=4,
+    )
+
+    celdas = [
+        _md(variante.intro),
         _md("## 1. Verificar GPU y clonar el repo (rama `develop`)"),
         _codigo("""
 !nvidia-smi --query-gpu=name,memory.total --format=csv
@@ -110,23 +383,7 @@ for _ in range(30):
 
 Te va a pedir 3 valores con `getpass` (no se muestran al escribirlos). `BASE_MODEL` es **el mismo** que usó la re-corrida de C0–C6 en Colab.
 """),
-        _codigo("""
-import getpass, os
-
-os.environ["HF_TOKEN"] = getpass.getpass("HF_TOKEN: ")
-os.environ["SPT_SECRET"] = getpass.getpass("SPT_SECRET: ")
-os.environ["RRHH_SECRET"] = getpass.getpass("RRHH_SECRET: ")
-
-os.environ.update({
-    "BASE_MODEL": "llama3.2:1b",
-    "MODELO_CLASIFICADOR": "llama-guard3:1b",
-    "MODELO_PROMPT_GUARD_ID": "meta-llama/Llama-Prompt-Guard-2-86M",
-    "OLLAMA_HOST": "http://localhost:11434",       # lo usa ollama/init.sh
-    "OLLAMA_BASE_URL": "http://localhost:11434",   # lo usa el proxy
-    "OLLAMA_KEEP_ALIVE": "30m",
-})
-print("Variables listas (secretos no se imprimen).")
-"""),
+        _codigo(variante.secretos),
         _md("## 5. Crear los modelos `soporte` y `rrhh` + descargar el clasificador"),
         _codigo("""
 # init.sh espera los Modelfile en /modelfiles (ruta de Docker); en Colab es un symlink.
@@ -194,7 +451,7 @@ TOPE = 30   # prompts por probe
 FLAGS = ["filtrado", "delimitacion", "clasificacion", "minimo_privilegio", "aprobacion_humana"]
 CONFIGS = {configuraciones}
 PROBES = {probes}
-CONFIGS_A_CORRER = ["C0", "C1", "C2", "C3", "C4", "C6sinH"]   # editar para repetir solo alguna
+CONFIGS_A_CORRER = {configs_a_correr}   # editar para repetir solo alguna
 
 
 def escribir_config(nombre):
@@ -234,11 +491,7 @@ def correr_garak(nombre, probes, tope):
 
 print("Listo:", len(PROBES), "probes,", len(CONFIGS_A_CORRER), "configuraciones.")
 """),
-        _md("""
-## 10. Arrancar el proxy (con el clasificador activo para que se **precaliente**)
-
-El proxy precalienta Prompt Guard y Llama Guard solo si `clasificacion` está en `true` al arrancar. Por eso se arranca con la bandera de C3: la carga en frío ocurre ahora y no ensucia la primera configuración. Después `config.yaml` se reescribe por configuración (el proxy lo lee en cada petición, no hace falta reiniciarlo). Puede tardar varios minutos la primera vez.
-"""),
+        _md(variante.md_arranque),
         _codigo("""
 escribir_config("C3")  # clasificacion=true => el calentamiento carga los clasificadores
 proxy_proc = subprocess.Popen(
@@ -260,50 +513,13 @@ print(f"Proxy listo en {time.time() - inicio:.0f}s")
 !grep -iE "calentamiento|Prompt Guard cargado" /content/proxy.log
 !ollama ps
 """),
-        _md("""
-**Revisa `ollama ps`:** `PROCESSOR` debe decir `100% GPU`. Y en el log, `Prompt Guard cargado en device=0` (si dice `device=-1`, corre en CPU).
-"""),
+        _md(variante.md_revisar),
         _md("""
 ## 10b. Comprobación previa: ¿responden los dos clasificadores?
 
-**No te saltes esta celda.** Si un clasificador no contesta (timeout, error), el proxy **bloquea por defecto** (fail closed) y esas peticiones parecen «ataques frenados» cuando en realidad nadie las evaluó: el ASR de C3 y de `C6sinH` saldría artificialmente bajo. En una corrida anterior, Llama Guard (la clasificación de la respuesta) dio timeout en el 100 % de las peticiones y nadie lo notó hasta analizar los datos. Aquí se manda un mensaje legítimo y se exige que Prompt Guard (entrada) **y** Llama Guard (salida) respondan con `estado: ok`. La primera vez puede tardar por la carga en frío; se reintenta 3 veces.
+**No te saltes esta celda.** Si un clasificador no contesta (timeout, error), el proxy **bloquea por defecto** (fail closed) y esas peticiones parecen «ataques frenados» cuando en realidad nadie las evaluó: el ASR de C3 y de `C6sinH` saldría artificialmente bajo. En una corrida anterior, Llama Guard (la clasificación de la respuesta) dio timeout en el 100 % de las peticiones y nadie lo notó hasta analizar los datos. Aquí se manda un mensaje legítimo y se exige que el clasificador de entrada **y** Llama Guard (salida) respondan con `estado: ok` y que el de entrada sea el esperado. Si fallan, se muestra un diagnóstico (log del proxy, log de Ollama, memoria de la GPU y una pregunta directa a Llama Guard sin pasar por el proxy). La primera vez puede tardar por la carga en frío; se reintenta 3 veces.
 """),
-        _codigo("""
-import glob, json, urllib.error, urllib.request
-
-
-def ultimo_evento():
-    rutas = sorted(glob.glob(f"{REPO}/resultados/*/eventos.jsonl"))
-    lineas = open(rutas[-1], encoding="utf-8").read().splitlines() if rutas else []
-    return json.loads(lineas[-1]) if lineas else {}
-
-
-escribir_config("C3")
-cuerpo = json.dumps({"modelo": "soporte", "mensaje": "Hola, necesito ayuda con mi cuenta."}).encode()
-estado = {}
-for intento in range(1, 4):
-    try:
-        urllib.request.urlopen(urllib.request.Request(
-            f"{URL_PROXY}/chat", data=cuerpo, method="POST",
-            headers={"Content-Type": "application/json"}), timeout=180)
-    except urllib.error.HTTPError as exc:
-        print(f"intento {intento}: el proxy contesto HTTP {exc.code}")
-    evento = ultimo_evento()
-    estado = {"entrada": (evento.get("clasificador_entrada") or {}).get("estado"),
-              "salida": (evento.get("clasificador_salida") or {}).get("estado")}
-    print(f"intento {intento}: {estado}")
-    if estado == {"entrada": "ok", "salida": "ok"}:
-        break
-else:
-    for orden in (["grep", "-iE", "timeout|llama", "/content/proxy.log"], ["ollama", "ps"]):
-        print("$", " ".join(orden))
-        print(subprocess.run(orden, capture_output=True, text=True).stdout[-1500:])
-    raise RuntimeError(
-        f"Un clasificador no responde ({estado}). NO sigas: el ASR de C3 y C6sinH saldria "
-        "artificialmente bajo (fail closed). Revisa la salida de arriba y /content/ollama.log."
-    )
-print("Los dos clasificadores responden: se puede seguir.")
-"""),
+        _codigo(_celda_previa(variante)),
         _md("""
 ## 11. Prueba de humo (1 minuto): ¿cargan todos los probes?
 
@@ -322,20 +538,7 @@ assert r.returncode == 0, "Garak fallo en la prueba de humo: revisa la salida de
 
 Una configuración tras otra: reescribe `config.yaml`, corre Garak y guarda el informe (`garak.report.jsonl`, `.html`, `garak.hitlog.jsonl`) y el recuento propio de peticiones (`estados.jsonl`: cuántas respondió y cuántas bloqueó el proxy). Los que llegan al modelo (C0, C2, C4) tardan más; los que bloquean antes (C1, C3) son más rápidos.
 """),
-        _codigo("""
-open("/content/inicio_garak", "w").close()   # marca de tiempo: solo se empaquetan los eventos nuevos del proxy
-
-for nombre in CONFIGS_A_CORRER:
-    print("=" * 70)
-    print(f"{nombre}: config.yaml ->")
-    print(escribir_config(nombre))
-    t0 = time.time()
-    r = correr_garak(nombre, PROBES, tope=TOPE)
-    print(f"--- {nombre}: {time.time() - t0:.0f} s (exit {r.returncode})")
-    print((r.stdout + r.stderr)[-1500:])
-    if r.returncode != 0:
-        print(f"!!! Garak FALLO en {nombre}; revisa la salida de arriba antes de seguir.")
-"""),
+        _codigo(_celda_de_corrida(variante)),
         _md("""
 ## 13. Resumen rápido (en pantalla)
 
@@ -365,6 +568,11 @@ for nombre in CONFIGS_A_CORRER:
     print(f"{nombre:8} {evaluados:>9} {exitosos:>8} {asr:>7} {estados.get('bloqueado', 0):>10} {nones:>10}")
 """),
         _md("## 14. Empaquetar los resultados"),
+        *(
+            [_codigo(variante.comprobacion_antes_del_zip)]
+            if variante.comprobacion_antes_del_zip
+            else []
+        ),
         _codigo("""
 import glob, zipfile
 
@@ -394,12 +602,22 @@ print(f"\\n{len(archivos)} archivos -> {destino} ({os.path.getsize(destino)/1024
 3. Avísale a Claude: genera `analisis/garak_resumen.md`, el CSV y la gráfica con `analisis/resumen_garak.py`. **No se ingesta al CSV del experimento** (es extensión).
 4. El zip contiene los prompts de ataque y las respuestas del modelo (incluido cualquier canario que se haya filtrado): no lo publiques.
 """),
-        _codigo("""
+        _codigo(
+            """
 # Opcional, al terminar: apagar procesos
 proxy_proc.terminate()
 ollama_proc.terminate()
-"""),
+"""
+            + ("\n" + variante.limpieza_final if variante.limpieza_final else "")
+            + """
+"""
+        ),
     ]
+    for celda in celdas:
+        celda["source"] = [
+            linea.replace(LOCAL.zip_resultados, variante.zip_resultados)
+            for linea in celda["source"]
+        ]
     return {
         "cells": celdas,
         "metadata": {
@@ -419,8 +637,11 @@ def serializar(notebook: dict[str, Any]) -> str:
 
 
 def main() -> None:
-    DESTINO.write_text(serializar(construir_notebook()), encoding="utf-8")
-    print(f"Escrito {DESTINO.relative_to(RAIZ)}")
+    for variante in VARIANTES_DEL_NOTEBOOK:
+        variante.destino.write_text(
+            serializar(construir_notebook(variante)), encoding="utf-8"
+        )
+        print(f"Escrito {variante.destino.relative_to(RAIZ)}")
 
 
 if __name__ == "__main__":

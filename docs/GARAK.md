@@ -113,3 +113,30 @@ Lo que sí se sostiene:
   en C0 porque el modelo de 1B no obedece instrucciones codificadas.
 - **Garak solo trae ataques**: no mide falsos positivos. Que C3 bloquee casi todo no dice nada sobre
   la utilidad; eso lo miden los mensajes legítimos del experimento.
+
+## Variante con Jev como clasificador de entrada (de pago)
+
+`resultados/GARAK_JEV_COLAB_T4.ipynb` repite la validación externa con **Jev** (TypeSafe) en lugar de
+Llama Prompt Guard como clasificador de la **entrada**: Jev decide si cada mensaje es una inyección antes de
+que llegue al modelo de Ollama. La salida sigue clasificándola Llama Guard. Se genera con
+`python ataques/garak_externo/generar_notebook.py` (que produce las dos variantes) y se vigila con
+`tests/test_notebook_garak_jev.py`.
+
+- **Qué corre:** solo **C3** y **C6sinH**, las únicas que usan el clasificador. C0, C1, C2 y C4 no lo
+  llaman: sus resultados con Prompt Guard siguen valiendo y no se repiten ni se pagan.
+- **Qué se compara, sin decidirlo de antemano:** ASR de C3 y C6sinH con Jev frente a Prompt Guard (mismos
+  probes, misma semilla), peticiones frenadas de verdad frente a «frenadas» por fallo (fail closed), y latencia.
+  Se reporta lo que salga, con sus intervalos y límites; no se busca una cifra.
+- **Cuesta dinero:** hasta ~680 llamadas a Jev (339 por configuración en la corrida con Prompt Guard), más 1
+  del calentamiento y de 1 a 3 de la comprobación previa. A Jev solo va el texto de la petición, nunca la
+  respuesta del modelo.
+- **Cómo no gasta de más:** la celda 10b exige que los dos clasificadores respondan y que el de entrada sea
+  `jev` **antes** de lanzar Garak; si Llama Guard no responde, muestra un diagnóstico (log del proxy, log de
+  Ollama, memoria de la GPU y una pregunta directa a Llama Guard) y se detiene; la corrida se corta si falla
+  más del 20 % de las llamadas a un clasificador; antes de empaquetar se comprueba que la clave no aparezca
+  en ningún archivo.
+- **Atención:** Llama Guard (la salida) dio timeout en el 100 % de las peticiones de C3 y C6sinH en la corrida
+  anterior (235 de 235, todos a los 10,0 s exactos y desde la primera petición, mientras Ollama contestaba al
+  modelo protegido en 0,8 s). La causa sigue sin encontrarse; si se repite, esas configuraciones no son
+  concluyentes, también con Jev.
+- **No verificado:** nunca se ha ejecutado con Garak contra Jev.

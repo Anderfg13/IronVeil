@@ -29,17 +29,20 @@ from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import NamedTuple
 
 RAIZ = Path(__file__).resolve().parent.parent
 if str(RAIZ) not in sys.path:
     sys.path.insert(0, str(RAIZ))
 
 from analisis.estadistica import intervalo_wilson  # noqa: E402
+from ataques.corpus_multilingue import CORPUS_MULTILINGUE  # noqa: E402
 from ataques.medir_costo_mecanismos import PROMPTS_LEGITIMOS  # noqa: E402
 
 CLASE_ATAQUE = "ataque"
 CLASE_LEGITIMA = "legitima"
 ESTADO_OK = "ok"
+IDIOMA_BASE = "es"
 UMBRALES_DE_BARRIDO = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)
 PAUSA_POR_DEFECTO_S = 0.2
 SALIDA_POR_DEFECTO = RAIZ / "analisis" / "jev_efectividad.md"
@@ -139,6 +142,15 @@ LEGITIMAS_CERCANAS: tuple[tuple[str, str], ...] = (
 )
 
 
+class Caso(NamedTuple):
+    """Un texto a enviar: como se llama, de que clase es, que dice y en que idioma."""
+
+    id: str
+    clase: str
+    texto: str
+    idioma: str = IDIOMA_BASE
+
+
 @dataclass(frozen=True)
 class Muestra:
     """El resultado de enviar un texto al clasificador."""
@@ -151,6 +163,7 @@ class Muestra:
     puntaje: float | None
     repeticion: int = 1
     caracteres: int = 0
+    idioma: str = IDIOMA_BASE
 
     @property
     def valida(self) -> bool:
@@ -164,13 +177,24 @@ class Muestra:
         return cls(**{k: v for k, v in datos.items() if k in campos})
 
 
-def casos() -> list[tuple[str, str, str]]:
-    """Todos los textos a enviar como `(id, clase, texto)`."""
+def casos(con_idiomas: bool = False, solo_idiomas: bool = False) -> list[Caso]:
+    """Los textos a enviar.
+
+    `con_idiomas` suma los de otros idiomas; `solo_idiomas` envia unicamente esos (el
+    espanol ya medido no se vuelve a pagar).
+    """
+    if solo_idiomas:
+        return [Caso(i, c, t, idioma) for idioma, i, c, t in CORPUS_MULTILINGUE]
     legitimas = [(f"L-{i + 1:02d}", t) for i, t in enumerate(PROMPTS_LEGITIMOS)]
-    return [
-        *((i, CLASE_ATAQUE, t) for i, t in ATAQUES),
-        *((i, CLASE_LEGITIMA, t) for i, t in [*legitimas, *LEGITIMAS_CERCANAS]),
+    lista = [
+        *(Caso(i, CLASE_ATAQUE, t) for i, t in ATAQUES),
+        *(Caso(i, CLASE_LEGITIMA, t) for i, t in [*legitimas, *LEGITIMAS_CERCANAS]),
     ]
+    if con_idiomas:
+        lista += [
+            Caso(i, c, texto, idioma) for idioma, i, c, texto in CORPUS_MULTILINGUE
+        ]
+    return lista
 
 
 def percentil(valores: list[float], p: float) -> float:
@@ -183,7 +207,7 @@ def percentil(valores: list[float], p: float) -> float:
 
 def medir(
     evaluar: Callable[[str], tuple[bool, object]],
-    entradas: Iterable[tuple[str, str, str]],
+    entradas: Iterable[Caso | tuple[str, str, str]],
     repeticiones: int = 1,
     pausa_s: float = 0.0,
     dormir: Callable[[float], None] = time.sleep,
@@ -199,11 +223,11 @@ def medir(
     `abortar_tras_fallos` > 0 y ese numero de envios seguidos fallan (clave invalida,
     sin credito, limite de uso), se corta: seguir solo gastaria.
     """
-    entradas = list(entradas)
+    entradas = [Caso(*entrada) for entrada in entradas]
     muestras: list[Muestra] = []
     seguidos = 0
     for repeticion in range(1, repeticiones + 1):
-        for id_caso, clase, texto in entradas:
+        for id_caso, clase, texto, idioma in entradas:
             inicio = reloj()
             malicioso, detalle = evaluar(texto)
             latencia_ms = (reloj() - inicio) * 1000
@@ -216,6 +240,7 @@ def medir(
                 getattr(detalle, "puntaje", None),
                 repeticion,
                 len(texto),
+                idioma,
             )
             muestras.append(muestra)
             if al_medir:
@@ -350,6 +375,27 @@ def _seccion_estabilidad(muestras: list[Muestra]) -> list[str]:
     return [*cabecera, *filas, ""] if filas else cabecera
 
 
+def _seccion_por_idioma(validas: list[Muestra]) -> list[str]:
+    """Deteccion y falsos positivos por idioma (solo si se midio mas de uno)."""
+    idiomas = sorted({m.idioma for m in validas}, key=lambda i: (i != IDIOMA_BASE, i))
+    if len(idiomas) < 2:
+        return []
+    filas = [
+        "| Idioma | Ataques detectados | Legitimas bloqueadas |",
+        "|---|---:|---:|",
+    ]
+    for idioma in idiomas:
+        ataques = [m for m in validas if m.idioma == idioma and m.clase == CLASE_ATAQUE]
+        legitimas = [
+            m for m in validas if m.idioma == idioma and m.clase == CLASE_LEGITIMA
+        ]
+        filas.append(
+            f"| {idioma} | {sum(m.malicioso for m in ataques)}/{len(ataques)} | "
+            f"{sum(m.malicioso for m in legitimas)}/{len(legitimas)} |"
+        )
+    return ["## Por idioma", "", *filas, ""]
+
+
 def _fila_por_texto(m: Muestra) -> str:
     puntaje = "-" if m.puntaje is None else f"{m.puntaje:.2f}"
     if not m.valida:
@@ -357,8 +403,8 @@ def _fila_por_texto(m: Muestra) -> str:
     else:
         veredicto = "bloquea" if m.malicioso else "deja pasar"
     return (
-        f"| {m.id} | {m.clase} | {m.caracteres} | {puntaje} | {veredicto} | "
-        f"{m.latencia_ms:.0f} |"
+        f"| {m.id} | {m.idioma} | {m.clase} | {m.caracteres} | {puntaje} | "
+        f"{veredicto} | {m.latencia_ms:.0f} |"
     )
 
 
@@ -366,25 +412,38 @@ def _seccion_por_texto(muestras: list[Muestra]) -> list[str]:
     return [
         "## Por texto (puntaje 0-1 de probabilidad de inyeccion)",
         "",
-        "| Texto | Clase | Caracteres | Puntaje | Veredicto | ms |",
-        "|---|---|---:|---:|---|---:|",
+        "| Texto | Idioma | Clase | Caracteres | Puntaje | Veredicto | ms |",
+        "|---|---|---|---:|---:|---|---:|",
         *(_fila_por_texto(m) for m in muestras),
         "",
     ]
 
 
-def _seccion_limites() -> list[str]:
-    legitimas = len(PROMPTS_LEGITIMOS) + len(LEGITIMAS_CERCANAS)
+def _seccion_limites(muestras: list[Muestra]) -> list[str]:
+    ataques = len({m.id for m in muestras if m.clase == CLASE_ATAQUE})
+    legitimas = len({m.id for m in muestras if m.clase == CLASE_LEGITIMA})
+    if any(m.idioma != IDIOMA_BASE for m in muestras):
+        idiomas = (
+            "- Los textos de otros idiomas son **traducciones hechas por un "
+            "asistente de IA**, sin revision de hablantes nativos, y son pocos (2 "
+            "ataques y 1 legitima por idioma): sirven para ver si el clasificador "
+            "sigue funcionando fuera del espanol, no para medir un idioma con "
+            "precision. No hay idiomas de pocos recursos ni mensajes con idiomas "
+            "mezclados."
+        )
+    else:
+        idiomas = "- No mide otros idiomas (usa `--con-idiomas`)."
     return [
         "## Limites (no los omitas al citar esto)",
         "",
-        f"- Muestra **pequena** ({len(ATAQUES)} ataques, {legitimas} legitimas): "
+        f"- Muestra **pequena** ({ataques} ataques, {legitimas} legitimas): "
         "orienta, no estima una tasa.",
         "- Los ataques son los del propio experimento, no un conjunto externo: un "
         "clasificador entrenado con datos parecidos saldria mejor de lo que es.",
         "- La latencia incluye la red desde esta maquina y la carga del servicio en "
         "ese momento; repite en distintos momentos antes de citarla.",
-        "- No mide ataques en otros idiomas, codificados ni de varios turnos reales.",
+        idiomas,
+        "- No mide ataques codificados ni de varios turnos reales.",
     ]
 
 
@@ -407,9 +466,10 @@ def resumir(muestras: list[Muestra], umbral_actual: object = None) -> str:
         "",
         *_barrido(validas, umbral_actual),
         "",
+        *_seccion_por_idioma(validas),
         *_seccion_estabilidad(muestras),
         *_seccion_por_texto(muestras),
-        *_seccion_limites(),
+        *_seccion_limites(muestras),
     ]
     return "\n".join(lineas) + "\n"
 
@@ -452,6 +512,17 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--backend", default="jev")
     parser.add_argument("--repeticiones", type=int, default=1)
+    parser.add_argument(
+        "--solo-idiomas",
+        action="store_true",
+        help="Envia SOLO los 24 textos de otros idiomas (el espanol ya medido no se "
+        "vuelve a pagar).",
+    )
+    parser.add_argument(
+        "--con-idiomas",
+        action="store_true",
+        help="Suma ataques y consultas legitimas en 8 idiomas (24 textos mas).",
+    )
     parser.add_argument("--pausa", type=float, default=PAUSA_POR_DEFECTO_S)
     parser.add_argument("--salida", type=Path, default=SALIDA_POR_DEFECTO)
     parser.add_argument(
@@ -509,7 +580,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Backend desconocido: {args.backend!r}.", file=sys.stderr)
         return 2
 
-    entradas = casos()
+    entradas = casos(args.con_idiomas, args.solo_idiomas)
     envios = len(entradas) * args.repeticiones
     print(f"Se haran {envios} envios al backend {args.backend!r}.", file=sys.stderr)
     if args.simular:
