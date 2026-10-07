@@ -48,8 +48,10 @@ def test_medir_registra_estado_puntaje_y_latencia() -> None:
     )
     assert [x.id for x in muestras] == ["A", "B"]
     assert muestras[0].latencia_ms == pytest.approx(250)
-    assert muestras[0].valida and muestras[0].puntaje == 0.9
-    assert not muestras[1].valida and muestras[1].estado == "timeout"
+    assert muestras[0].valida
+    assert muestras[0].puntaje == 0.9
+    assert not muestras[1].valida
+    assert muestras[1].estado == "timeout"
 
 
 def test_medir_repite_y_hace_pausa_entre_envios() -> None:
@@ -61,7 +63,8 @@ def test_medir_repite_y_hace_pausa_entre_envios() -> None:
         pausa_s=0.5,
         dormir=pausas.append,
     )
-    assert len(muestras) == 3 and pausas == [0.5, 0.5, 0.5]
+    assert len(muestras) == 3
+    assert pausas == [0.5, 0.5, 0.5]
 
 
 def test_los_fallos_no_cuentan_como_deteccion() -> None:
@@ -88,7 +91,8 @@ def test_resumen_cuenta_falsos_positivos_y_latencia() -> None:
         ]
     )
     assert "Legitimas bloqueadas por error:** 1/2 = 50%" in informe
-    assert "p50: 200" in informe and "maximo: 300" in informe
+    assert "p50: 200" in informe
+    assert "maximo: 300" in informe
 
 
 def test_barrido_de_umbral_marca_el_actual() -> None:
@@ -106,7 +110,8 @@ def test_barrido_de_umbral_marca_el_actual() -> None:
 
 def test_sin_envios_validos_no_divide_por_cero() -> None:
     informe = m.resumir([_muestra("V3-A", m.CLASE_ATAQUE, 5, True, None, "timeout")])
-    assert "n/a" in informe and "`timeout`: 1" in informe
+    assert "n/a" in informe
+    assert "`timeout`: 1" in informe
 
 
 def test_cargar_env_no_pisa_ni_imprime(tmp_path, monkeypatch, capsys) -> None:
@@ -193,7 +198,8 @@ def test_cada_envio_se_guarda_al_instante_sin_texto_ni_clave(tmp_path) -> None:
     assert texto_secreto not in contenido
     registros = m.leer_lineas(crudo)
     assert len(registros) == 2
-    assert registros[0]["modelo"] == "jev-latest" and registros[0]["umbral"] == 0.5
+    assert registros[0]["modelo"] == "jev-latest"
+    assert registros[0]["umbral"] == 0.5
     assert registros[0]["caracteres"] == len(texto_secreto)
     assert registros[1]["repeticion"] == 2
 
@@ -210,7 +216,8 @@ def test_resumir_desde_el_crudo_no_llama_a_nadie(tmp_path, capsys) -> None:
     salida = tmp_path / "informe.md"
     assert m.main(["--resumir-desde", str(crudo), "--salida", str(salida)]) == 0
     informe = salida.read_text(encoding="utf-8")
-    assert "1/1 = 100%" in informe and "| 0.5 (actual) |" in informe
+    assert "1/1 = 100%" in informe
+    assert "| 0.5 (actual) |" in informe
 
 
 def test_simular_cuenta_los_envios_sin_llamar(monkeypatch, tmp_path, capsys) -> None:
@@ -223,7 +230,8 @@ def test_simular_cuenta_los_envios_sin_llamar(monkeypatch, tmp_path, capsys) -> 
     assert m.main(["--simular", "--repeticiones", "2", "--crudo", str(crudo)]) == 0
     esperado = len(m.casos()) * 2
     assert f"Se haran {esperado} envios" in capsys.readouterr().err
-    assert not llamado and not crudo.exists()
+    assert not llamado
+    assert not crudo.exists()
 
 
 def test_estabilidad_senala_textos_que_cambian_entre_repeticiones() -> None:

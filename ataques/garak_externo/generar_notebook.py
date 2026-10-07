@@ -14,6 +14,7 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+from types import ModuleType
 from typing import Any, NamedTuple
 
 AQUI = Path(__file__).resolve().parent
@@ -23,7 +24,7 @@ DESTINO_JEV = RAIZ / "resultados" / "GARAK_JEV_COLAB_T4.ipynb"
 MAXIMO_DE_FALLOS = 0.20  # fraccion de llamadas a un clasificador que puede fallar
 
 
-def _cargar(nombre: str):  # noqa: ANN202
+def _cargar(nombre: str) -> ModuleType:
     especificacion = importlib.util.spec_from_file_location(
         nombre, AQUI / f"{nombre}.py"
     )

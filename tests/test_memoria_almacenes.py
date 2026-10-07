@@ -120,8 +120,9 @@ def test_jsonl_en_una_carpeta_no_escribible_lanza_error_almacen(tmp_path: Path) 
     bloqueo = tmp_path / "es-un-archivo"
     bloqueo.write_text("x", encoding="utf-8")
 
+    almacen = AlmacenJsonl(bloqueo / "rechazos.jsonl")
     with pytest.raises(ErrorAlmacen):
-        AlmacenJsonl(bloqueo / "rechazos.jsonl").cargar()
+        almacen.cargar()
 
 
 def test_jsonl_describe_el_archivo(tmp_path: Path) -> None:
@@ -156,8 +157,9 @@ def test_sqlite_una_base_corrupta_lanza_error_almacen(tmp_path: Path) -> None:
     ruta = tmp_path / "memoria.db"
     ruta.write_bytes(b"esto no es una base de datos " * 40)
 
+    almacen = AlmacenSqlite(ruta)
     with pytest.raises(ErrorAlmacen):
-        AlmacenSqlite(ruta).cargar()
+        almacen.cargar()
 
 
 def test_sqlite_en_una_carpeta_no_escribible_lanza_error_almacen(
@@ -166,15 +168,18 @@ def test_sqlite_en_una_carpeta_no_escribible_lanza_error_almacen(
     bloqueo = tmp_path / "es-un-archivo"
     bloqueo.write_text("x", encoding="utf-8")
 
+    almacen = AlmacenSqlite(bloqueo / "memoria.db")
     with pytest.raises(ErrorAlmacen):
-        AlmacenSqlite(bloqueo / "memoria.db").cargar()
+        almacen.cargar()
 
 
 def test_sqlite_escribir_antes_de_cargar_es_un_error_claro_y_no_una_excepcion_suelta(
     tmp_path: Path,
 ) -> None:
+    almacen = AlmacenSqlite(tmp_path / "memoria.db")
+    nueva = regla(1)
     with pytest.raises(ErrorAlmacen, match="falta cargar"):
-        AlmacenSqlite(tmp_path / "memoria.db").guardar(regla(1))
+        almacen.guardar(nueva)
 
 
 def test_sqlite_despues_de_cerrar_ya_no_acepta_escrituras(tmp_path: Path) -> None:
@@ -182,8 +187,9 @@ def test_sqlite_despues_de_cerrar_ya_no_acepta_escrituras(tmp_path: Path) -> Non
     almacen.cargar()
     almacen.cerrar()
 
+    nueva = regla(1)
     with pytest.raises(ErrorAlmacen):
-        almacen.guardar(regla(1))
+        almacen.guardar(nueva)
 
 
 # --- Con el servicio real y cada adaptador (de punta a punta) ---
@@ -292,8 +298,9 @@ def test_un_esquema_repetido_es_un_error_y_no_se_pisa_en_silencio() -> None:
 
 
 def test_un_esquema_vacio_no_se_puede_registrar() -> None:
+    registro = RegistroAlmacenes()
     with pytest.raises(ValueError):
-        RegistroAlmacenes().registrar("  ", lambda ruta: AlmacenDeEmpresa({}))
+        registro.registrar("  ", lambda ruta: AlmacenDeEmpresa({}))
 
 
 @pytest.mark.parametrize(
@@ -374,13 +381,15 @@ def test_un_modulo_externo_agrega_su_adaptador_al_registro(
     ["", "../afuera", "a b", "os; import sys", "paquete/modulo", "1abc", "a..b"],
 )
 def test_solo_se_importan_nombres_de_modulo_validos(nombre: str) -> None:
+    registro = RegistroAlmacenes()
     with pytest.raises(ErrorAlmacen, match="no es un nombre de modulo valido"):
-        cargar_adaptadores(RegistroAlmacenes(), [nombre])
+        cargar_adaptadores(registro, [nombre])
 
 
 def test_un_modulo_que_no_existe_es_un_error_que_dice_cual() -> None:
+    registro = RegistroAlmacenes()
     with pytest.raises(ErrorAlmacen, match="modulo_que_no_existe_xyz"):
-        cargar_adaptadores(RegistroAlmacenes(), ["modulo_que_no_existe_xyz"])
+        cargar_adaptadores(registro, ["modulo_que_no_existe_xyz"])
 
 
 def test_un_modulo_sin_registrar_es_un_error_claro(
@@ -388,8 +397,9 @@ def test_un_modulo_sin_registrar_es_un_error_claro(
 ) -> None:
     _escribir_complemento(tmp_path, monkeypatch, "complemento_vacio", "X = 1\n")
 
+    registro = RegistroAlmacenes()
     with pytest.raises(ErrorAlmacen, match="no define registrar"):
-        cargar_adaptadores(RegistroAlmacenes(), ["complemento_vacio"])
+        cargar_adaptadores(registro, ["complemento_vacio"])
 
 
 def test_un_complemento_que_falla_se_convierte_en_error_almacen(
@@ -402,8 +412,9 @@ def test_un_complemento_que_falla_se_convierte_en_error_almacen(
         "def registrar(registro):\n    raise RuntimeError('se cayo')\n",
     )
 
+    registro = RegistroAlmacenes()
     with pytest.raises(ErrorAlmacen, match=r"complemento_roto.*RuntimeError"):
-        cargar_adaptadores(RegistroAlmacenes(), ["complemento_roto"])
+        cargar_adaptadores(registro, ["complemento_roto"])
 
 
 def test_un_complemento_no_puede_pisar_un_esquema_incluido(
@@ -471,7 +482,8 @@ def test_la_composicion_construye_el_almacen_de_la_url(tmp_path: Path) -> None:
 
     memoria = composicion.construir(config)
 
-    assert memoria.persistente is True and memoria.descripcion == "SQLite (m.db)"
+    assert memoria.persistente is True
+    assert memoria.descripcion == "SQLite (m.db)"
     memoria.cerrar()
 
 
@@ -508,7 +520,8 @@ def test_una_configuracion_mala_deja_la_memoria_en_memoria_y_no_tumba_el_proxy(
     with caplog.at_level("ERROR"):
         memoria = composicion.construir(config)
 
-    assert memoria.persistente is False and memoria.descripcion == "solo en memoria"
+    assert memoria.persistente is False
+    assert memoria.descripcion == "solo en memoria"
     assert "SOLO en memoria" in caplog.text
 
 
@@ -517,7 +530,8 @@ def test_obtener_devuelve_none_si_esta_apagada_y_una_sola_instancia_si_esta_acti
 ) -> None:
     monkeypatch.setattr(composicion, "_instancia", None)
     monkeypatch.setattr(composicion, "_configuracion", Configuracion(activa=False))
-    assert composicion.obtener() is None and composicion.esta_activa() is False
+    assert composicion.obtener() is None
+    assert composicion.esta_activa() is False
 
     monkeypatch.setattr(
         composicion,
@@ -526,7 +540,8 @@ def test_obtener_devuelve_none_si_esta_apagada_y_una_sola_instancia_si_esta_acti
     )
     primera = composicion.obtener()
 
-    assert primera is not None and composicion.esta_activa() is True
+    assert primera is not None
+    assert composicion.esta_activa() is True
     assert composicion.obtener() is primera
 
 
@@ -547,6 +562,7 @@ def test_cerrar_libera_el_almacen_y_permite_construirlo_de_nuevo(
 
     assert composicion._instancia is None
     reabierta = composicion.obtener()
-    assert reabierta is not None and reabierta is not memoria
+    assert reabierta is not None
+    assert reabierta is not memoria
     assert reabierta.coincide("soporte", ATAQUE) is not None  # la base lo conservo
     composicion.cerrar()

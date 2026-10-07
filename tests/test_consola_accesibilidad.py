@@ -265,7 +265,8 @@ def test_solo_los_revisores_ven_olvidar_y_tiene_nombre_accesible() -> None:
 
 def test_al_rechazar_se_avisa_que_se_recordara_y_despues_si_se_recordo() -> None:
     assert "Además se recordará" in JS
-    assert "TEXTOS_MEMORIA" in JS and "recordada_sin_guardar" in JS
+    assert "TEXTOS_MEMORIA" in JS
+    assert "recordada_sin_guardar" in JS
 
 
 def test_olvidar_una_regla_siempre_pide_confirmacion() -> None:
@@ -589,8 +590,10 @@ def test_la_tipografia_es_la_del_sistema_sin_fuentes_externas() -> None:
     """Identidad: tipografia nativa (SF Pro en Apple, Segoe UI Variable en Windows)."""
     ui = re.search(r"--ui:\s*([^;]+);", CSS).group(1)  # type: ignore[union-attr]
     assert ui.startswith("system-ui, -apple-system")
-    assert '"SF Pro Text"' in ui and '"Segoe UI Variable Text"' in ui
-    assert "--display:" in CSS and '"SF Pro Display"' in CSS
+    assert '"SF Pro Text"' in ui
+    assert '"Segoe UI Variable Text"' in ui
+    assert "--display:" in CSS
+    assert '"SF Pro Display"' in CSS
     assert "@font-face" not in CSS
     assert "@import" not in CSS
     assert "url(" not in CSS  # ningun recurso externo (CSP: font-src/img-src)
@@ -598,7 +601,8 @@ def test_la_tipografia_es_la_del_sistema_sin_fuentes_externas() -> None:
 
 def test_el_logo_tiene_un_espacio_propio_y_se_reemplaza_por_archivo() -> None:
     """Un solo archivo (logo.svg) y una sola caja (.marca-logo) en las tres paginas."""
-    assert ".marca-logo {" in CSS and "var(--logo, 36px)" in CSS
+    assert ".marca-logo {" in CSS
+    assert "var(--logo, 36px)" in CSS
     demo = (panel.DIRECTORIO_ESTATICO / "demo.html").read_text(encoding="utf-8")
     for pagina in (HTML, LOGIN_HTML, demo):
         assert 'class="marca-logo"' in pagina
@@ -614,7 +618,8 @@ def test_el_logo_es_un_svg_limpio_sin_texto_ni_recursos_externos() -> None:
     assert (
         "<text" not in logo
     )  # sin tipografia incrustada: escala y no depende de fuentes
-    assert "<image" not in logo and "<script" not in logo
+    assert "<image" not in logo
+    assert "<script" not in logo
     assert "http" not in logo.replace('xmlns="http://www.w3.org/2000/svg"', "")
 
 
