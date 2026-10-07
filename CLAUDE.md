@@ -399,10 +399,10 @@ de las 7 configuraciones.
 
 Cuatro personas trabajan sobre el mismo repo en paralelo. Reparto grueso:
 
-- **García** — infraestructura, Docker, filtrado, clasificación, mínimo privilegio, cola + rate limit, medición de costo.
-- **Piedrahita** — configuración y stubs, delimitación, cableado de mecanismos al pipeline, interfaz de aprobación, integración/conflictos, limpieza de datos, export SIEM.
-- **Sabogal** — ejecución de todos los vectores de ataque y registro de resultados crudos.
-- **Fiquitiva** — esquema de log, consolidación, tablas, gráficas e informe.
+- **Anderson Fabian Garcia Nieto (García)** — infraestructura, Docker, filtrado, clasificación, mínimo privilegio, cola + rate limit, medición de costo.
+- **Carlos Mario Piedrahita Arango (Piedrahita)** — configuración y stubs, delimitación, cableado de mecanismos al pipeline, interfaz de aprobación, integración/conflictos, limpieza de datos, export SIEM.
+- **Andres Felipe Sabogal Wilches (Sabogal)** — ejecución de todos los vectores de ataque y registro de resultados crudos.
+- **Ana Gabriela Fiquitiva Poveda (Fiquitiva)** — esquema de log, consolidación, tablas, gráficas e informe.
 
 **Antes de cambiar** una firma en `mecanismos.py`, un nombre de campo del log, o una columna del CSV: avisar. Ese es el punto donde este proyecto se rompe.
 

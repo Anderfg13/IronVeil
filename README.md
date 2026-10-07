@@ -16,7 +16,7 @@ Cinco mecanismos defensivos activables por bandera, siete configuraciones experi
 
 [Arquitectura](#arquitectura) · [Inicio rápido](#inicio-rápido-un-solo-comando) · [Las 7 configuraciones](#las-7-configuraciones) · [Resultados](#dónde-están-los-resultados) · [Estructura](#estructura-del-repositorio) · [Reproducir](#reproducir-los-resultados)
 
-<img src="docs/assets/arquitectura-animada.svg" alt="Animación: una petición legítima atraviesa la cadena de mecanismos y un ataque es bloqueado por la clasificación y encolado por la aprobación humana" width="900">
+<img src="docs/assets/arquitectura-animada.svg" alt="Animación: una petición legítima atraviesa la cadena de mecanismos; un ataque es bloqueado por la clasificación y encolado por la aprobación humana; y el mismo mensaje, al volver, es rechazado al instante por la memoria de decisiones. El modelo protegido y los clasificadores pueden ser locales o de frontera" width="900">
 
 *Una petición legítima (verde) atraviesa la cadena y vuelve revisada; un ataque (rojo) lo detiene la clasificación y la aprobación humana lo encola (429).*
 
@@ -273,6 +273,6 @@ docker pull ghcr.io/anderfg13/ironveil-proxy:entrega-final-2026-10-31
 
 ## Equipo y contribución
 
-Garcia (infraestructura, filtrado, clasificación, mínimo privilegio, cola y costo) · Piedrahita (configuración, delimitación, integración, interfaz de aprobación y SIEM) · Sabogal (ejecución de los vectores de ataque) · Fiquitiva (esquema de log, consolidación, gráficas e informe). Las reglas de trabajo, los contratos estables y la lista de comprobación de cada tarea están en [`CLAUDE.md`](CLAUDE.md); las PR usan la [plantilla](.github/PULL_REQUEST_TEMPLATE.md).
+**Anderson Fabian Garcia Nieto** (infraestructura, filtrado, clasificación, mínimo privilegio, cola y costo) · **Carlos Mario Piedrahita Arango** (configuración, delimitación, integración, interfaz de aprobación y SIEM) · **Andres Felipe Sabogal Wilches** (ejecución de los vectores de ataque) · **Ana Gabriela Fiquitiva Poveda** (esquema de log, consolidación, gráficas e informe). Las reglas de trabajo, los contratos estables y la lista de comprobación de cada tarea están en [`CLAUDE.md`](CLAUDE.md); las PR usan la [plantilla](.github/PULL_REQUEST_TEMPLATE.md).
 
 Licencia [MIT](LICENSE) · uso exclusivamente académico y en laboratorio propio.
