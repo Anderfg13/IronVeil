@@ -11,9 +11,15 @@ contenedor), asi que el cambio se aplica sin reconstruir ni reiniciar nada.
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
+if str(RAIZ) not in sys.path:
+    sys.path.insert(0, str(RAIZ))
+
+from analisis.rutas import ErrorRutaNoPermitida, ruta_permitida  # noqa: E402
+
 RUTA_CONFIG = RAIZ / "config.yaml"
 
 MECANISMOS: tuple[str, ...] = (
@@ -54,9 +60,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("configuracion", choices=sorted(CONFIGURACIONES))
     parser.add_argument("--salida", type=Path, default=RUTA_CONFIG)
     args = parser.parse_args(argv)
-    args.salida.write_text(construir_config(args.configuracion), encoding="utf-8")
+    try:
+        salida = ruta_permitida(args.salida)
+    except ErrorRutaNoPermitida as exc:
+        parser.error(str(exc))
+    salida.write_text(construir_config(args.configuracion), encoding="utf-8")
     activas = ", ".join(CONFIGURACIONES[args.configuracion]) or "ninguno (baseline)"
-    print(f"{args.salida.name}: {args.configuracion} -> mecanismos activos: {activas}")
+    print(f"{salida.name}: {args.configuracion} -> mecanismos activos: {activas}")
     return 0
 
 

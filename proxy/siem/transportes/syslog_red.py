@@ -165,7 +165,7 @@ def fabrica_syslog(protocolo: Protocolo) -> FabricaConector:
             if ca:
                 try:
                     contexto_ssl.load_verify_locations(cafile=ca)
-                except (OSError, ssl.SSLError) as exc:
+                except OSError as exc:  # ssl.SSLError es un OSError
                     raise ErrorSIEM(
                         f"SIEM_CA_ARCHIVO no se pudo leer ({type(exc).__name__})",
                         reintentable=False,

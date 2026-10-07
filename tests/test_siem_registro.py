@@ -106,8 +106,9 @@ def test_registrar_dos_veces_lo_mismo_es_un_error(registro: RegistroSIEM) -> Non
 
 
 def test_un_nombre_vacio_no_se_registra() -> None:
+    registro = RegistroSIEM()
     with pytest.raises(ValueError, match="vacio"):
-        RegistroSIEM().registrar_formato("  ", _FormatoDePrueba)
+        registro.registrar_formato("  ", _FormatoDePrueba)
 
 
 def test_el_contexto_no_muestra_el_entorno_en_el_repr() -> None:

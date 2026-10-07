@@ -71,7 +71,7 @@ class Resultado:
     texto_limpio: str  # el mensaje sin caracteres invisibles: lo que ve el modelo
     invisibles_eliminados: int = 0
     hallazgos: tuple[Hallazgo, ...] = ()
-    variante: str = ""  # todo lo decodificado, junto: se inspecciona como un texto mas
+    variante: str = ""  # lo decodificado, junto: se inspecciona como un texto mas
     truncada: bool = False  # se alcanzo un limite y quedo algo sin decodificar
     error: bool = False  # el analisis fallo: el mensaje sigue sin normalizar
 

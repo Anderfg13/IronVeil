@@ -98,10 +98,9 @@ def ataques_validos(frases: Iterable[str]) -> tuple[list[str], list[str]]:
 
     Solo las primeras sirven de base: miden el hueco de la ofuscacion, no el del filtro.
     """
-    validas: list[str] = []
-    ignoradas: list[str] = []
-    for frase in frases:
-        (validas if el_filtro_bloquea(frase) else ignoradas).append(frase)
+    veredictos = [(frase, el_filtro_bloquea(frase)) for frase in frases]
+    validas = [frase for frase, bloquea in veredictos if bloquea]
+    ignoradas = [frase for frase, bloquea in veredictos if not bloquea]
     return validas, ignoradas
 
 

@@ -11,7 +11,8 @@
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 main{max-width:1100px;margin:0 auto;padding:24px 16px 48px}
 h1{font-size:22px;margin:0 0 4px}p.lead{color:var(--mut);margin:0 0 18px}
-.barra{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
+.barra{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 14px;padding:0;border:0;min-width:0}
+.solo-lectores{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .barra span.et{color:var(--mut);font-size:12px;letter-spacing:.1em;text-transform:uppercase;margin-right:4px}
 button{font:inherit;background:var(--panel);color:var(--txt);border:1px solid var(--borde);border-radius:8px;padding:6px 12px;cursor:pointer}
 button[aria-pressed=true]{border-color:var(--cian);box-shadow:0 0 0 1px var(--cian) inset}
@@ -28,7 +29,7 @@ button:focus-visible{outline:2px solid var(--cian);outline-offset:2px}
 .pista{position:relative;height:6px;background:var(--borde);border-radius:3px;margin:10px 0}
 .paquete{position:absolute;top:50%;left:0;width:16px;height:16px;border-radius:50%;margin:-8px 0 0 -8px;background:var(--verde);box-shadow:0 0 14px var(--verde);opacity:0}
 .paquete.ataque{background:var(--rojo);box-shadow:0 0 14px var(--rojo)}
-#veredicto{margin-top:12px;padding:10px 12px;border-radius:10px;border:1px solid var(--borde);min-height:44px}
+#veredicto{display:block;margin-top:12px;padding:10px 12px;border-radius:10px;border:1px solid var(--borde);min-height:44px}
 #veredicto.ok{border-color:var(--verde)}#veredicto.no{border-color:var(--rojo)}#veredicto.cola{border-color:var(--ambar)}
 #detalle{margin-top:14px;background:var(--panel);border:1px solid var(--borde);border-radius:12px;padding:12px 14px}
 #detalle h2{font-size:14px;margin:0 0 4px}.aviso{color:var(--mut);font-size:12px;margin-top:16px}
@@ -41,17 +42,19 @@ a{color:var(--cian)}
 <h1>IronVeil · pipeline interactivo</h1>
 <p class="lead">Elige una configuración y envía una petición. Es una <b>simulación didáctica</b> de la cadena de mecanismos de <code>proxy/main.py</code>; las cifras reales de ASR están en <code>analisis/resultados_finales.md</code>.</p>
 
-<div class="barra" role="group" aria-label="Configuración">
+<fieldset class="barra">
+  <legend class="solo-lectores">Configuración</legend>
   <span class="et">Configuración</span><span id="cfgs"></span>
-</div>
-<div class="barra" role="group" aria-label="Tipo de petición">
+</fieldset>
+<fieldset class="barra">
+  <legend class="solo-lectores">Tipo de petición</legend>
   <span class="et">Petición</span>
   <button class="accion" data-tipo="legitima">▶ Legítima</button>
   <button class="ataque" data-tipo="V2">▶ V2 extracción de prompt</button>
   <button class="ataque" data-tipo="V3">▶ V3 inyección</button>
   <button class="ataque" data-tipo="V4">▶ V4 credencial cruzada</button>
   <button class="ataque" data-tipo="V5">▶ V5 ráfaga</button>
-</div>
+</fieldset>
 
 <section class="escena" aria-label="Pipeline">
   <div class="fila"><div class="nodo" style="--c:var(--cian);flex:0 0 150px" id="n-cliente"><b>Cliente</b><small>POST /chat</small></div></div>
@@ -62,7 +65,7 @@ a{color:var(--cian)}
   <div class="sep">SALIDA · la misma cadena sobre la respuesta</div>
   <div class="fila" id="salida"></div>
   <div class="pista" aria-hidden="true"><div class="paquete" id="paquete"></div></div>
-  <div id="veredicto" role="status" aria-live="polite">Elige una petición para empezar.</div>
+  <output id="veredicto" aria-live="polite">Elige una petición para empezar.</output>
 </section>
 
 <div id="detalle"><h2>Detalle</h2><span id="detalle-txt">Haz clic en cualquier pieza para ver qué hace y dónde está en el código.</span></div>
@@ -104,7 +107,14 @@ function construir(){
   ollama.innerHTML = "<b>Ollama</b><small>soporte · rrhh · red interna :11434</small>";
   ollama.onclick = () => $("detalle-txt").textContent = "Ollama: backend con los modelos soporte y rrhh (cada uno con un canario ficticio en su system prompt). Nunca se publica al host.";
   $("medio").appendChild(ollama);
-  ["filtrado","clasificacion"].forEach(id => { const n = nodo(id," (salida)"); n.dataset.salida="1"; if (id==="clasificacion") n.querySelector("small").textContent="Llama Guard 3 (Ollama)"; $("salida").appendChild(n); });
+  ["filtrado","clasificacion"].forEach(id => {
+    const n = nodo(id, " (salida)");
+    n.dataset.salida = "1";
+    if (id === "clasificacion") {
+      n.querySelector("small").textContent = "Llama Guard 3 (Ollama)";
+    }
+    $("salida").appendChild(n);
+  });
   const ap = $("n-aprobacion"), m = MECANISMOS.aprobacion_humana;
   ap.className = "nodo"; ap.style.setProperty("--c", m.c);
   ap.innerHTML = `<b>5 · ${m.t}</b><small>${m.s}</small>`;
@@ -124,38 +134,69 @@ function limpiar(){ document.querySelectorAll(".nodo").forEach(n => n.classList.
 const dormir = ms => new Promise(r => setTimeout(r, matchMedia("(prefers-reduced-motion:reduce)").matches ? 0 : ms));
 async function iluminar(el, ms=550){ limpiar(); el.classList.add("activo-ahora"); await dormir(ms); }
 function veredicto(clase, txt){ const v = $("veredicto"); v.className = clase; v.textContent = txt; }
-async function enviar(tipo){
-  if (ocupado) return; ocupado = true; limpiar();
-  const p = $("paquete"); p.className = "paquete" + (tipo === "legitima" ? "" : " ataque"); p.style.opacity = 1;
-  const mueve = f => { p.style.transition = "left .5s"; p.style.left = f + "%"; };
-  p.style.transition = "none"; p.style.left = "0%";
-  await iluminar($("n-cliente"));
+function nuevoPaquete(tipo){
+  const p = $("paquete");
+  p.className = "paquete" + (tipo === "legitima" ? "" : " ataque");
+  p.style.opacity = 1;
+  p.style.transition = "none";
+  p.style.left = "0%";
+  return p;
+}
+function mover(p, porcentaje){ p.style.transition = "left .5s"; p.style.left = porcentaje + "%"; }
+async function recorrerEntrada(p, tipo){
   const quien = DETECTA[tipo] || [];
-  let bloqueo = null, i = 0;
+  let i = 0;
   for (const id of ENTRADA_CADENA){
-    const el = document.querySelector(`#entrada [data-id="${id}"]`); mueve(10 + i++ * 12);
+    const el = document.querySelector(`#entrada [data-id="${id}"]`);
+    mover(p, 10 + i++ * 12);
     await iluminar(el);
-    if (activos().includes(id) && quien.includes(id)) { bloqueo = id; el.classList.add("bloquea"); break; }
+    if (activos().includes(id) && quien.includes(id)) { el.classList.add("bloquea"); return id; }
   }
-  const aprob = activos().includes("aprobacion_humana");
-  if (tipo === "V5" && aprob){ await iluminar($("n-aprobacion"), 700);
-    veredicto("cola", "429 · el límite de peticiones/minuto se excedió: la ráfaga se ENCOLA para revisión humana (encolar no es rechazar: es una demora, no una caída)."); return fin(p); }
-  if (bloqueo){
-    await dormir(350);
-    if (aprob){ await iluminar($("n-aprobacion"), 700); veredicto("cola", `429 · ${MECANISMOS[bloqueo].t} lo marcó, pero la aprobación humana lo ENCOLA para que una persona decida.`); }
-    else veredicto("no", `400 · BLOQUEADO por ${MECANISMOS[bloqueo].t} (mecanismo_que_bloqueo = "${bloqueo}"). La cadena se corta: ni siquiera se llama a Ollama.`);
-    return fin(p);
-  }
-  mueve(52); await iluminar(document.querySelector('#medio [data-id="delimitacion"]'));
-  mueve(70); await iluminar($("n-ollama"), 700);
-  let sbloq = null; mueve(82);
+  return null;
+}
+async function recorrerSalida(p, tipo){
+  mover(p, 82);
   for (const id of ["filtrado","clasificacion"]){
-    const el = document.querySelector(`#salida [data-id="${id}"]`); mueve(id === "filtrado" ? 82 : 92); await iluminar(el);
-    if (tipo === "V2" && activos().includes(id)){ sbloq = id; el.classList.add("bloquea"); break; }
+    const el = document.querySelector(`#salida [data-id="${id}"]`);
+    mover(p, id === "filtrado" ? 82 : 92);
+    await iluminar(el);
+    if (tipo === "V2" && activos().includes(id)) { el.classList.add("bloquea"); return id; }
   }
-  if (sbloq) veredicto("ok", `200 · la respuesta se REDACTÓ/retuvo en la salida por ${MECANISMOS[sbloq].t}: el canario no sale.`);
-  else if (tipo === "legitima") veredicto("ok", "200 · permitido_normal: la respuesta llega intacta (con las 5 banderas activas hay que vigilar los falsos positivos).");
-  else veredicto("no", `200 · exitoso_para_atacante: ninguna defensa activa detuvo ${tipo} en ${cfg}. Esto es lo que mide el ASR.`);
+  return null;
+}
+async function encolarRafaga(){
+  await iluminar($("n-aprobacion"), 700);
+  veredicto("cola", "429 · el límite de peticiones/minuto se excedió: la ráfaga se ENCOLA para revisión humana (encolar no es rechazar: es una demora, no una caída).");
+}
+async function resolverBloqueoDeEntrada(bloqueo, aprob){
+  await dormir(350);
+  if (!aprob) {
+    veredicto("no", `400 · BLOQUEADO por ${MECANISMOS[bloqueo].t} (mecanismo_que_bloqueo = "${bloqueo}"). La cadena se corta: ni siquiera se llama a Ollama.`);
+    return;
+  }
+  await iluminar($("n-aprobacion"), 700);
+  veredicto("cola", `429 · ${MECANISMOS[bloqueo].t} lo marcó, pero la aprobación humana lo ENCOLA para que una persona decida.`);
+}
+function veredictoFinal(tipo, sbloq){
+  if (sbloq) { veredicto("ok", `200 · la respuesta se REDACTÓ/retuvo en la salida por ${MECANISMOS[sbloq].t}: el canario no sale.`); return; }
+  if (tipo === "legitima") { veredicto("ok", "200 · permitido_normal: la respuesta llega intacta (con las 5 banderas activas hay que vigilar los falsos positivos)."); return; }
+  veredicto("no", `200 · exitoso_para_atacante: ninguna defensa activa detuvo ${tipo} en ${cfg}. Esto es lo que mide el ASR.`);
+}
+async function enviar(tipo){
+  if (ocupado) { return; }
+  ocupado = true;
+  limpiar();
+  const p = nuevoPaquete(tipo);
+  await iluminar($("n-cliente"));
+  const aprob = activos().includes("aprobacion_humana");
+  if (tipo === "V5" && aprob) { await encolarRafaga(); return fin(p); }
+  const bloqueo = await recorrerEntrada(p, tipo);
+  if (bloqueo) { await resolverBloqueoDeEntrada(bloqueo, aprob); return fin(p); }
+  mover(p, 52);
+  await iluminar(document.querySelector('#medio [data-id="delimitacion"]'));
+  mover(p, 70);
+  await iluminar($("n-ollama"), 700);
+  veredictoFinal(tipo, await recorrerSalida(p, tipo));
   fin(p);
 }
 function fin(p){ setTimeout(()=>{ p.style.opacity = 0; ocupado = false; }, 600); }

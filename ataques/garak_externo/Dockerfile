@@ -11,10 +11,10 @@ FROM python:3.12-slim
 
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 
-RUN pip install --only-binary :all: --extra-index-url https://download.pytorch.org/whl/cpu garak==0.17.0
-
-# Usuario sin privilegios; el HOME es donde garak deja su configuracion y cache.
-RUN useradd --create-home --uid 1000 --shell /usr/sbin/nologin garak
+# Un solo RUN: garak y el usuario sin privilegios (el HOME es donde garak deja su
+# configuracion y cache).
+RUN pip install --only-binary :all: --extra-index-url https://download.pytorch.org/whl/cpu garak==0.17.0 \
+    && useradd --create-home --uid 1000 --shell /usr/sbin/nologin garak
 USER garak
 WORKDIR /home/garak
 

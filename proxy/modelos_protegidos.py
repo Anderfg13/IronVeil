@@ -93,7 +93,7 @@ _CAMPOS = frozenset(
     }
 )
 _NOMBRE_VALIDO = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
-_VARIABLE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+_VARIABLE = re.compile(r"\$\{([A-Za-z_]\w*)\}", re.ASCII)
 
 
 @dataclass(frozen=True)

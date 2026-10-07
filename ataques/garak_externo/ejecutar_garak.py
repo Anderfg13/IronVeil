@@ -191,7 +191,7 @@ def esperar_proxy() -> None:
             ) as respuesta:
                 if respuesta.status == 200:
                     return
-        except (urllib.error.URLError, OSError):
+        except OSError:  # URLError es un OSError
             pass
         time.sleep(3)
     raise SystemExit(

@@ -170,8 +170,10 @@ def test_la_fabrica_syslog_usa_los_puertos_por_defecto() -> None:
 
 @pytest.mark.parametrize("destino", ["", "host con espacios", "h:99999", "a@b:1", "/x"])
 def test_la_fabrica_syslog_rechaza_hosts_invalidos(destino: str) -> None:
+    fabrica = fabrica_syslog("tcp")
+    contexto = ContextoConector()
     with pytest.raises(ErrorSIEM):
-        fabrica_syslog("tcp")(destino, ContextoConector())
+        fabrica(destino, contexto)
 
 
 def test_syslog_tls_con_una_ca_inexistente_falla_sin_desactivar_la_verificacion() -> (
@@ -179,8 +181,9 @@ def test_syslog_tls_con_una_ca_inexistente_falla_sin_desactivar_la_verificacion(
 ):
     contexto = ContextoConector(entorno={"SIEM_CA_ARCHIVO": "/no/existe.pem"})
 
+    fabrica = fabrica_syslog("tls")
     with pytest.raises(ErrorSIEM, match="SIEM_CA_ARCHIVO"):
-        fabrica_syslog("tls")("127.0.0.1", contexto)
+        fabrica("127.0.0.1", contexto)
 
 
 # --- HTTPS: servidor falso en memoria -----------------------------------------
@@ -240,8 +243,9 @@ def test_https_generico_envia_con_portador_si_hay_token(servidor: _Servidor) -> 
 
 
 def test_https_generico_no_acepta_credenciales_dentro_de_la_url() -> None:
+    contexto = _contexto({})
     with pytest.raises(ErrorSIEM, match="SIEM_HTTPS_TOKEN"):
-        fabrica_https("usuario:clave@siem.local/x", _contexto({}))
+        fabrica_https("usuario:clave@siem.local/x", contexto)
 
 
 def test_splunk_usa_el_endpoint_raw_con_token_y_canal(servidor: _Servidor) -> None:
@@ -264,8 +268,9 @@ def test_splunk_usa_el_endpoint_raw_con_token_y_canal(servidor: _Servidor) -> No
 
 
 def test_splunk_sin_token_dice_que_variable_falta() -> None:
+    contexto = _contexto({})
     with pytest.raises(ErrorSIEM, match="SIEM_SPLUNK_TOKEN"):
-        fabrica_splunk("splunk.local", _contexto({}))
+        fabrica_splunk("splunk.local", contexto)
 
 
 def test_elastic_escribe_un_documento_por_evento_con_clave_de_api(
@@ -303,13 +308,15 @@ def test_elastic_acepta_usuario_y_clave_como_autenticacion_basica(
     "destino", ["es.local", "es.local/", "es.local/MAYUSCULAS", "es.local/../x"]
 )
 def test_elastic_exige_un_indice_valido(destino: str) -> None:
+    contexto = _contexto({"SIEM_ELASTIC_API_KEY": CLAVE_DE_PRUEBA})
     with pytest.raises(ErrorSIEM, match="indice"):
-        fabrica_elastic(destino, _contexto({"SIEM_ELASTIC_API_KEY": CLAVE_DE_PRUEBA}))
+        fabrica_elastic(destino, contexto)
 
 
 def test_elastic_sin_credenciales_se_rechaza() -> None:
+    contexto = _contexto({})
     with pytest.raises(ErrorSIEM, match="credenciales"):
-        fabrica_elastic("es.local/idx", _contexto({}))
+        fabrica_elastic("es.local/idx", contexto)
 
 
 @pytest.mark.parametrize(
@@ -488,23 +495,23 @@ def test_azure_un_token_rechazado_no_se_reintenta_ni_muestra_el_secreto() -> Non
     ],
 )
 def test_azure_exige_host_dcr_y_stream(destino: str) -> None:
+    contexto = _contexto(ENTORNO_AZURE)
     with pytest.raises(ErrorSIEM):
-        fabrica_azure(destino, _contexto(ENTORNO_AZURE))
+        fabrica_azure(destino, contexto)
 
 
 def test_azure_dice_que_variables_faltan() -> None:
+    contexto = _contexto({"SIEM_AZURE_TENANT_ID": "t", "SIEM_AZURE_CLIENT_ID": "c"})
     with pytest.raises(ErrorSIEM, match="SIEM_AZURE_CLIENT_SECRET"):
-        fabrica_azure(
-            "dce.local/dcr/s",
-            _contexto({"SIEM_AZURE_TENANT_ID": "t", "SIEM_AZURE_CLIENT_ID": "c"}),
-        )
+        fabrica_azure("dce.local/dcr/s", contexto)
 
 
 def test_azure_la_autoridad_debe_ser_https() -> None:
     entorno = {**ENTORNO_AZURE, "SIEM_AZURE_AUTORIDAD": "http://login.local"}
 
+    contexto = _contexto(entorno)
     with pytest.raises(ErrorSIEM, match="https"):
-        fabrica_azure("dce.local/dcr/s", _contexto(entorno))
+        fabrica_azure("dce.local/dcr/s", contexto)
 
 
 # --- CloudWatch Logs ----------------------------------------------------------
@@ -583,13 +590,15 @@ def test_cloudwatch_manda_el_token_de_sesion_si_las_claves_son_temporales(
     ],
 )
 def test_cloudwatch_valida_region_grupo_y_flujo(destino: str) -> None:
+    contexto = _contexto(ENTORNO_AWS)
     with pytest.raises(ErrorSIEM):
-        fabrica_cloudwatch(destino, _contexto(ENTORNO_AWS))
+        fabrica_cloudwatch(destino, contexto)
 
 
 def test_cloudwatch_dice_que_variables_faltan() -> None:
+    contexto = _contexto({"AWS_ACCESS_KEY_ID": "k"})
     with pytest.raises(ErrorSIEM, match="AWS_SECRET_ACCESS_KEY"):
-        fabrica_cloudwatch("us-east-1/g/f", _contexto({"AWS_ACCESS_KEY_ID": "k"}))
+        fabrica_cloudwatch("us-east-1/g/f", contexto)
 
 
 def test_cloudwatch_un_acceso_denegado_no_se_reintenta(servidor: _Servidor) -> None:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import base64
-import binascii
 import re
 
 from proxy.normalizacion.dominio import es_imprimible
@@ -28,7 +27,7 @@ def _decodificar_tramo(tramo: str) -> str | None:
     try:
         crudo = base64.b64decode(estandar + relleno, validate=True)
         texto = crudo.decode("utf-8")
-    except (binascii.Error, ValueError):  # UnicodeDecodeError es un ValueError
+    except ValueError:  # binascii.Error y UnicodeDecodeError son ValueError
         return None
     return texto if es_imprimible(texto) else None
 
