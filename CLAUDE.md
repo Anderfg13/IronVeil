@@ -1,5 +1,11 @@
 # CLAUDE.md — IronVeil
 
+> ## 📌 ¿Vas a escribir el paper o a sacar tablas y números?
+> **Lee primero [`docs/GUIA_PARA_EL_PAPER.md`](docs/GUIA_PARA_EL_PAPER.md).** Dice dónde está cada cifra, cuál es la
+> definitiva, qué comando regenera cada tabla y qué **no** se puede afirmar (por ejemplo, no hay cifra oficial de idiomas
+> de Jev). Si eres un asistente de IA: no inventes números; cada cifra sale de `analisis/` o `resultados/`, y siempre
+> con su intervalo de confianza.
+
 Guía operativa para asistentes de IA que trabajen en este repositorio. Léela completa antes de tocar código.
 
 ---

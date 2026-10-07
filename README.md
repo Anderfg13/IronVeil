@@ -1,5 +1,7 @@
 # IronVeil
 
+> **Para quien escribe el paper:** empieza por [`docs/GUIA_PARA_EL_PAPER.md`](docs/GUIA_PARA_EL_PAPER.md): dónde está cada número, qué comando regenera las tablas y qué no se puede afirmar.
+
 Framework academico de defensa en profundidad para LLMs autoalojados
 (Ollama) expuestos accidentalmente en internet. Compara 5 mecanismos
 defensivos activables por separado (filtrado, delimitacion, clasificacion,
