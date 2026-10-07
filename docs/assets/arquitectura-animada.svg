@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1110 640" width="1110" height="640" role="img" aria-labelledby="t d">
 <title id="t">Arquitectura de IronVeil animada</title>
-<desc id="d">Una petición legítima atraviesa filtrado, clasificación, mínimo privilegio y delimitación, llega a Ollama y su respuesta vuelve por filtrado y clasificación de salida. Después un ataque es detenido por la clasificación y la aprobación humana lo encola con un 429. Por último, el mismo mensaje vuelve a llegar y la memoria de decisiones, que recuerda el rechazo de la persona, lo rechaza al instante. El modelo protegido y los clasificadores pueden ser locales o de frontera.</desc>
+<desc id="d">Una petición legítima atraviesa filtrado, clasificación, mínimo privilegio y delimitación, llega a Ollama y su respuesta vuelve por filtrado y clasificación de salida. Después un ataque es detenido por la clasificación y la aprobación humana lo encola con un 429. Cada evento sale también hacia uno o varios SIEM, y los de ataque generan alerta. Por último, el mismo mensaje vuelve a llegar y la memoria de decisiones, que recuerda el rechazo de la persona, lo rechaza al instante. El modelo protegido y los clasificadores pueden ser locales o de frontera.</desc>
 <style>
  text{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"JetBrains Mono",monospace}
  .t{font-size:14px;font-weight:700;fill:#f8fafc} .s{font-size:10.5px;fill:#94a3b8} .num{font-size:12px;font-weight:700}
@@ -123,5 +123,40 @@
  <rect x="330" y="316" width="400" height="24" rx="6" fill="#0c4a6e" stroke="#38bdf8"/>
  <text x="530" y="332" text-anchor="middle" class="s" fill="#bae6fd">ya rechazado por una persona → 400 al instante</text>
  <animate attributeName="opacity" dur="30s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0.0000;0.8000;0.8100;0.9600;0.9700;1.0000"/>
+</g>
+
+<!-- SIEM: uno o varios destinos; todos los eventos salen hacia alli, los de ataque son los que alertan -->
+<path d="M890,526 L935,526" stroke="#475569" stroke-width="1.6" marker-end="url(#p)" fill="none"/>
+<text x="912" y="518" text-anchor="middle" class="s" font-size="8.5">eventos</text>
+<g>
+ <rect x="945" y="490" width="160" height="92" rx="10" fill="#0f172a" stroke="#475569" stroke-dasharray="3 4"/>
+ <rect x="940" y="485" width="160" height="92" rx="10" fill="#0f172a" stroke="#64748b" stroke-dasharray="3 4"/>
+ <rect x="935" y="480" width="160" height="92" rx="10" fill="#0f172a" stroke="#f472b6" stroke-width="1.6"/>
+ <text x="1015" y="500" text-anchor="middle" class="t" font-size="12">SIEM (uno o varios)</text>
+ <text x="1015" y="518" text-anchor="middle" class="s" font-size="9.5">Wazuh · Splunk · Elastic</text>
+ <text x="1015" y="532" text-anchor="middle" class="s" font-size="9.5">Azure · AWS · QRadar…</text>
+ <text x="1015" y="548" text-anchor="middle" class="s" font-size="9.5" fill="#f9a8d4">JSON · CEF · LEEF · ECS</text>
+ <text x="1015" y="563" text-anchor="middle" class="s" font-size="9.5">syslog · HTTPS · TLS</text>
+</g>
+<rect x="935" y="480" width="160" height="92" rx="10" fill="#34d399" opacity="0"><animate attributeName="opacity" dur="30s" repeatCount="indefinite" values="0;0;0.4;0;0" keyTimes="0.0000;0.42;0.432;0.45;1.0000"/></rect>
+<rect x="935" y="480" width="160" height="92" rx="10" fill="#fb7185" opacity="0"><animate attributeName="opacity" dur="30s" repeatCount="indefinite" values="0;0;0.4;0;0" keyTimes="0.0000;0.69;0.702;0.72;1.0000"/></rect>
+<rect x="935" y="480" width="160" height="92" rx="10" fill="#fb7185" opacity="0"><animate attributeName="opacity" dur="30s" repeatCount="indefinite" values="0;0;0.4;0;0" keyTimes="0.0000;0.98;0.992;1.0;1.0000"/></rect>
+<g opacity="0"><text x="1015" y="596" text-anchor="middle" class="s" font-size="9" fill="#34d399">evento normal → SIEM</text><animate attributeName="opacity" dur="30s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0.0000;0.42;0.430;0.445;0.455;1.0000"/></g>
+<g opacity="0"><text x="1015" y="596" text-anchor="middle" class="s" font-size="9" fill="#fb7185">ataque → alerta en el SIEM</text><animate attributeName="opacity" dur="30s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0.0000;0.69;0.700;0.715;0.725;1.0000"/></g>
+<g opacity="0"><text x="1015" y="596" text-anchor="middle" class="s" font-size="9" fill="#fb7185">ataque → alerta en el SIEM</text><animate attributeName="opacity" dur="30s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0.0000;0.975;0.985;0.990;1.0;1.0000"/></g>
+<g opacity="0">
+ <circle r="5" fill="#34d399" filter="url(#g)" opacity=".8"/><circle r="3.5" fill="#34d399"/>
+ <animateMotion dur="30s" repeatCount="indefinite" path="M890,526 L935,526" keyPoints="0;0;1;1" keyTimes="0;0.38;0.42;1" calcMode="linear"/>
+ <animate attributeName="opacity" dur="30s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0.0000;0.38;0.381;0.419;0.42;1.0000"/>
+</g>
+<g opacity="0">
+ <circle r="5" fill="#fb7185" filter="url(#g)" opacity=".8"/><circle r="3.5" fill="#fb7185"/>
+ <animateMotion dur="30s" repeatCount="indefinite" path="M890,526 L935,526" keyPoints="0;0;1;1" keyTimes="0;0.65;0.69;1" calcMode="linear"/>
+ <animate attributeName="opacity" dur="30s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0.0000;0.65;0.651;0.689;0.69;1.0000"/>
+</g>
+<g opacity="0">
+ <circle r="5" fill="#fb7185" filter="url(#g)" opacity=".8"/><circle r="3.5" fill="#fb7185"/>
+ <animateMotion dur="30s" repeatCount="indefinite" path="M890,526 L935,526" keyPoints="0;0;1;1" keyTimes="0;0.94;0.98;1" calcMode="linear"/>
+ <animate attributeName="opacity" dur="30s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0.0000;0.94;0.941;0.979;0.98;1.0000"/>
 </g>
 </svg>
