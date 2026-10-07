@@ -77,6 +77,7 @@ def construir_notebook() -> dict[str, Any]:
         _md("## 1. Verificar GPU y clonar el repo (rama `develop`)"),
         _codigo("""
 !nvidia-smi --query-gpu=name,memory.total --format=csv
+!python --version
 %cd /content
 !test -d IronVeil || git clone https://github.com/Anderfg13/IronVeil.git
 %cd /content/IronVeil
@@ -134,7 +135,26 @@ print("Variables listas (secretos no se imprimen).")
 !ollama list
 """),
         _md("## 6. Dependencias del proxy"),
-        _codigo("!pip install -q -r proxy/requirements.txt"),
+        _md("""
+`proxy/requirements.txt` lleva hashes de wheels de **Python 3.12** (la imagen de Docker). Si este Colab usa otra versión (p. ej. 3.13), `pip` aborta la instalación entera; entonces se usa `proxy/requirements.in` (las mismas versiones exactas, sin hashes). Después se **comprueba** que todo importa: `!pip` no lanza error aunque falle, y sin esta comprobación el fallo aparecería recién al arrancar el proxy.
+"""),
+        _codigo("""
+import subprocess, sys
+
+r = subprocess.run(["pip", "install", "-q", "-r", "proxy/requirements.txt"],
+                   cwd="/content/IronVeil", capture_output=True, text=True)
+if r.returncode != 0:
+    print("requirements.txt (hashes de Python 3.12) no aplica a este Colab; uso requirements.in")
+    print(r.stderr[-500:])
+    r = subprocess.run(["pip", "install", "-q", "-r", "proxy/requirements.in"],
+                       cwd="/content/IronVeil", capture_output=True, text=True)
+    print(r.stderr[-500:])
+comprobacion = subprocess.run(
+    [sys.executable, "-c", "import fastapi, uvicorn, httpx, yaml, transformers, torch; print('dependencias del proxy: OK')"],
+    capture_output=True, text=True)
+print(comprobacion.stdout + comprobacion.stderr[-800:])
+assert comprobacion.returncode == 0, "Faltan dependencias del proxy: revisa la salida de arriba antes de seguir."
+"""),
         _md("""
 ## 7. Instalar Garak en un entorno aparte
 
@@ -152,6 +172,7 @@ Garak trae muchas dependencias que pueden chocar con las de Colab, así que va e
 
 Garak llama a `chat(prompt)` por cada ataque y esto lo manda a `POST /chat`. Un ataque **bloqueado** por el proxy (HTTP 400) devuelve un texto fijo de bloqueo y cuenta como ataque que **no** funcionó (si devolviera `None`, Garak lo descartaría y el bloqueo desaparecería del recuento). Es el mismo archivo `ataques/garak_externo/ironveil_garak.py` del repo.
 """),
+        _codigo("!mkdir -p /content/garak_externo"),
         _codigo("%%writefile /content/garak_externo/ironveil_garak.py\n" + puente),
         _md("""
 ## 9. Configuración de la corrida

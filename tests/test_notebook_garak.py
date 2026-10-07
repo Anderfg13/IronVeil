@@ -137,3 +137,33 @@ def test_el_zip_no_incluye_la_prueba_de_humo_y_si_las_configuraciones(
 
     assert "for config in CONFIGS_A_CORRER" in celda
     assert "humo" not in celda.replace('el "humo" no se empaqueta', "")
+
+
+def test_la_carpeta_del_puente_se_crea_antes_de_escribirlo(
+    notebook: dict[str, Any],
+) -> None:
+    """`%%writefile` no crea carpetas: sin el mkdir falla con FileNotFoundError."""
+    codigo = _codigo(notebook)
+    mkdir = next(
+        i for i, c in enumerate(codigo) if "mkdir -p /content/garak_externo" in c
+    )
+    escritura = next(i for i, c in enumerate(codigo) if c.startswith("%%writefile"))
+
+    assert mkdir < escritura
+
+
+def test_las_dependencias_del_proxy_no_dependen_de_la_version_de_python_y_se_verifican(
+    notebook: dict[str, Any],
+) -> None:
+    celda = next(c for c in _codigo(notebook) if "proxy/requirements.txt" in c)
+
+    assert (
+        "proxy/requirements.in" in celda
+    )  # alternativa si los hashes de 3.12 no aplican
+    assert "assert comprobacion.returncode == 0" in celda
+
+
+def test_la_primera_celda_muestra_la_version_de_python(
+    notebook: dict[str, Any],
+) -> None:
+    assert "!python --version" in _codigo(notebook)[0]
