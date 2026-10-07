@@ -214,9 +214,13 @@ Esta es la estructura **objetivo**. Lo marcado `[ya existe]` está en el repo ho
 /ollama/modelfiles/     Modelfile.soporte.template, Modelfile.rrhh.template [ya existen],
                         Modelfile.rrhh_agente.template (extension, herramientas simuladas)
 /tests/                 pruebas unitarias y de integración
-/ataques/               variantes_ataque.md, vector4_*.py, vector5_*.py, promptfooconfig.yaml
+/ataques/               variantes_ataque.md, vector4_*.py, vector5_*.py, promptfooconfig.yaml,
+                        garak_externo/ (EXTENSION: validacion externa con Garak contra una
+                        segunda instancia del proxy, via IRONVEIL_CONFIG e IRONVEIL_RESULTADOS,
+                        sin tocar el dataset; docs/GARAK.md)
 /resultados/            resultados_template.csv, /YYYY-MM-DD/ logs crudos, /graficas/
 /analisis/              consolidar.py, validar_dataset.py, análisis en Markdown
+                        (resumen_garak.py: resumen de la extension Garak, aparte del nucleo)
                         (extension_agencia_excesiva.py: resumen de la extensión V7; sus
                         filas del CSV llevan es_extension=True y cargar_resultados() las
                         excluye del núcleo)

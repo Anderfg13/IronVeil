@@ -21,3 +21,9 @@ extend-exclude = ["*.ipynb"]
 #   `raise`, en contra de la convencion de CLAUDE.md de fallar ruidosamente
 #   con mensajes descriptivos directos.
 select = ["E", "F", "B", "I", "UP", "TRY004"]
+
+# El generador del notebook de Colab (ataques/garak_externo/generar_notebook.py)
+# lleva el TEXTO de las celdas (parrafos de markdown y comandos de shell): partirlo a 88
+# columnas lo hace ilegible y no cambia lo que muestra el notebook.
+[lint.per-file-ignores]
+"ataques/garak_externo/generar_notebook.py" = ["E501"]

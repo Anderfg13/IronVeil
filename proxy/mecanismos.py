@@ -29,7 +29,22 @@ from proxy.adaptador_clasificador import DetalleClasificacion, ResultadoBackend
 
 logger = logging.getLogger(__name__)
 
-CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
+
+def ruta_configurable(variable: str, por_defecto: Path) -> Path:
+    """`por_defecto`, o la ruta de la variable de entorno `variable` si esta definida.
+
+    Permite correr una SEGUNDA instancia del proxy (otra configuracion C0..C6 y otro
+    directorio de resultados) sin tocar la que se esta usando ni su dataset: lo que
+    hacen las pruebas con herramientas externas (ataques/garak/). Sin la variable, el
+    comportamiento es exactamente el de siempre.
+    """
+    valor = os.environ.get(variable, "").strip()
+    return Path(valor) if valor else por_defecto
+
+
+CONFIG_PATH = ruta_configurable(
+    "IRONVEIL_CONFIG", Path(__file__).resolve().parent.parent / "config.yaml"
+)
 
 FLAGS_REQUERIDAS: tuple[str, ...] = (
     "filtrado",

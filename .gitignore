@@ -12,3 +12,6 @@ credenciales-demo.local.txt
 
 # Memoria de decisiones humanas (datos locales; docs/MEMORIA_DE_DECISIONES.md)
 memoria/
+
+# Cache de Hugging Face de la segunda instancia del proxy para Garak (cientos de MB, no es evidencia)
+resultados/garak/**/hf_cache/

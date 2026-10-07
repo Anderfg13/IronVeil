@@ -59,7 +59,9 @@ OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
 # vivo con pausas.
 KEEP_ALIVE_OLLAMA: str = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
 REQUEST_TIMEOUT: float = float(os.getenv("PROXY_REQUEST_TIMEOUT", "120"))
-RESULTADOS_DIR: Path = Path(__file__).resolve().parent.parent / "resultados"
+RESULTADOS_DIR: Path = mecanismos.ruta_configurable(
+    "IRONVEIL_RESULTADOS", Path(__file__).resolve().parent.parent / "resultados"
+)
 
 # Mensajes genericos hacia el cliente cuando la cadena bloquea. Genericos a
 # proposito: no revelan que mecanismo actuo ni por que (esa informacion queda
