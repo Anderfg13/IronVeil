@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1110 640" width="1110" height="640" role="img" aria-labelledby="t d">
+<title id="t">Arquitectura de IronVeil animada</title>
+<desc id="d">Una petición legítima atraviesa filtrado, clasificación, mínimo privilegio y delimitación, llega a Ollama y su respuesta vuelve por filtrado y clasificación de salida. Después un ataque es detenido por la clasificación y la aprobación humana lo encola con un 429.</desc>
+<style>
+ text{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"JetBrains Mono",monospace}
+ .t{font-size:14px;font-weight:700;fill:#f8fafc} .s{font-size:10.5px;fill:#94a3b8} .num{font-size:12px;font-weight:700}
+ .h{font-size:12px;fill:#94a3b8;letter-spacing:.12em} .big{font-size:20px;font-weight:700;fill:#f8fafc}
+ .flujo{stroke-dasharray:6 8;animation:marcha 1.2s linear infinite}
+ @keyframes marcha{to{stroke-dashoffset:-14}}
+ @media (prefers-reduced-motion:reduce){.flujo{animation:none}}
+</style>
+<defs>
+ <marker id="p" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#475569"/></marker>
+ <filter id="g" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3"/></filter>
+</defs>
+<rect width="1110" height="640" rx="16" fill="#020617"/>
+<text x="30" y="34" class="big">IronVeil · pipeline de defensa en profundidad</text>
+<text x="30" y="54" class="s">mismo código, 7 configuraciones: solo cambia config.yaml</text>
+
+<!-- leyenda -->
+<circle cx="760" cy="30" r="6" fill="#34d399"/><text x="772" y="34" class="s">petición legítima</text>
+<circle cx="900" cy="30" r="6" fill="#fb7185"/><text x="912" y="34" class="s">ataque</text>
+
+<!-- Proxy -->
+<rect x="210" y="70" width="700" height="520" rx="16" fill="#0b1220" stroke="#334155" stroke-dasharray="5 5"/>
+<text x="228" y="90" class="h">PROXY FASTAPI · :8000 (único puerto publicado)</text>
+<text x="240" y="117" class="h" font-size="10">ENTRADA</text>
+
+<!-- Cliente -->
+<rect x="30" y="265" width="140" height="70" rx="10" fill="#0f172a" stroke="#22d3ee" stroke-width="1.6"/>
+<text x="100" y="296" text-anchor="middle" class="t">Cliente</text><text x="100" y="316" text-anchor="middle" class="s">POST /chat</text>
+
+<!-- Ollama -->
+<rect x="950" y="70" width="140" height="130" rx="12" fill="#0f172a" stroke="#a78bfa" stroke-width="1.6"/>
+<text x="1020" y="96" text-anchor="middle" class="t">Ollama</text>
+<text x="1020" y="114" text-anchor="middle" class="s">:11434 · red interna</text>
+<text x="1020" y="148" text-anchor="middle" class="s">modelo soporte</text><text x="1020" y="164" text-anchor="middle" class="s">modelo rrhh</text>
+<text x="1020" y="186" text-anchor="middle" class="s">+ llama-guard3</text>
+<rect x="950" y="70" width="140" height="130" rx="12" fill="#a78bfa" opacity="0"><animate attributeName="opacity" dur="20s" repeatCount="indefinite" values="0;0;0.4;0;0" keyTimes="0.0000;0.2237;0.2437;0.2937;1.0000"/></rect>
+
+<path d="M170,300 L205,300 L205,155 L1020,155 L1020,430 L205,430 L205,300 L170,300" fill="none" stroke="#1e293b" stroke-width="2"/>
+<!-- nodos entrada -->
+<g><rect x="240" y="125" width="130" height="60" rx="10" fill="#0f172a" stroke="#22d3ee" stroke-width="1.6"/><text x="252" y="139" class="num" fill="#22d3ee" font-size="10">1</text><text x="305.0" y="156.0" text-anchor="middle" class="t">Filtrado</text><text x="305.0" y="175" text-anchor="middle" class="s">regex · determinista</text></g>
+<g><rect x="400" y="125" width="140" height="60" rx="10" fill="#0f172a" stroke="#fb7185" stroke-width="1.6"/><text x="412" y="139" class="num" fill="#fb7185" font-size="10">3</text><text x="470.0" y="156.0" text-anchor="middle" class="t">Clasificación</text><text x="470.0" y="175" text-anchor="middle" class="s">Prompt Guard 2</text></g>
+<g><rect x="570" y="125" width="140" height="60" rx="10" fill="#0f172a" stroke="#fbbf24" stroke-width="1.6"/><text x="582" y="139" class="num" fill="#fbbf24" font-size="10">4</text><text x="640.0" y="156.0" text-anchor="middle" class="t">Mín. privilegio</text><text x="640.0" y="175" text-anchor="middle" class="s">regex de dominio</text></g>
+<g><rect x="745" y="125" width="145" height="60" rx="10" fill="#0f172a" stroke="#34d399" stroke-width="1.6"/><text x="757" y="139" class="num" fill="#34d399" font-size="10">2</text><text x="817.5" y="156.0" text-anchor="middle" class="t">Delimitación</text><text x="817.5" y="175" text-anchor="middle" class="s">spotlighting</text></g>
+<rect x="240" y="125" width="130" height="60" rx="10" fill="#22d3ee" opacity="0"><animate attributeName="opacity" dur="20s" repeatCount="indefinite" values="0;0;0.4;0;0" keyTimes="0.0000;0.0510;0.0710;0.1210;1.0000"/></rect><rect x="400" y="125" width="140" height="60" rx="10" fill="#fb7185" opacity="0"><animate attributeName="opacity" dur="20s" repeatCount="indefinite" values="0;0;0.4;0;0" keyTimes="0.0000;0.0911;0.1111;0.1611;1.0000"/></rect><rect x="570" y="125" width="140" height="60" rx="10" fill="#fbbf24" opacity="0"><animate attributeName="opacity" dur="20s" repeatCount="indefinite" values="0;0;0.4;0;0" keyTimes="0.0000;0.1318;0.1518;0.2018;1.0000"/></rect><rect x="745" y="125" width="145" height="60" rx="10" fill="#34d399" opacity="0"><animate attributeName="opacity" dur="20s" repeatCount="indefinite" values="0;0;0.4;0;0" keyTimes="0.0000;0.1747;0.1947;0.2447;1.0000"/></rect>
+<rect x="400" y="125" width="140" height="60" rx="10" fill="#fb7185" opacity="0"><animate attributeName="opacity" dur="20s" repeatCount="indefinite" values="0;0;0.4;0;0" keyTimes="0.0000;0.8332;0.8532;0.9032;1.0000"/></rect>
+<path d="M370,155 L400,155 M540,155 L570,155 M710,155 L745,155" stroke="#475569" stroke-width="1.6" marker-end="url(#p)" fill="none"/>
+
+<!-- aprobacion humana -->
+<rect x="240" y="215" width="470" height="50" rx="10" fill="#0f172a" stroke="#fbbf24" stroke-width="1.6" stroke-dasharray="6 4"/>
+<text x="254" y="237" class="num" fill="#fbbf24">5</text>
+<text x="475" y="236" text-anchor="middle" class="t">Aprobación humana + rate limit</text>
+<text x="475" y="253" text-anchor="middle" class="s">intercepta el bloqueo: encola (429) en vez de rechazar (400)</text>
+<rect x="240" y="215" width="470" height="50" rx="10" fill="#fbbf24" opacity="0"><animate attributeName="opacity" dur="20s" repeatCount="indefinite" values="0;0;0.4;0;0" keyTimes="0.0000;0.8800;0.9000;0.9500;1.0000"/></rect>
+
+<!-- llamada a ollama -->
+<path d="M890,155 L950,155" stroke="#475569" stroke-width="1.6" marker-end="url(#p)"/>
+<text x="240" y="392" class="h">SALIDA</text>
+<g><rect x="560" y="400" width="140" height="60" rx="10" fill="#0f172a" stroke="#fb7185" stroke-width="1.6"/><text x="572" y="414" class="num" fill="#fb7185" font-size="10">3</text><text x="630.0" y="431.0" text-anchor="middle" class="t">Clasificación</text><text x="630.0" y="450" text-anchor="middle" class="s">Llama Guard 3 (salida)</text></g>
+<g><rect x="745" y="400" width="145" height="60" rx="10" fill="#0f172a" stroke="#22d3ee" stroke-width="1.6"/><text x="757" y="414" class="num" fill="#22d3ee" font-size="10">1</text><text x="817.5" y="431.0" text-anchor="middle" class="t">Filtrado</text><text x="817.5" y="450" text-anchor="middle" class="s">redacta credenciales</text></g>
+<rect x="560" y="400" width="140" height="60" rx="10" fill="#fb7185" opacity="0"><animate attributeName="opacity" dur="20s" repeatCount="indefinite" values="0;0;0.4;0;0" keyTimes="0.0000;0.3876;0.4076;0.4576;1.0000"/></rect><rect x="745" y="400" width="145" height="60" rx="10" fill="#22d3ee" opacity="0"><animate attributeName="opacity" dur="20s" repeatCount="indefinite" values="0;0;0.4;0;0" keyTimes="0.0000;0.3425;0.3625;0.4125;1.0000"/></rect>
+<path d="M1020,200 L1020,430 L890,430 M745,430 L700,430 M560,430 L240,430" stroke="#475569" stroke-width="1.6" fill="none" marker-end="url(#p)"/>
+
+<!-- logging -->
+<rect x="240" y="500" width="650" height="52" rx="10" fill="#0f172a" stroke="#94a3b8" stroke-width="1.4"/>
+<text x="565" y="523" text-anchor="middle" class="t">Registro JSON Lines · resultados/AAAA-MM-DD/eventos.jsonl</text>
+<text x="565" y="541" text-anchor="middle" class="s">8 campos base + latencia por pieza · los mecanismos deciden, el endpoint registra</text>
+<path d="M565,460 L565,500" stroke="#475569" stroke-dasharray="3 5" class="flujo"/>
+
+<!-- leyenda inferior / subtitulos animados -->
+<g><text x="30" y="610" class="s" fill="#34d399">① Una petición legítima atraviesa la cadena completa y vuelve con la respuesta revisada.</text><animate attributeName="opacity" dur="20s" repeatCount="indefinite" values="0;1;1;0;0" keyTimes="0.0000;0.0100;0.5300;0.5450;1.0000"/></g>
+<g><text x="30" y="610" class="s" fill="#fb7185">② Un ataque: la clasificación lo bloquea y la aprobación humana lo encola (429) para revisión.</text><animate attributeName="opacity" dur="20s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0.0000;0.6000;0.6200;0.9700;0.9900;1.0000"/></g>
+
+<!-- paquete legitimo -->
+<g opacity="0">
+ <circle r="9" fill="#34d399" filter="url(#g)" opacity=".8"/><circle r="6" fill="#34d399"/>
+ <animateMotion dur="20s" repeatCount="indefinite" path="M170,300 L205,300 L205,155 L1020,155 L1020,430 L205,430 L205,300 L170,300" keyPoints="0;1;1" keyTimes="0;0.55;1" calcMode="linear"/>
+ <animate attributeName="opacity" dur="20s" repeatCount="indefinite" values="0;1;1;0" keyTimes="0.0000;0.0050;0.5450;1.0000"/>
+</g>
+<!-- paquete de ataque -->
+<g opacity="0">
+ <circle r="9" fill="#fb7185" filter="url(#g)" opacity=".8"/><circle r="6" fill="#fb7185"/>
+ <animateMotion dur="20s" repeatCount="indefinite" path="M170,300 L205,300 L205,155 L470,155 L470,240" keyPoints="0;0;1;1" keyTimes="0;0.6;0.9;1" calcMode="linear"/>
+ <animate attributeName="opacity" dur="20s" repeatCount="indefinite" values="0;1;1;0.9;0;0" keyTimes="0.0000;0.6050;0.9000;0.9400;0.9600;1.0000"/>
+</g>
+<g opacity="0">
+ <rect x="520" y="190" width="190" height="22" rx="6" fill="#7f1d1d" stroke="#fb7185"/>
+ <text x="615" y="205" text-anchor="middle" class="s" fill="#fecaca">unsafe → bloqueo en entrada</text>
+ <animate attributeName="opacity" dur="20s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0.0000;0.8532;0.8632;0.9700;0.9850;1.0000"/>
+</g>
+</svg>

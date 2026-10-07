@@ -1,214 +1,278 @@
+<div align="center">
+
+<img src="proxy/static/logo.svg" alt="Logo de IronVeil" width="96">
+
 # IronVeil
 
-> **Para quien escribe el paper:** empieza por [`docs/GUIA_PARA_EL_PAPER.md`](docs/GUIA_PARA_EL_PAPER.md): dónde está cada número, qué comando regenera las tablas y qué no se puede afirmar.
+**Defensa en profundidad para LLMs autoalojados (Ollama) expuestos por accidente en internet.**
+Cinco mecanismos defensivos activables por bandera, siete configuraciones experimentales y una pregunta:
+*¿qué combinación ofrece la mejor relación protección / utilidad / costo?*
 
-Framework academico de defensa en profundidad para LLMs autoalojados
-(Ollama) expuestos accidentalmente en internet. Compara 5 mecanismos
-defensivos activables por separado (filtrado, delimitacion, clasificacion,
-minimo privilegio, aprobacion humana) implementados como middleware en un
-proxy Python que se sienta entre el cliente y un backend Ollama.
+[![CI](https://github.com/Anderfg13/IronVeil/actions/workflows/ci.yml/badge.svg)](https://github.com/Anderfg13/IronVeil/actions/workflows/ci.yml)
+[![Licencia: MIT](https://img.shields.io/badge/licencia-MIT-22c55e.svg)](LICENSE)
+![Python](https://img.shields.io/badge/python-3.11%2B-3776ab)
+![Docker](https://img.shields.io/badge/docker%20compose-un%20solo%20comando-2496ed)
+![Laboratorio aislado](https://img.shields.io/badge/laboratorio-100%25%20aislado-fb7185)
 
-Este repositorio corre **100% en un laboratorio Docker aislado**, nunca
-contra sistemas de terceros.
+[Arquitectura](#arquitectura) · [Inicio rápido](#inicio-rápido-un-solo-comando) · [Las 7 configuraciones](#las-7-configuraciones) · [Resultados](#dónde-están-los-resultados) · [Estructura](#estructura-del-repositorio) · [Reproducir](#reproducir-los-resultados)
 
-## Estado actual
+<img src="docs/assets/arquitectura-animada.svg" alt="Animación: una petición legítima atraviesa la cadena de mecanismos y un ataque es bloqueado por la clasificación y encolado por la aprobación humana" width="900">
 
-Los 5 mecanismos tienen logica real y estan cableados en el proxy:
-**filtrado** (C1), **delimitacion / spotlighting** (C2), **clasificacion**
-(C3), **minimo privilegio** (C4) y **aprobacion humana + rate limit** (C5,
-backend + interfaz). Con las 5 banderas de `config.yaml` en `false` el
-proxy es un passthrough puro hacia Ollama (C0). La cola de revision humana
-(`proxy/cola.py`) ya se puede consultar y resolver por HTTP: `GET
-/revision` lista lo pendiente, `POST /revision/{id}/aprobar` completa la
-peticion contra Ollama y devuelve la respuesta real, `POST
-/revision/{id}/rechazar` la descarta; `GET /revision/ui` es la **consola de
-revisión humana** (evidencia de cada petición, lectura orientativa falso
-positivo/ataque, historial) en **tiempo real** (canal SSE) y con **login opcional**
-(`REVISION_USUARIOS`; `python -m proxy.auth --demo` crea la cuenta `admin` de demo,
-ver `.env.example` y `docs/DEMO.md`). El logo provisional es `proxy/static/logo.svg`:
-reemplázalo por el tuyo. El proxy calienta los modelos de Ollama (y el
-clasificador, si está activo) al arrancar, y mantiene cada modelo cargado
-en memoria `OLLAMA_KEEP_ALIVE` (default 30m) entre peticiones — pensado
-para que la demo en vivo no pague el costo de arranque en frío.
+*Una petición legítima (verde) atraviesa la cadena y vuelve revisada; un ataque (rojo) lo detiene la clasificación y la aprobación humana lo encola (429).*
 
-**Extensiones opcionales** (apagadas por defecto): herramientas **simuladas**
-para un modelo `rrhh-agente` (Excessive Agency; nada se ejecuta sin pasar por
-la cola de revisión humana) y notificaciones por webhook / Slack / correo /
-WhatsApp cuando una petición queda en esa cola. Se activan con las variables
-de `.env.example`; ver `ataques/variantes_ataque.md` (Extensión: Excessive Agency, V7) y
-`docs/arquitectura.md` sección 6.
+</div>
 
-**Para quien escribe el informe LaTeX:** la tabla maestra de resultados
-(Sección 7.3), la gráfica de tendencia de ASR y el primer borrador de la
-conclusión ya están generados — ver `analisis/conclusion_borrador.md`
-(apunta a los archivos exactos, incluido el `.tex` listo para pegar).
+---
 
-El dataset (`resultados/resultados_template.csv`) ya pasó una revisión de
-calidad completa — ver `docs/LIMPIEZA_DATOS.md` para qué se corrigió, qué
-sigue pendiente de confirmar con Sabogal, y cómo volver a correr
-`analisis/validar_dataset.py` cuando se agreguen los resultados de la
-extensión opcional del 17 de octubre.
+## Qué es IronVeil
 
-La comparación entre la matriz de hipótesis (Sección 6.5 del documento de
-propuesta) y el ASR real medido por mecanismo ya está hecha, celda por
-celda, con hipótesis explicativa para cada discrepancia — ver
-`analisis/matriz_real_vs_hipotesis.md`.
+Un servidor Ollama expuesto a internet sin protección permite a cualquiera extraer el *system prompt*, inyectar instrucciones, moverse entre modelos o agotar los recursos. IronVeil es un **proxy FastAPI** que se sienta entre el cliente y Ollama e implementa cinco defensas, **cada una apagada o encendida con una sola línea de `config.yaml`**:
 
-**Material final para el informe y la sustentación (semana del 24 de
-octubre):** tabla maestra completa (sin columnas pendientes), las 3
-gráficas finales en alta resolución (`resultados/graficas_finales/`) y la
-respuesta final y defendible a la pregunta de investigación, ya con el
-costo de implementación incluido — todo en
-`analisis/resultados_finales.md` (supersede a `conclusion_borrador.md`).
-**Ojo:** `resultados_finales.md` y `matriz_real_vs_hipotesis.md` se reescribieron
-tras la re-corrida GPU del 2026-10-02/03 (criterio de ASR unificado, hardware
-homogéneo, valores p) — ver `docs/LIMPIEZA_DATOS.md`, sección 6.
+| # | Mecanismo | Bandera | Naturaleza |
+|---|-----------|---------|------------|
+| 1 | **Filtrado** | `filtrado` | Determinista: patrones/regex sobre entrada y salida |
+| 2 | **Delimitación** (spotlighting) | `delimitacion` | Determinista: reestructura el prompt con marcadores aleatorios; no bloquea |
+| 3 | **Clasificación** | `clasificacion` | Probabilístico: Prompt Guard 2 (entrada) + Llama Guard 3 (salida); falla cerrada |
+| 4 | **Mínimo privilegio** | `minimo_privilegio` | Determinista: rechaza una credencial de otro dominio |
+| 5 | **Aprobación humana + rate limit** | `aprobacion_humana` | Humano en el bucle: encola (429) en vez de rechazar (400) |
 
-## Estructura del proyecto
+El experimento mide cuánto reduce cada mecanismo —solo o combinado— la **Tasa de Éxito de Ataque (ASR)** frente a cinco vectores: **V1** reconocimiento · **V2** extracción de system prompt · **V3** inyección de prompt · **V4** movimiento lateral · **V5** agotamiento de recursos. Dos modelos (`soporte` y `rrhh`) guardan un secreto ficticio (canario) en su *system prompt*; si el canario aparece en la respuesta, el ataque tuvo éxito.
 
-```
-.
-├── docker-compose.yml
-├── .env.example
-├── proxy/
-│   ├── main.py            # FastAPI: POST /chat -> Ollama /api/chat
-│   ├── mecanismos.py       # Los 5 mecanismos defensivos
-│   ├── cola.py             # Cola de revision humana + rate limiter (mecanismo 5)
-│   ├── requirements.txt
-│   └── Dockerfile
-├── ollama/
-│   ├── init.sh             # crea los modelos "soporte" y "rrhh" al arrancar
-│   └── modelfiles/
-│       ├── Modelfile.soporte.template
-│       └── Modelfile.rrhh.template
-├── tests/                  # pytest: unitarias e integracion
-└── docs/
-    └── arquitectura.md
+> **Es un trabajo académico.** Todo el laboratorio corre en Docker, en tu propia máquina. Nunca apuntes estos ataques contra servidores de terceros. Las credenciales (`SPT-DEMO-*`, `RRHH-DEMO-*`) son **ficticias** y viven solo en `.env` / Modelfiles.
+
+## Arquitectura
+
+<details open>
+<summary><b>Flujo de una petición</b> (Mermaid, se renderiza en GitHub)</summary>
+
+```mermaid
+flowchart LR
+    C([Cliente<br/>POST /chat]) --> CFG[cargar_config<br/>config.yaml]
+    subgraph PROXY["Proxy FastAPI :8000 — único puerto publicado"]
+        direction LR
+        CFG --> RL{{"5 · límite de<br/>peticiones/min"}}
+        RL --> E1["1 · Filtrado"] --> E3["3 · Clasificación<br/>Prompt Guard 2"] --> E4["4 · Mín. privilegio"]
+        E4 --> B{¿bloqueó<br/>alguien?}
+        B -- "sí + 5 activo" --> Q[("Cola de revisión<br/>humana · 429")]
+        B -- "sí" --> R400[/"400 rechazada"/]
+        B -- no --> D["2 · Delimitación<br/>(no bloquea)"]
+        D --> OL
+        OL --> S1["1 · Filtrado salida"] --> S3["3 · Clasificación salida<br/>Llama Guard 3"]
+        S3 --> LOG[("eventos.jsonl")]
+    end
+    OL[("Ollama :11434<br/>red interna Docker<br/>soporte · rrhh")]
+    Q -. "persona aprueba" .-> OL
+    S3 --> C
+    style OL fill:#2e1065,stroke:#a78bfa,color:#fff
+    style Q fill:#422006,stroke:#fbbf24,color:#fff
+    style R400 fill:#4c0519,stroke:#fb7185,color:#fff
 ```
 
-## Requisitos
+**Reglas que gobiernan la cadena** (detalle en [`docs/arquitectura.md`](docs/arquitectura.md)):
+- La cadena es una **lista de pasos recorrida en bucle**, no `if` anidados; el primer mecanismo que bloquea corta la cadena (`mecanismo_que_bloqueo` en el log).
+- La **delimitación** no bloquea: se aplica aparte, justo antes de llamar a Ollama.
+- La **aprobación humana** no es un paso más: *intercepta* el bloqueo y lo convierte en cola (429). Encolar es una demora, no una caída.
+- La **clasificación** evalúa el texto original del usuario, no el ya envuelto por la delimitación.
+- **Fail closed:** un timeout o error del clasificador cuenta como `unsafe`.
+- El mismo código ejecuta las 7 configuraciones; solo cambia `config.yaml`.
 
-- Docker y Docker Compose (v2, comando `docker compose`).
-- Conexion a internet la primera vez que se levanta el entorno (para
-  descargar la imagen `ollama/ollama` y el modelo base).
+</details>
 
-## Como levantar el entorno
+<details>
+<summary><b>Secuencia: petición bloqueada y encolada</b></summary>
 
-1. Copia el archivo de variables de entorno y ajústalo si quieres cambiar
-   el modelo base, el puerto o los canarios de las credenciales ficticias:
+```mermaid
+sequenceDiagram
+    autonumber
+    actor A as Atacante
+    participant P as Proxy (:8000)
+    participant K as Cadena (1·3·4)
+    participant Q as Cola humana (5)
+    actor H as Revisor
+    participant O as Ollama
+    A->>P: POST /chat {modelo, mensaje}
+    P->>K: filtrar → clasificar → validar_privilegio
+    K-->>P: clasificación = unsafe (primer bloqueo gana)
+    P->>Q: enviar_a_revision(petición)
+    P-->>A: 429 pendiente (cabecera X-Revision-Id)
+    H->>Q: GET /revision/ui → rechazar
+    Q-->>A: GET /chat/revision/{id} → rechazada
+    Note over P,O: Ollama nunca fue llamado
+    P->>P: eventos.jsonl (resultado=bloqueado, mecanismo_que_bloqueo=clasificacion)
+```
 
-   ```bash
-   cp .env.example .env
-   ```
+</details>
 
-2. Levanta todo con un solo comando:
+### Diagrama de clases (animado)
 
-   ```bash
-   docker compose up --build
-   ```
+<p align="center"><img src="docs/assets/diagrama-clases.svg" alt="Diagrama de clases de IronVeil: núcleo del proxy y las extensiones memoria_decisiones, siem y normalizacion con sus puertos y adaptadores" width="100%"></p>
 
-   En el primer arranque, el servicio `ollama-init` descarga el modelo
-   base (`BASE_MODEL`, por defecto `llama3.2`) y crea los modelos
-   `soporte` y `rrhh` a partir de los Modelfile. Esto puede tardar varios
-   minutos dependiendo de tu conexion. El proxy no arranca hasta que esa
-   inicializacion termina con exito.
+El núcleo depende de **puertos** (`Protocol`) y los **adaptadores** (almacenes, formatos y destinos SIEM, decodificadores) se registran por configuración, sin editar el núcleo. Los paquetes `memoria_decisiones/` y `siem/` son la referencia del patrón (SOLID, ver [`CLAUDE.md`](CLAUDE.md) §7).
 
-3. Cuando veas en los logs que `ironveil-proxy` esta escuchando en el
-   puerto 8000, el entorno esta listo.
+### Versión interactiva
 
-## Probar que funciona
+Abre **[`docs/diagramas/index.html`](docs/diagramas/index.html)** (o, con GitHub Pages activado, <https://anderfg13.github.io/IronVeil/diagramas/>): eliges una configuración C0–C6, envías una petición legítima o un ataque (V2–V5) y ves qué pieza se ilumina, cuál bloquea y si termina en 400, en cola (429) o exitosa. Es una **simulación didáctica**; las cifras reales están en [`analisis/resultados_finales.md`](analisis/resultados_finales.md).
 
-Con el entorno arriba, en otra terminal:
+## Inicio rápido (un solo comando)
+
+**Requisitos:** Docker con Compose v2 (`docker compose`), ~10 GB de disco libre e internet la primera vez (imagen de Ollama, modelo base y, para la clasificación de entrada, Prompt Guard).
 
 ```bash
-curl -X POST http://localhost:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{"modelo": "soporte", "mensaje": "hola, ¿en qué me puedes ayudar?"}'
+git clone https://github.com/Anderfg13/IronVeil.git && cd IronVeil
+cp .env.example .env          # variables y canarios ficticios (nunca se sube a git)
+docker compose up --build     # levanta Ollama + inicializa modelos + proxy
 ```
+
+La primera vez descarga el modelo base (`llama3.2`), el clasificador `llama-guard3:1b` y construye la imagen del proxy; puede tardar varios minutos. El proxy no arranca hasta que `ollama-init` termina con éxito. Cuando los logs digan que `ironveil-proxy` escucha en el puerto 8000, está listo:
 
 ```bash
-curl -X POST http://localhost:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{"modelo": "rrhh", "mensaje": "hola, ¿en qué me puedes ayudar?"}'
+curl -X POST http://localhost:8000/chat -H 'Content-Type: application/json' \
+  -d '{"modelo":"soporte","mensaje":"hola, ¿en qué me puedes ayudar?"}'
 ```
 
-Ambas deben devolver una respuesta JSON de Ollama coherente con el rol de
-cada modelo.
+> **Clasificación de entrada (C3 y C6):** usa *Llama Prompt Guard 2*, un modelo con licencia restringida en Hugging Face. Acepta la licencia, crea un token y ponlo en `HF_TOKEN` dentro de `.env`. Sin token, esa pieza **falla cerrada** (bloquea todo), por diseño. Las demás configuraciones no lo necesitan.
 
-### Verificar que Ollama no es accesible desde el host
-
-Ollama solo esta en la red interna de Docker; esto debe fallar (conexion
-rechazada) porque no hay ningun puerto publicado para el servicio
-`ollama`:
+**Comprobar el aislamiento** (debe fallar con *connection refused*; Ollama no se publica al host):
 
 ```bash
 curl http://localhost:11434
 ```
 
-### Probar los modelos directamente por CLI (dentro del contenedor)
+**Apagar:** `docker compose down` · borrar también los modelos: `docker compose down -v`.
+
+## Las 7 configuraciones
+
+| Config. | Mecanismos activos | Para qué sirve |
+|---------|--------------------|----------------|
+| **C0** | ninguno | línea base (passthrough puro) |
+| **C1** | filtrado | |
+| **C2** | delimitación | |
+| **C3** | clasificación | |
+| **C4** | mínimo privilegio | |
+| **C5** | aprobación humana + rate limit | |
+| **C6** | los cinco | defensa en profundidad |
+
+Cambiar de configuración es **editar `config.yaml`** (el proxy lo relee en cada petición; no hay que reconstruir nada). Un atajo que escribe las cinco banderas por ti:
 
 ```bash
-docker compose exec ollama ollama run soporte
-docker compose exec ollama ollama run rrhh
+python scripts/seleccionar_config.py C3     # escribe config.yaml con C3 (solo clasificación)
 ```
 
-## Variables de entorno
+o a mano (`config.yaml`, las cinco claves son obligatorias; si falta una el proxy falla ruidosamente):
 
-Definidas en `.env` (a partir de `.env.example`, nunca se sube al
-repositorio):
+```yaml
+filtrado: false
+delimitacion: false
+clasificacion: true      # ← C3
+minimo_privilegio: false
+aprobacion_humana: false
+```
 
-| Variable      | Descripcion                                              |
-|---------------|-----------------------------------------------------------|
-| `PROXY_PORT`  | Puerto publicado en el host para el proxy (default 8000). |
-| `BASE_MODEL`  | Modelo base de Ollama usado por `soporte` y `rrhh`.        |
-| `SPT_SECRET`  | Credencial ficticia (canario) del modelo `soporte`.        |
-| `RRHH_SECRET` | Credencial ficticia (canario) del modelo `rrhh`.            |
-
-## Demostración en vivo
-
-Guion paso a paso (curl → defensas → logs → avisos → SIEM), con comandos
-verificados y los problemas conocidos de esta máquina: `docs/DEMO.md`.
-
-## Resultados y tablas del informe
-
-**Si vas a escribir o terminar el informe, empieza por `docs/DE_DONDE_SALE_CADA_TABLA.md`**: dice,
-para cada tabla y figura, de qué archivo sale, qué script la genera, con qué datos y qué
-documentos son texto escrito a mano. Las cifras finales y la respuesta a la pregunta de
-investigación están en `analisis/resultados_finales.md`; el costo de latencia por mecanismo,
-medido directamente, en `analisis/costo_por_mecanismo.md`.
-
-## Pantalla de chat de la demo
-
-`IRONVEIL_DEMO=1` activa **/demo**: una pantalla tipo chat (escribes, recibes la
-respuesta) que usa `POST /chat`. Lo que hizo cada defensa queda en los logs y en el
-SIEM, no en la pantalla. Apagada por defecto. Ver `docs/DEMO.md`.
-
-## Wazuh / SIEM (extensión opcional, **pesada**)
-
-`proxy/siem/` exporta cada evento a **cualquier SIEM** con `SIEM_DESTINOS`: formatos JSON
-(Wazuh), CEF, LEEF y ECS; transportes archivo, syslog (UDP/TCP/TLS), HTTPS, Splunk, Elastic,
-Azure Monitor y CloudWatch, y un módulo propio si tu SIEM es otro. Guía: `docs/SIEM.md`.
-Para probar la ingesta con Wazuh hay un Wazuh
-en Docker **aparte** de este `docker-compose.yml`; no se levanta con el resto
-del proyecto. **Antes de intentarlo en tu máquina:**
-
-| Recurso | Requisito |
-|---|---|
-| RAM | **8 GB libres para Docker** como mínimo (documentación oficial); en reposo usa ≈ 2,2 GiB, pero el arranque es mucho mayor. No lo levantes junto a Ollama con 8 GB de RAM totales. |
-| CPU | 4 núcleos o más |
-| Disco | ≈ 8 GB solo de imágenes (50 GB recomendados por Wazuh) |
-| Kernel | `vm.max_map_count=262144` (si no, el indexer no arranca) |
-
-Dashboard en https://localhost (puerto 443) una vez arriba. Pasos, reglas, conexión del proxy (`SIEM_ARCHIVO_WAZUH`) y qué se verificó: `docs/siem/wazuh/LEEME.md`.
-
-## Apagar el entorno
+Luego lanza los ataques contra el proxy local, indicando la configuración que declaras (el script verifica que coincida con `config.yaml`):
 
 ```bash
-docker compose down
+pip install -r requirements-dev.txt                     # solo para los scripts del host
+python -m ataques.vectores_1_2_3 --configuracion C3     # V1, V2 y V3
+python -m ataques.vector4_movimiento_lateral --configuracion C3
+python -m ataques.vector5_agotamiento --modelo soporte --configuracion C3
+python -m ataques.vector6_adaptativo --configuracion C6 # adaptativo, contra la cadena completa
 ```
 
-Para borrar tambien los modelos descargados/creados (volumen de Ollama):
+Los eventos quedan en `resultados/AAAA-MM-DD/eventos.jsonl` (esquema de 8 campos base, ver [`CLAUDE.md`](CLAUDE.md) §4). Para el recorrido completo C0→C6 en GPU: [`resultados/RECORRIDA_GPU_C0_C6.ipynb`](resultados/RECORRIDA_GPU_C0_C6.ipynb).
+
+## Dónde están los resultados
+
+| Qué | Dónde |
+|-----|-------|
+| **Respuesta a la pregunta de investigación** y tabla maestra | [`analisis/resultados_finales.md`](analisis/resultados_finales.md) |
+| Tabla maestra (CSV / Markdown / LaTeX) | `analisis/tabla_maestra.{csv,md,tex}` |
+| Hipótesis vs. ASR medido, celda por celda | [`analisis/matriz_real_vs_hipotesis.md`](analisis/matriz_real_vs_hipotesis.md) |
+| Costo de latencia por mecanismo | [`analisis/costo_por_mecanismo.md`](analisis/costo_por_mecanismo.md) |
+| Gráficas finales | [`resultados/graficas_finales/`](resultados/graficas_finales/) |
+| **Datos crudos** (evidencia, no se editan a mano) | [`resultados/resultados_template.csv`](resultados/resultados_template.csv) y `resultados/AAAA-MM-DD/` |
+| Filas descartadas con su razón | [`resultados/descartados.csv`](resultados/descartados.csv) · [`docs/LIMPIEZA_DATOS.md`](docs/LIMPIEZA_DATOS.md) |
+| De dónde sale cada tabla y figura del informe | [`docs/DE_DONDE_SALE_CADA_TABLA.md`](docs/DE_DONDE_SALE_CADA_TABLA.md) |
+| Decisiones de diseño y conflictos resueltos | [`docs/FUENTE_DE_VERDAD.md`](docs/FUENTE_DE_VERDAD.md) · [`docs/CONFLICTOS_RESUELTOS.md`](docs/CONFLICTOS_RESUELTOS.md) |
+
+Lectura honesta de los resultados (sobre `llama3.2:1b`, corridas en GPU T4 de Colab): el ASR promedio V1–V4 baja de **31,2 % en C0 a 15,0 % en C1 y en C6**; la clasificación es la única pieza con costo apreciable (**≈ 75 ms** de sobrecosto propio, p95 ≈ 95 ms), y **ninguna combinación llega a 0 %**, como anticipa la literatura. Las diferencias de uno o dos eventos no se distinguen del ruido del LLM (el modelo no es determinista); cada comparación lleva su valor p. Las cifras, sus límites y lo que **no** se puede afirmar están en `analisis/resultados_finales.md`.
+
+## Estructura del repositorio
+
+```text
+IronVeil/
+├── config.yaml                 # las 5 banderas: lo único que cambia entre C0..C6
+├── docker-compose.yml          # Ollama + ollama-init + proxy (solo :8000 se publica)
+├── .env.example                # variables y canarios ficticios (copiar a .env)
+├── proxy/                      # el framework
+│   ├── main.py                 #   FastAPI: POST /chat y la cadena de mecanismos
+│   ├── mecanismos.py           #   los 5 mecanismos (contrato estable, CLAUDE.md §4)
+│   ├── cola.py                 #   cola de revisión humana + rate limit
+│   ├── siem/                   #   extensión: export a Wazuh/Splunk/Elastic/… (puertos y adaptadores)
+│   ├── memoria_decisiones/     #   extensión: recuerda los rechazos humanos
+│   ├── normalizacion/          #   extensión: decodifica Base64/hex/ROT13 antes de la cadena
+│   └── static/                 #   consola de revisión humana (/revision/ui) y logo
+├── ollama/                     # init.sh y Modelfiles (plantillas, sin credenciales)
+├── ataques/                    # vectores V1–V7, medición de costo, validación externa con Garak
+├── analisis/                   # consolidación, estadística, tablas y gráficas
+├── resultados/                 # datos crudos (CSV/JSONL), gráficas y notebooks de corrida
+├── scripts/                    # utilidades (seleccionar_config.py)
+├── tests/                      # pytest: sin Docker ni Ollama (clasificador con mocks)
+├── docs/                       # arquitectura, decisiones, guías, diagramas
+│   ├── assets/                 #   diagramas animados (SVG)
+│   └── diagramas/              #   visor interactivo (HTML)
+├── .github/                    # CI, publicación de release/paquete, plantilla de PR
+├── CLAUDE.md                   # contrato y reglas del equipo
+└── LICENSE
+```
+
+## Reproducir los resultados
 
 ```bash
-docker compose down -v
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements-dev.txt                 # versiones exactas
+python -m pytest -q                                 # suite completa: no necesita Docker ni Ollama
+ruff check . && black --check .                     # lint y formato
+
+python analisis/validar_dataset.py                  # valida el CSV crudo
+python analisis/consolidar.py                       # ASR por configuración y vector
+python analisis/tabla_maestra.py                    # tabla maestra del informe
+python analisis/graficas_finales.py                 # gráficas en resultados/graficas_finales/
 ```
+
+Reglas del dato: los CSV y logs de `resultados/` son **evidencia**; toda transformación pasa por un script reproducible y ninguna fila se borra (se mueve a `descartados.csv` con su razón).
+
+## Extensiones opcionales (apagadas por defecto)
+
+| Extensión | Qué hace | Documentación |
+|-----------|----------|---------------|
+| Consola de revisión humana | UI en tiempo real (SSE) con login opcional: `/revision/ui` | [`docs/DEMO.md`](docs/DEMO.md) |
+| Chat de demo | Pantalla `/demo` (`IRONVEIL_DEMO=1`) | [`docs/DEMO.md`](docs/DEMO.md) |
+| SIEM | JSON/CEF/LEEF/ECS hacia archivo, syslog, HTTPS, Splunk, Elastic, Azure, CloudWatch | [`docs/SIEM.md`](docs/SIEM.md) |
+| Memoria de decisiones | Rechaza solo lo que un humano ya rechazó | [`docs/MEMORIA_DE_DECISIONES.md`](docs/MEMORIA_DE_DECISIONES.md) |
+| Normalización de entrada | Decodifica lo que el atacante escondió | [`docs/NORMALIZACION_DE_ENTRADA.md`](docs/NORMALIZACION_DE_ENTRADA.md) |
+| Otro clasificador (p. ej. Jev) | Cambiar de modelo clasificador sin tocar `clasificar()` | [`docs/CAMBIAR_MODELO_CLASIFICADOR.md`](docs/CAMBIAR_MODELO_CLASIFICADOR.md) |
+| Modelo protegido remoto | Proteger un modelo servido por otra API | [`docs/MODELO_PROTEGIDO_REMOTO.md`](docs/MODELO_PROTEGIDO_REMOTO.md) |
+| Validación externa con Garak | Segunda instancia del proxy atacada por Garak | [`docs/GARAK.md`](docs/GARAK.md) |
+| Excessive Agency (V7) | Herramientas **simuladas** de `rrhh-agente` | `ataques/variantes_ataque.md` |
+
+## Seguridad y ética
+
+- **Laboratorio aislado:** todo ataque, carga o escaneo va contra el stack propio en localhost/Docker, nunca contra terceros.
+- **Ollama nunca se publica al host:** solo el proxy expone el puerto 8000.
+- **Sin secretos en el código:** los canarios viven en `.env`/Modelfiles; las dependencias están fijadas con versión exacta (y con hashes en la imagen del proxy).
+- **Mensajes de error genéricos** hacia el cliente; el detalle se registra solo en el servidor.
+- Las herramientas de la extensión V7 están **simuladas** y marcadas como tales en el código.
+
+## Versiones y paquetes
+
+La entrega final está marcada con la etiqueta [`entrega-final-2026-10-31`](https://github.com/Anderfg13/IronVeil/releases) (ver [`docs/RELEASE_NOTES.md`](docs/RELEASE_NOTES.md)). Al subir una etiqueta, GitHub Actions publica la *release* y la imagen del proxy en GitHub Packages:
+
+```bash
+docker pull ghcr.io/anderfg13/ironveil-proxy:entrega-final-2026-10-31
+```
+
+## Equipo y contribución
+
+Garcia (infraestructura, filtrado, clasificación, mínimo privilegio, cola y costo) · Piedrahita (configuración, delimitación, integración, interfaz de aprobación y SIEM) · Sabogal (ejecución de los vectores de ataque) · Fiquitiva (esquema de log, consolidación, gráficas e informe). Las reglas de trabajo, los contratos estables y la lista de comprobación de cada tarea están en [`CLAUDE.md`](CLAUDE.md); las PR usan la [plantilla](.github/PULL_REQUEST_TEMPLATE.md).
+
+Licencia [MIT](LICENSE) · uso exclusivamente académico y en laboratorio propio.

@@ -224,6 +224,7 @@ Esta es la estructura **objetivo**. Lo marcado `[ya existe]` está en el repo ho
                         apagadas por defecto, ver .env.example)
 /ollama/modelfiles/     Modelfile.soporte.template, Modelfile.rrhh.template [ya existen],
                         Modelfile.rrhh_agente.template (extension, herramientas simuladas)
+/scripts/               utilidades (seleccionar_config.py: escribe config.yaml para C0..C6)
 /tests/                 pruebas unitarias y de integración
 /ataques/               variantes_ataque.md, vector4_*.py, vector5_*.py, promptfooconfig.yaml,
                         garak_externo/ (EXTENSION: validacion externa con Garak contra una
@@ -235,10 +236,11 @@ Esta es la estructura **objetivo**. Lo marcado `[ya existe]` está en el repo ho
                         (extension_agencia_excesiva.py: resumen de la extensión V7; sus
                         filas del CSV llevan es_extension=True y cargar_resultados() las
                         excluye del núcleo)
+/.github/workflows/     ci.yml (ruff, black, pytest) y publicar.yml (release + imagen en ghcr.io al subir una etiqueta)
 /docs/                  arquitectura.md [ya existe], FUENTE_DE_VERDAD.md [ya existe, por rellenar],
                         CONFLICTOS_RESUELTOS.md, LIMPIEZA_DATOS.md, CHECKLIST_ENTREGA.md
 /informe/               main.tex, PDF compilado
-docker-compose.yml [ya existe] · config.yaml · .env.example [ya existe] · README.md [ya existe]
+LICENSE (MIT) · docker-compose.yml [ya existe] · config.yaml · .env.example [ya existe] · README.md [ya existe]
 ```
 
 Nada suelto en la raíz salvo lo listado arriba.

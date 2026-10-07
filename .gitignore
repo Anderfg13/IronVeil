@@ -20,3 +20,17 @@ resultados/garak/**/hf_cache/
 # filtradas (regla 2 de CLAUDE.md), y el HTML pesa ~1,7 MB por configuracion. Se conservan en el zip;
 # lo derivado (analisis/garak_resumen.*, resultados/graficas_garak/) si se versiona.
 resultados/garak/
+
+# Caches y artefactos locales de herramientas (no aportan nada al repositorio)
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.egg-info/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp

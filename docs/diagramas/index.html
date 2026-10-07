@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IronVeil · arquitectura interactiva</title>
+<meta name="description" content="Simulador didáctico del pipeline de IronVeil: elige una configuración (C0–C6) y envía una petición legítima o un ataque.">
+<style>
+:root{--bg:#020617;--panel:#0f172a;--borde:#1e293b;--txt:#f8fafc;--mut:#94a3b8;--cian:#22d3ee;--rojo:#fb7185;--verde:#34d399;--ambar:#fbbf24;--viol:#a78bfa}
+@media (prefers-color-scheme:light){:root{--bg:#f8fafc;--panel:#fff;--borde:#cbd5e1;--txt:#0f172a;--mut:#475569}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+main{max-width:1100px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:22px;margin:0 0 4px}p.lead{color:var(--mut);margin:0 0 18px}
+.barra{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
+.barra span.et{color:var(--mut);font-size:12px;letter-spacing:.1em;text-transform:uppercase;margin-right:4px}
+button{font:inherit;background:var(--panel);color:var(--txt);border:1px solid var(--borde);border-radius:8px;padding:6px 12px;cursor:pointer}
+button[aria-pressed=true]{border-color:var(--cian);box-shadow:0 0 0 1px var(--cian) inset}
+button.accion{border-color:var(--verde)}button.ataque{border-color:var(--rojo)}
+button:focus-visible{outline:2px solid var(--cian);outline-offset:2px}
+.escena{position:relative;background:var(--panel);border:1px solid var(--borde);border-radius:14px;padding:18px}
+.fila{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch;margin:10px 0}
+.nodo{flex:1 1 140px;min-width:130px;background:var(--bg);border:1.5px solid var(--c,var(--borde));border-radius:10px;padding:10px;text-align:left;position:relative;transition:opacity .25s,box-shadow .25s,transform .25s}
+.nodo b{display:block;color:var(--c)}.nodo small{color:var(--mut)}
+.nodo.apagado{opacity:.35;border-style:dashed}
+.nodo.activo-ahora{box-shadow:0 0 0 3px var(--c),0 0 22px var(--c);transform:translateY(-2px)}
+.nodo.bloquea{--c:var(--rojo)!important;box-shadow:0 0 0 3px var(--rojo),0 0 22px var(--rojo)}
+.sep{width:100%;color:var(--mut);font-size:11px;letter-spacing:.14em;margin-top:8px}
+.pista{position:relative;height:6px;background:var(--borde);border-radius:3px;margin:10px 0}
+.paquete{position:absolute;top:50%;left:0;width:16px;height:16px;border-radius:50%;margin:-8px 0 0 -8px;background:var(--verde);box-shadow:0 0 14px var(--verde);opacity:0}
+.paquete.ataque{background:var(--rojo);box-shadow:0 0 14px var(--rojo)}
+#veredicto{margin-top:12px;padding:10px 12px;border-radius:10px;border:1px solid var(--borde);min-height:44px}
+#veredicto.ok{border-color:var(--verde)}#veredicto.no{border-color:var(--rojo)}#veredicto.cola{border-color:var(--ambar)}
+#detalle{margin-top:14px;background:var(--panel);border:1px solid var(--borde);border-radius:12px;padding:12px 14px}
+#detalle h2{font-size:14px;margin:0 0 4px}.aviso{color:var(--mut);font-size:12px;margin-top:16px}
+a{color:var(--cian)}
+@media (prefers-reduced-motion:reduce){.nodo{transition:none}}
+</style>
+</head>
+<body>
+<main>
+<h1>IronVeil · pipeline interactivo</h1>
+<p class="lead">Elige una configuración y envía una petición. Es una <b>simulación didáctica</b> de la cadena de mecanismos de <code>proxy/main.py</code>; las cifras reales de ASR están en <code>analisis/resultados_finales.md</code>.</p>
+
+<div class="barra" role="group" aria-label="Configuración">
+  <span class="et">Configuración</span><span id="cfgs"></span>
+</div>
+<div class="barra" role="group" aria-label="Tipo de petición">
+  <span class="et">Petición</span>
+  <button class="accion" data-tipo="legitima">▶ Legítima</button>
+  <button class="ataque" data-tipo="V2">▶ V2 extracción de prompt</button>
+  <button class="ataque" data-tipo="V3">▶ V3 inyección</button>
+  <button class="ataque" data-tipo="V4">▶ V4 credencial cruzada</button>
+  <button class="ataque" data-tipo="V5">▶ V5 ráfaga</button>
+</div>
+
+<section class="escena" aria-label="Pipeline">
+  <div class="fila"><div class="nodo" style="--c:var(--cian);flex:0 0 150px" id="n-cliente"><b>Cliente</b><small>POST /chat</small></div></div>
+  <div class="sep">ENTRADA · cadena que puede bloquear (primer bloqueo gana)</div>
+  <div class="fila" id="entrada"></div>
+  <div class="fila"><div class="nodo" id="n-aprobacion" data-id="aprobacion_humana" style="--c:var(--ambar)"></div></div>
+  <div class="fila" id="medio"></div>
+  <div class="sep">SALIDA · la misma cadena sobre la respuesta</div>
+  <div class="fila" id="salida"></div>
+  <div class="pista" aria-hidden="true"><div class="paquete" id="paquete"></div></div>
+  <div id="veredicto" role="status" aria-live="polite">Elige una petición para empezar.</div>
+</section>
+
+<div id="detalle"><h2>Detalle</h2><span id="detalle-txt">Haz clic en cualquier pieza para ver qué hace y dónde está en el código.</span></div>
+
+<p class="aviso">Modelo simplificado: filtrado y clasificación detectan V2/V3, mínimo privilegio solo V4, y la aprobación humana convierte un bloqueo de entrada (o la ráfaga V5) en <code>429</code> en cola. La delimitación no bloquea. Los resultados medidos de verdad (y sus límites) están en <a href="../../analisis/resultados_finales.md">analisis/resultados_finales.md</a>.</p>
+</main>
+<script>
+"use strict";
+const MECANISMOS = {
+  filtrado:{n:1,t:"Filtrado",s:"regex · determinista",c:"var(--cian)",d:"Patrones/regex sobre el texto (entrada y salida). Redacta credenciales en la respuesta. Código: proxy/mecanismos.py · filtrar()."},
+  delimitacion:{n:2,t:"Delimitación",s:"spotlighting · no bloquea",c:"var(--verde)",d:"Reestructura el prompt con marcadores aleatorios por petición para separar instrucciones de datos. No bloquea: se aplica justo antes de llamar a Ollama. Código: delimitar()."},
+  clasificacion:{n:3,t:"Clasificación",s:"Prompt Guard 2 / Llama Guard 3",c:"var(--rojo)",d:"Modelo clasificador: Prompt Guard 2 en la entrada, Llama Guard 3 en la salida. Falla cerrada: timeout o error ⇒ unsafe. Código: clasificar()."},
+  minimo_privilegio:{n:4,t:"Mínimo privilegio",s:"regex de dominio",c:"var(--ambar)",d:"Rechaza una credencial de OTRO dominio (p. ej. la de rrhh enviada al modelo soporte). Solo actúa en la entrada. Código: validar_privilegio()."},
+  aprobacion_humana:{n:5,t:"Aprobación humana + rate limit",s:"intercepta: 429 en cola en vez de 400",c:"var(--ambar)",d:"No es un paso de la cadena: intercepta su resultado y lo encola para revisión humana (429) en vez de rechazarlo (400). Incluye el límite de peticiones por minuto. Código: proxy/cola.py, _gestionar_aprobacion_humana()."}
+};
+const ORDEN = ["filtrado","delimitacion","clasificacion","minimo_privilegio","aprobacion_humana"];
+const CONFIGS = {C0:[],C1:["filtrado"],C2:["delimitacion"],C3:["clasificacion"],C4:["minimo_privilegio"],C5:["aprobacion_humana"],C6:ORDEN};
+// qué mecanismo puede detectar cada ataque (modelo didáctico)
+const DETECTA = {V2:["filtrado","clasificacion"],V3:["clasificacion"],V4:["minimo_privilegio"],V5:[]};
+const ENTRADA_CADENA = ["filtrado","clasificacion","minimo_privilegio"];
+let cfg = "C0", ocupado = false;
+const $ = id => document.getElementById(id);
+function nodo(id, extra){
+  const m = MECANISMOS[id], e = document.createElement("button");
+  e.className = "nodo"; e.dataset.id = id; e.style.setProperty("--c", m.c);
+  e.innerHTML = `<b>${m.n} · ${m.t}${extra||""}</b><small>${m.s}</small>`;
+  e.onclick = () => $("detalle-txt").textContent = m.t + ": " + m.d;
+  return e;
+}
+function construir(){
+  const cf = $("cfgs");
+  Object.keys(CONFIGS).forEach(k => {
+    const b = document.createElement("button"); b.textContent = k; b.dataset.cfg = k;
+    b.onclick = () => { cfg = k; pintar(); }; cf.appendChild(b);
+  });
+  ENTRADA_CADENA.forEach(id => $("entrada").appendChild(nodo(id)));
+  $("medio").appendChild(nodo("delimitacion"));
+  const ollama = document.createElement("button"); ollama.className="nodo"; ollama.id="n-ollama"; ollama.style.setProperty("--c","var(--viol)");
+  ollama.innerHTML = "<b>Ollama</b><small>soporte · rrhh · red interna :11434</small>";
+  ollama.onclick = () => $("detalle-txt").textContent = "Ollama: backend con los modelos soporte y rrhh (cada uno con un canario ficticio en su system prompt). Nunca se publica al host.";
+  $("medio").appendChild(ollama);
+  ["filtrado","clasificacion"].forEach(id => { const n = nodo(id," (salida)"); n.dataset.salida="1"; if (id==="clasificacion") n.querySelector("small").textContent="Llama Guard 3 (Ollama)"; $("salida").appendChild(n); });
+  const ap = $("n-aprobacion"), m = MECANISMOS.aprobacion_humana;
+  ap.className = "nodo"; ap.style.setProperty("--c", m.c);
+  ap.innerHTML = `<b>5 · ${m.t}</b><small>${m.s}</small>`;
+  ap.onclick = () => $("detalle-txt").textContent = m.t + ": " + m.d;
+  $("n-cliente").onclick = () => $("detalle-txt").textContent = "Cliente: cualquiera que haga POST /chat {modelo, mensaje}. Es el único puerto publicado (8000).";
+  document.querySelectorAll("[data-tipo]").forEach(b => b.onclick = () => enviar(b.dataset.tipo));
+  pintar();
+}
+function activos(){ return CONFIGS[cfg]; }
+function pintar(){
+  document.querySelectorAll("[data-cfg]").forEach(b => b.setAttribute("aria-pressed", b.dataset.cfg === cfg));
+  document.querySelectorAll(".nodo[data-id]").forEach(n => n.classList.toggle("apagado", !activos().includes(n.dataset.id)));
+  $("veredicto").className = ""; $("veredicto").textContent = `${cfg}: mecanismos activos → ${activos().join(", ") || "ninguno (baseline, passthrough puro)"}.`;
+  limpiar();
+}
+function limpiar(){ document.querySelectorAll(".nodo").forEach(n => n.classList.remove("activo-ahora","bloquea")); }
+const dormir = ms => new Promise(r => setTimeout(r, matchMedia("(prefers-reduced-motion:reduce)").matches ? 0 : ms));
+async function iluminar(el, ms=550){ limpiar(); el.classList.add("activo-ahora"); await dormir(ms); }
+function veredicto(clase, txt){ const v = $("veredicto"); v.className = clase; v.textContent = txt; }
+async function enviar(tipo){
+  if (ocupado) return; ocupado = true; limpiar();
+  const p = $("paquete"); p.className = "paquete" + (tipo === "legitima" ? "" : " ataque"); p.style.opacity = 1;
+  const mueve = f => { p.style.transition = "left .5s"; p.style.left = f + "%"; };
+  p.style.transition = "none"; p.style.left = "0%";
+  await iluminar($("n-cliente"));
+  const quien = DETECTA[tipo] || [];
+  let bloqueo = null, i = 0;
+  for (const id of ENTRADA_CADENA){
+    const el = document.querySelector(`#entrada [data-id="${id}"]`); mueve(10 + i++ * 12);
+    await iluminar(el);
+    if (activos().includes(id) && quien.includes(id)) { bloqueo = id; el.classList.add("bloquea"); break; }
+  }
+  const aprob = activos().includes("aprobacion_humana");
+  if (tipo === "V5" && aprob){ await iluminar($("n-aprobacion"), 700);
+    veredicto("cola", "429 · el límite de peticiones/minuto se excedió: la ráfaga se ENCOLA para revisión humana (encolar no es rechazar: es una demora, no una caída)."); return fin(p); }
+  if (bloqueo){
+    await dormir(350);
+    if (aprob){ await iluminar($("n-aprobacion"), 700); veredicto("cola", `429 · ${MECANISMOS[bloqueo].t} lo marcó, pero la aprobación humana lo ENCOLA para que una persona decida.`); }
+    else veredicto("no", `400 · BLOQUEADO por ${MECANISMOS[bloqueo].t} (mecanismo_que_bloqueo = "${bloqueo}"). La cadena se corta: ni siquiera se llama a Ollama.`);
+    return fin(p);
+  }
+  mueve(52); await iluminar(document.querySelector('#medio [data-id="delimitacion"]'));
+  mueve(70); await iluminar($("n-ollama"), 700);
+  let sbloq = null; mueve(82);
+  for (const id of ["filtrado","clasificacion"]){
+    const el = document.querySelector(`#salida [data-id="${id}"]`); mueve(id === "filtrado" ? 82 : 92); await iluminar(el);
+    if (tipo === "V2" && activos().includes(id)){ sbloq = id; el.classList.add("bloquea"); break; }
+  }
+  if (sbloq) veredicto("ok", `200 · la respuesta se REDACTÓ/retuvo en la salida por ${MECANISMOS[sbloq].t}: el canario no sale.`);
+  else if (tipo === "legitima") veredicto("ok", "200 · permitido_normal: la respuesta llega intacta (con las 5 banderas activas hay que vigilar los falsos positivos).");
+  else veredicto("no", `200 · exitoso_para_atacante: ninguna defensa activa detuvo ${tipo} en ${cfg}. Esto es lo que mide el ASR.`);
+  fin(p);
+}
+function fin(p){ setTimeout(()=>{ p.style.opacity = 0; ocupado = false; }, 600); }
+construir();
+</script>
+</body>
+</html>
