@@ -43,6 +43,7 @@ import proxy.herramientas as herramientas
 import proxy.mecanismos as mecanismos
 import proxy.memoria_decisiones as memoria_decisiones
 import proxy.modelos_protegidos as modelos_protegidos
+import proxy.normalizacion as normalizacion
 import proxy.notificaciones as notificaciones
 import proxy.revision_panel as revision_panel
 import proxy.siem as siem
@@ -293,6 +294,11 @@ def _avisar_estado_del_siem() -> None:
     )
 
 
+def _avisar_estado_de_la_normalizacion() -> None:
+    """Deja en el log si la normalizacion de entrada (extension) esta encendida."""
+    _log_servidor.info("Normalizacion de entrada: %s.", normalizacion.descripcion())
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
@@ -301,6 +307,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.error("MODELOS_REMOTOS esta mal configurado: %s", exc)
     _avisar_estado_de_la_memoria()
     _avisar_estado_del_siem()
+    _avisar_estado_de_la_normalizacion()
     await _calentar_modelos()
     yield
     memoria_decisiones.cerrar()  # libera el almacen (conexiones de la base de datos)
@@ -376,10 +383,27 @@ class _MetricasCadena:
     # "memoria" si la peticion se rechazo por una decision humana recordada (campo
     # extendido `origen_decision` del evento); None en el resto.
     origen_decision: str | None = None
+    # Que hizo la extension de normalizacion de entrada (invisibles quitados, tramos
+    # decodificados...): el campo extendido `normalizacion` del evento. None si esta
+    # apagada, que es lo normal.
+    normalizacion: dict[str, Any] | None = None
 
     def sumar(self, pieza: str, ns: int) -> None:
         """Suma `ns` al tiempo de `pieza` (entrada y salida van al mismo total)."""
         self.tiempos_ns[pieza] = self.tiempos_ns.get(pieza, 0) + ns
+
+    def absorber(self, otra: _MetricasCadena, *, con_detalle: bool) -> None:
+        """Suma el costo de otra pasada por la cadena a esta.
+
+        El detalle de los clasificadores de `otra` solo se copia si `con_detalle`: es
+        el de la pasada que bloqueo (lo que el log debe mostrar), no el de una pasada
+        extra que no encontro nada.
+        """
+        for pieza, ns in otra.tiempos_ns.items():
+            self.sumar(pieza, ns)
+        self.latencia_clasificador_ms += otra.latencia_clasificador_ms
+        if con_detalle:
+            self.detalles_clasificacion.update(otra.detalles_clasificacion)
 
 
 # Un paso de la cadena: recibe (texto, direccion, modelo, metricas) y
@@ -513,6 +537,36 @@ async def _ejecutar_cadena(
         if bloqueado:
             return texto, clave
     return texto, None
+
+
+async def _cadena_de_entrada(
+    texto: str, modelo: str, config: dict[str, bool], metricas: _MetricasCadena
+) -> tuple[str, str | None]:
+    """La cadena de entrada, con la extension de normalizacion si esta encendida.
+
+    Apagada (lo normal) es exactamente `_ejecutar_cadena()`. Encendida: la cadena revisa
+    el texto SIN caracteres invisibles (que es tambien lo que recibira el modelo) y, si
+    no bloqueo, una segunda pasada revisa lo que estaba escondido (Base64, hex, ROT13,
+    texto en caracteres invisibles) con los MISMOS mecanismos. El primero que bloquea
+    gana y su nombre queda como `mecanismo_que_bloqueo`.
+    """
+    analisis = normalizacion.analizar(texto)
+    if analisis is None:
+        return await _ejecutar_cadena(texto, "entrada", modelo, config, metricas)
+    metricas.normalizacion = analisis.como_dict()
+    mensaje, bloqueo = await _ejecutar_cadena(
+        analisis.texto_limpio, "entrada", modelo, config, metricas
+    )
+    if bloqueo is not None or not analisis.variante:
+        return mensaje, bloqueo
+    pasada = _MetricasCadena()
+    _, bloqueo = await _ejecutar_cadena(
+        analisis.variante, "entrada", modelo, config, pasada
+    )
+    metricas.absorber(pasada, con_detalle=bloqueo is not None)
+    if bloqueo is not None:
+        metricas.normalizacion["bloqueo_en_variante"] = True
+    return mensaje, bloqueo
 
 
 def _preparar_prompt(
@@ -945,6 +999,10 @@ def _construir_evento(
         evento["modelo_protegido"] = metricas.detalle_modelo
     if metricas.origen_decision:
         evento["origen_decision"] = metricas.origen_decision
+    # Que hizo la normalizacion de entrada (campo extendido `normalizacion`): conteos,
+    # nunca el texto. Solo existe si la extension esta encendida.
+    if metricas.normalizacion is not None:
+        evento["normalizacion"] = metricas.normalizacion
     if tiempo_revision_humana_ms is not None:
         evento["tiempo_revision_humana_ms"] = tiempo_revision_humana_ms
     if es_extension:
@@ -1113,8 +1171,8 @@ async def chat(request: ChatRequest, http_request: Request) -> dict[str, Any]:
         metricas.sumar("limite", time.perf_counter_ns() - inicio_ns)
 
     if mecanismo_bloqueo is None:
-        mensaje, mecanismo_bloqueo = await _ejecutar_cadena(
-            request.mensaje, "entrada", request.modelo, config, metricas
+        mensaje, mecanismo_bloqueo = await _cadena_de_entrada(
+            request.mensaje, request.modelo, config, metricas
         )
         # Mecanismo 5, disparador 2: la cadena de entrada ya marco un
         # bloqueo. Con aprobacion_humana activo, ese bloqueo se convierte
@@ -1150,7 +1208,9 @@ async def chat(request: ChatRequest, http_request: Request) -> dict[str, Any]:
             metricas,
             config,
             es_extension=(
-                _es_extension(request.modelo) or metricas.origen_decision == "memoria"
+                _es_extension(request.modelo)
+                or metricas.origen_decision == "memoria"
+                or metricas.normalizacion is not None
             ),
         )
     )

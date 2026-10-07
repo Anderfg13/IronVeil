@@ -115,6 +115,12 @@ services:
       # entregan en un hilo aparte: un SIEM caido nunca frena /chat.
       SIEM_DESTINOS: ${SIEM_DESTINOS:-}
       SIEM_ADAPTADORES: ${SIEM_ADAPTADORES:-}
+      # Normalizacion de entrada (EXTENSION opcional, apagada por defecto): decodifica
+      # Base64/hex/ROT13 y quita caracteres invisibles antes de la cadena. Con ella
+      # encendida C0-C6 ya no son las del experimento (docs/NORMALIZACION_DE_ENTRADA.md).
+      NORMALIZACION_ENTRADA: ${NORMALIZACION_ENTRADA:-}
+      NORMALIZACION_DECODIFICADORES: ${NORMALIZACION_DECODIFICADORES:-}
+      NORMALIZACION_ADAPTADORES: ${NORMALIZACION_ADAPTADORES:-}
       SIEM_CA_ARCHIVO: ${SIEM_CA_ARCHIVO:-}
       # Credenciales de cada destino: SOLO aqui (.env), nunca dentro de la URL.
       SIEM_HTTPS_TOKEN: ${SIEM_HTTPS_TOKEN:-}

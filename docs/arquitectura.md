@@ -368,6 +368,18 @@ con `json.dumps(evento, ensure_ascii=False)` + salto de línea.
     `SIEM_DESTINOS` (o la forma histórica `SIEM_ARCHIVO_WAZUH`). Los eventos de `/revision/*`
     también se exportan, porque pasan por la misma `_registrar_evento()`. Otro SIEM se conecta con
     un módulo propio listado en `SIEM_ADAPTADORES`, sin editar IronVeil.
+- `proxy/normalizacion/` — **extensión opcional** (apagada salvo `NORMALIZACION_ENTRADA=1`): cubre
+  los ataques que se esconden (Base64, hexadecimal, ROT13, caracteres Unicode invisibles) que ni el
+  filtro ni Prompt Guard ven. Actúa **antes** de la cadena: quita los invisibles (el modelo recibe
+  el texto limpio), decodifica los tramos hasta dos capas y, si lo decodificado parece lenguaje,
+  hace una segunda pasada con los **mismos** mecanismos (`_cadena_de_entrada()` en `main.py`; el
+  primero que bloquea gana). No es un mecanismo nuevo: solo muestra a los existentes lo que estaba
+  escondido, así que sin mecanismos activos no bloquea nada. Paquete con puertos y adaptadores
+  (dominio → puerto `Decodificador` → servicio → registro → `decodificadores/` → composición, la
+  única que lee el entorno); otra codificación se agrega con `NORMALIZACION_ADAPTADORES`. Con ella
+  encendida los eventos llevan `normalizacion` y `es_extension`, y C0–C6 dejan de ser las del
+  experimento. Medido sin LLM: 0/6 → 6/6 por codificación y 0/18 falsos positivos
+  (`analisis/medir_normalizacion.py`; muestra pequeña). Guía: `docs/NORMALIZACION_DE_ENTRADA.md`.
 - `proxy/mecanismos.py`: las 5 funciones tienen lógica real. `filtrar()`
   bloquea en entrada por patrones de prompt injection y redacta
   credenciales canario en salida. `delimitar()` envuelve la entrada del

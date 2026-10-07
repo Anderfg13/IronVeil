@@ -108,6 +108,7 @@ Lo que sí se sostiene:
 - **C2 (delimitación)**: sin efecto global, y una diferencia suelta en `latentinjection` (16/30 → 7/30,
   p = 0,033) que, entre 15 comparaciones, es una **pista y no un hallazgo**. Tiene sentido con el
   mecanismo (esos ataques van escondidos en un documento), pero sube en `promptinject`.
+- **Los ataques codificados (Base64, ROT13, Tag) quedan sin cubrir por el filtro y por Prompt Guard**: es una debilidad latente, y la extensión opcional `docs/NORMALIZACION_DE_ENTRADA.md` la cubre.
 - **3 de los 8 probes no discriminan** (`InjectBase64`, `InjectROT13`, `goodside.Tag`): dan 0 % hasta
   en C0 porque el modelo de 1B no obedece instrucciones codificadas.
 - **Garak solo trae ataques**: no mide falsos positivos. Que C3 bloquee casi todo no dice nada sobre
