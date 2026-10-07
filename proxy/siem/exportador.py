@@ -65,7 +65,7 @@ class ExportadorSIEM:
             enviar_a_siem(evento, destino.formateador, destino.conector)
         except ErrorSIEM as exc:
             # El mensaje de un ErrorSIEM ya es seguro (sin claves ni contenido).
-            logger.error(
+            logger.exception(
                 "exportacion a SIEM fallida (el evento quedo en el dataset): %s: %s",
                 destino.descripcion,
                 exc,

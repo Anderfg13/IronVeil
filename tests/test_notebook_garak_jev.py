@@ -85,7 +85,7 @@ def test_la_clave_va_por_getpass_y_no_se_pide_el_token_de_hugging_face(
 
     assert 'getpass.getpass("TYPESAFE_API_KEY: ")' in todo
     assert 'getpass.getpass("SPT_SECRET: ")' in todo
-    assert "HF_TOKEN" not in todo  # Prompt Guard no se carga: no hace falta el token
+    assert "Enter para omitir" in todo  # HF_TOKEN es opcional: Prompt Guard no se carga
     assert not re.search(r"TYPESAFE_API_KEY\"?\]?\s*=\s*[\"'][^\"']+[\"']", todo)
     assert "SPT-DEMO" not in todo and "RRHH-DEMO" not in todo
 
@@ -190,3 +190,15 @@ def test_la_variante_local_sigue_esperando_prompt_guard_y_no_se_detiene() -> Non
     assert 'BACKEND_ENTRADA_ESPERADO = "huggingface"' in previa
     assert local.detener_si_falla is False
     assert "TYPESAFE" not in "\n".join(_codigo(cuaderno))
+
+
+def test_la_prueba_de_humo_corre_un_probe_a_la_vez_con_limite_de_tiempo(
+    notebook: dict[str, Any],
+) -> None:
+    """Una corrida sin limite que se cuelga no dice cual probe fue el culpable."""
+    humo = next(c for c in _codigo(notebook) if 'correr_garak("humo"' in c)
+
+    assert "for probe in PROBES_HUMO" in humo
+    assert "timeout=TIMEOUT_HUMO_S" in humo
+    assert "subprocess.TimeoutExpired" in humo
+    assert "tail" in humo  # muestra el final del log del proxy al fallar

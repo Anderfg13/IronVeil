@@ -85,7 +85,7 @@ def construir(configuracion: Configuracion) -> ExportadorSIEM:
     try:
         registro = construir_registro(configuracion.adaptadores)
     except ErrorSIEM as exc:
-        logger.error("SIEM: %s; se usan solo los adaptadores incluidos.", exc)
+        logger.exception("SIEM: %s; se usan solo los adaptadores incluidos.", exc)
         registro = construir_registro()
     entorno = dict(configuracion.entorno)
     destinos: list[Destino] = []
@@ -94,7 +94,7 @@ def construir(configuracion: Configuracion) -> ExportadorSIEM:
             resuelto = registro.resolver(texto, entorno)
         except ErrorSIEM as exc:
             # Se nombra el esquema, no el texto completo: podria traer un secreto.
-            logger.error(
+            logger.exception(
                 "SIEM: un destino (%s) no se pudo configurar y se omite: %s",
                 texto.partition("://")[0],
                 exc,

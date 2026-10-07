@@ -75,7 +75,7 @@ class MemoriaDecisiones:
             for regla in self._almacen.cargar():
                 self._reglas[regla.huella] = regla
         except ErrorAlmacen as exc:
-            logger.error(
+            logger.exception(
                 "memoria de decisiones: el almacen no esta disponible (%s); funciona "
                 "SOLO en memoria y se perdera al reiniciar.",
                 exc,
@@ -97,7 +97,7 @@ class MemoriaDecisiones:
             operacion(self._almacen)
             return True
         except ErrorAlmacen as exc:
-            logger.error(
+            logger.exception(
                 "memoria de decisiones: no se pudo guardar (%s); la regla vale hasta "
                 "el proximo reinicio.",
                 exc,

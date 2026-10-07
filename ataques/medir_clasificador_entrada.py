@@ -36,6 +36,7 @@ if str(RAIZ) not in sys.path:
     sys.path.insert(0, str(RAIZ))
 
 from analisis.estadistica import intervalo_wilson  # noqa: E402
+from analisis.rutas import ErrorRutaNoPermitida, ruta_permitida  # noqa: E402
 from ataques.corpus_multilingue import CORPUS_MULTILINGUE  # noqa: E402
 from ataques.medir_costo_mecanismos import PROMPTS_LEGITIMOS  # noqa: E402
 
@@ -205,6 +206,30 @@ def percentil(valores: list[float], p: float) -> float:
     return ordenados[max(0, math.ceil(p * len(ordenados)) - 1)]
 
 
+def _enviar(
+    evaluar: Callable[[str], tuple[bool, object]],
+    caso: Caso,
+    repeticion: int,
+    reloj: Callable[[], float],
+) -> tuple[Muestra, object]:
+    """Un envio: la muestra (con su latencia) y el detalle que dio el clasificador."""
+    inicio = reloj()
+    malicioso, detalle = evaluar(caso.texto)
+    latencia_ms = (reloj() - inicio) * 1000
+    muestra = Muestra(
+        caso.id,
+        caso.clase,
+        latencia_ms,
+        str(getattr(detalle, "estado", "desconocido")),
+        malicioso,
+        getattr(detalle, "puntaje", None),
+        repeticion,
+        len(caso.texto),
+        caso.idioma,
+    )
+    return muestra, detalle
+
+
 def medir(
     evaluar: Callable[[str], tuple[bool, object]],
     entradas: Iterable[Caso | tuple[str, str, str]],
@@ -227,21 +252,8 @@ def medir(
     muestras: list[Muestra] = []
     seguidos = 0
     for repeticion in range(1, repeticiones + 1):
-        for id_caso, clase, texto, idioma in entradas:
-            inicio = reloj()
-            malicioso, detalle = evaluar(texto)
-            latencia_ms = (reloj() - inicio) * 1000
-            muestra = Muestra(
-                id_caso,
-                clase,
-                latencia_ms,
-                str(getattr(detalle, "estado", "desconocido")),
-                malicioso,
-                getattr(detalle, "puntaje", None),
-                repeticion,
-                len(texto),
-                idioma,
-            )
+        for caso in entradas:
+            muestra, detalle = _enviar(evaluar, caso, repeticion, reloj)
             muestras.append(muestra)
             if al_medir:
                 al_medir(muestra, detalle)
@@ -272,6 +284,7 @@ def guardar_crudo(ruta: Path) -> Callable[[Muestra, object], None]:
 
     Se escribe envio por envio: si el proceso se corta, lo ya pagado no se pierde.
     """
+    ruta = ruta_permitida(ruta)
     ruta.parent.mkdir(parents=True, exist_ok=True)
 
     def al_medir(muestra: Muestra, detalle: object) -> None:
@@ -284,7 +297,7 @@ def guardar_crudo(ruta: Path) -> Callable[[Muestra, object], None]:
 
 def leer_lineas(ruta: Path) -> list[dict]:
     """Los registros de un archivo crudo, tal como se guardaron."""
-    lineas = ruta.read_text(encoding="utf-8").splitlines()
+    lineas = ruta_permitida(ruta).read_text(encoding="utf-8").splitlines()
     return [json.loads(linea) for linea in lineas if linea.strip()]
 
 
@@ -553,7 +566,7 @@ def _parser() -> argparse.ArgumentParser:
 
 def _escribir_informe(muestras: list[Muestra], umbral: object, salida: Path) -> int:
     informe = resumir(muestras, umbral)
-    salida.write_text(informe, encoding="utf-8")
+    ruta_permitida(salida).write_text(informe, encoding="utf-8")
     print(informe)
     return 0
 
@@ -567,6 +580,14 @@ def _resumir_desde_crudo(origen: Path, salida: Path) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    try:
+        return _ejecutar(args)
+    except ErrorRutaNoPermitida as exc:
+        print(exc, file=sys.stderr)
+        return 2
+
+
+def _ejecutar(args: argparse.Namespace) -> int:
     if args.resumir_desde:
         return _resumir_desde_crudo(args.resumir_desde, args.salida)
 

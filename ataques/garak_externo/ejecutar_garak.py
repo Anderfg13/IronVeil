@@ -33,6 +33,11 @@ from datetime import datetime
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent.parent
+if str(RAIZ) not in sys.path:
+    sys.path.insert(0, str(RAIZ))
+
+from analisis.rutas import ruta_permitida  # noqa: E402
+
 PUENTE = Path(__file__).resolve().parent / "ironveil_garak.py"
 NOMBRE_CONTENEDOR = "ironveil-proxy-garak"
 IMAGEN_GARAK = "ironveil-garak"
@@ -116,6 +121,7 @@ def exigir_docker_e_imagen_de_garak() -> None:
 def escribir_config(ruta: Path, activas: tuple[str, ...]) -> None:
     """El `config.yaml` de una configuracion: las 5 claves, true solo las activas."""
     lineas = [f"{m}: {'true' if m in activas else 'false'}" for m in MECANISMOS]
+    ruta = ruta_permitida(ruta)
     ruta.parent.mkdir(parents=True, exist_ok=True)
     ruta.write_text("\n".join(lineas) + "\n", encoding="utf-8")
 
@@ -123,7 +129,7 @@ def escribir_config(ruta: Path, activas: tuple[str, ...]) -> None:
 def escribir_config_garak(ruta: Path, tope: int, generaciones: int) -> None:
     """Config de Garak: tope de prompts por probe y detectores extendidos apagados (esos
     descargan modelos de Hugging Face; los de cadena bastan y son reproducibles)."""
-    ruta.write_text(
+    ruta_permitida(ruta).write_text(
         "run:\n"
         f"  generations: {generaciones}\n"
         f"  soft_probe_prompt_cap: {tope}\n"

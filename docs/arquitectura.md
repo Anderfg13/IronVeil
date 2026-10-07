@@ -274,10 +274,15 @@ con `json.dumps(evento, ensure_ascii=False)` + salto de línea.
   `validar_privilegio()`): en `"salida"` su paso siempre retorna sin
   bloquear. **Aprobación humana tampoco vive en `_CADENA_MECANISMOS`**
   (ver sección 3, paso 5, y el comentario junto a `_CADENA_MECANISMOS` en
-  el código): `_gestionar_aprobacion_humana()` intercepta el resultado de
-  la cadena de entrada (o corre antes, si el rate limit ya se excedió) y lo
-  convierte en "encolar" (`429`) en vez de "rechazar" (`400`) cuando
-  `aprobacion_humana` está activo. El endpoint escribe el log JSONL de la
+  el código): `chat()` delega en dos funciones auxiliares (desde 2026-10-06, para
+  que el endpoint se mantenga corto): `_bloqueo_previo()` (memoria de decisiones y
+  límite de tasa, que corren antes de la cadena) y `_revisar_entrada()` (la cadena de
+  entrada y, con `aprobacion_humana` activo, su conversión a cola).
+  `_gestionar_aprobacion_humana()`, llamada desde `_revisar_entrada()`, intercepta el
+  resultado de la cadena de entrada (o el límite de tasa ya se excedió en
+  `_bloqueo_previo()`) y lo convierte en "encolar" (`429`) en vez de "rechazar"
+  (`400`) cuando `aprobacion_humana` está activo. El orden y el comportamiento no
+  cambiaron: solo se sacó código de `chat()`. El endpoint escribe el log JSONL de la
   sección 5 en cada petición; añade `latencia_clasificador_ms` siempre que
   `config["clasificacion"]` sea `true`. **Las 7 configuraciones (`C0`..`C6`)
   ya se ejecutan de punta a punta.**

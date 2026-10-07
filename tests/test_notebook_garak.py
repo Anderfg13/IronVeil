@@ -127,7 +127,8 @@ def test_la_prueba_de_humo_se_hace_antes_de_la_corrida_larga(
     larga = next(i for i, c in enumerate(codigo) if "tope=TOPE" in c)
 
     assert humo < larga
-    assert "assert r.returncode == 0" in codigo[humo]
+    assert "raise RuntimeError" in codigo[humo]
+    assert "problemas" in codigo[humo]
 
 
 def test_el_zip_no_incluye_la_prueba_de_humo_y_si_las_configuraciones(

@@ -56,7 +56,7 @@ def test_lleva_embebidos_los_archivos_identicos_a_los_del_repo(
 ) -> None:
     contenido = (RAIZ / ruta).read_text(encoding="utf-8")
     celdas = [c for c in _codigo(notebook) if c.startswith("%%writefile")]
-    esperada = f"%%writefile /content/IronVeil/{ruta}\n{contenido}"
+    esperada = f"%%writefile {ruta}\n{contenido}"
     assert esperada.strip("\n") in [c.strip("\n") for c in celdas]
 
 

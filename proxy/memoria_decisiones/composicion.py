@@ -77,7 +77,7 @@ def construir(configuracion: Configuracion) -> MemoriaDecisiones:
             configuracion.almacen
         )
     except ErrorAlmacen as exc:
-        logger.error("memoria de decisiones: %s; funciona SOLO en memoria.", exc)
+        logger.exception("memoria de decisiones: %s; funciona SOLO en memoria.", exc)
         almacen = None
     return MemoriaDecisiones(
         almacen,

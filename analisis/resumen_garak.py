@@ -39,8 +39,10 @@ if str(RAIZ) not in sys.path:
     sys.path.insert(0, str(RAIZ))
 
 from analisis.estadistica import intervalo_wilson  # noqa: E402
+from analisis.rutas import ErrorRutaNoPermitida, ruta_permitida  # noqa: E402
 from proxy.mecanismos import PATRON_CREDENCIAL_GENERICO, TEXTO_REDACTADO  # noqa: E402
 
+INFORME_GARAK = "garak.report.jsonl"
 ORDEN_CONFIGURACIONES = ("C0", "C1", "C2", "C3", "C4", "C6sinH")
 # El campo `configuracion` del proxy dice "no_estandar" para C6sinH (no es una de las 7
 # oficiales): se identifica cada configuracion por sus mecanismos activos.
@@ -132,7 +134,7 @@ def leer_estados(ruta: Path) -> dict[str, int]:
 def cargar(entrada: Path) -> tuple[list[FilaProbe], dict[str, dict[str, int]]]:
     """Todas las configuraciones encontradas bajo `entrada`, en orden canonico."""
     nombres = sorted(
-        (p.name for p in entrada.iterdir() if (p / "garak.report.jsonl").is_file()),
+        (p.name for p in entrada.iterdir() if (p / INFORME_GARAK).is_file()),
         key=lambda n: (
             ORDEN_CONFIGURACIONES.index(n) if n in ORDEN_CONFIGURACIONES else 99,
             n,
@@ -142,7 +144,7 @@ def cargar(entrada: Path) -> tuple[list[FilaProbe], dict[str, dict[str, int]]]:
     estados: dict[str, dict[str, int]] = {}
     for nombre in nombres:
         carpeta = entrada / nombre
-        filas += leer_probes(nombre, carpeta / "garak.report.jsonl")
+        filas += leer_probes(nombre, carpeta / INFORME_GARAK)
         estados[nombre] = leer_estados(carpeta / "estados.jsonl")
     return filas, estados
 
@@ -184,32 +186,38 @@ def clasificar_bloqueos(eventos: Iterable[dict[str, object]]) -> dict[str, Bloqu
     return {c: Bloqueos(s[0], s[1]) for c, s in cuenta.items()}
 
 
-def contar_credenciales(entrada: Path) -> dict[str, Credenciales]:
-    """{configuracion: Credenciales} desde las respuestas de los informes de Garak."""
-    resultado: dict[str, Credenciales] = {}
-    for carpeta in sorted(p for p in entrada.iterdir() if p.is_dir()):
-        informe = carpeta / "garak.report.jsonl"
-        if not informe.is_file():
+def _respuestas_de_intentos(informe: Path) -> Iterable[str]:
+    """Los textos de respuesta de los intentos completos de un informe de Garak."""
+    for linea in informe.read_text(encoding="utf-8").splitlines():
+        if not linea.strip():
             continue
-        respuestas = sin_redactar = redactadas = 0
-        for linea in informe.read_text(encoding="utf-8").splitlines():
-            if not linea.strip():
-                continue
-            intento = json.loads(linea)
-            if (
-                intento.get("entry_type") != "attempt"
-                or intento.get("status") != ESTADO_INTENTO_COMPLETO
-            ):
-                continue
+        intento = json.loads(linea)
+        if (
+            intento.get("entry_type") == "attempt"
+            and intento.get("status") == ESTADO_INTENTO_COMPLETO
+        ):
             for salida in intento.get("outputs", []):
                 texto = salida.get("text") if isinstance(salida, dict) else salida
-                if not texto:
-                    continue
-                respuestas += 1
-                sin_redactar += bool(PATRON_CREDENCIAL_GENERICO.search(texto))
-                redactadas += TEXTO_REDACTADO in texto
-        resultado[carpeta.name] = Credenciales(respuestas, sin_redactar, redactadas)
-    return resultado
+                if texto:
+                    yield texto
+
+
+def _credenciales_en(informe: Path) -> Credenciales:
+    respuestas = list(_respuestas_de_intentos(informe))
+    return Credenciales(
+        len(respuestas),
+        sum(bool(PATRON_CREDENCIAL_GENERICO.search(r)) for r in respuestas),
+        sum(TEXTO_REDACTADO in r for r in respuestas),
+    )
+
+
+def contar_credenciales(entrada: Path) -> dict[str, Credenciales]:
+    """{configuracion: Credenciales} desde las respuestas de los informes de Garak."""
+    return {
+        carpeta.name: _credenciales_en(carpeta / INFORME_GARAK)
+        for carpeta in sorted(p for p in entrada.iterdir() if p.is_dir())
+        if (carpeta / INFORME_GARAK).is_file()
+    }
 
 
 def totales(filas: list[FilaProbe]) -> dict[str, tuple[int, int, int]]:
@@ -511,23 +519,28 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--entrada", type=Path, required=True)
     parser.add_argument("--salida", type=Path, default=RAIZ / "analisis")
     args = parser.parse_args(argv)
+    try:
+        entrada = ruta_permitida(args.entrada)
+        salida = ruta_permitida(args.salida)
+    except ErrorRutaNoPermitida as exc:
+        parser.error(str(exc))
 
-    filas, estados = cargar(args.entrada)
+    filas, estados = cargar(entrada)
     if not filas:
-        print("No hay informes de Garak en", args.entrada, file=sys.stderr)
+        print("No hay informes de Garak en", entrada, file=sys.stderr)
         return 1
-    args.salida.mkdir(parents=True, exist_ok=True)
-    bloqueos = clasificar_bloqueos(leer_eventos(args.entrada))
-    credenciales = contar_credenciales(args.entrada)
-    (args.salida / "garak_resumen.md").write_text(
-        construir_markdown(filas, estados, args.entrada, bloqueos, credenciales),
+    salida.mkdir(parents=True, exist_ok=True)
+    bloqueos = clasificar_bloqueos(leer_eventos(entrada))
+    credenciales = contar_credenciales(entrada)
+    (salida / "garak_resumen.md").write_text(
+        construir_markdown(filas, estados, entrada, bloqueos, credenciales),
         encoding="utf-8",
     )
-    escribir_csv(filas, args.salida / "garak_resumen.csv")
+    escribir_csv(filas, salida / "garak_resumen.csv")
     grafica = RAIZ / "resultados" / "graficas_garak" / "garak_asr_por_configuracion.png"
     hay_grafica = graficar(filas, grafica, configuraciones_infladas(bloqueos))
     print(
-        f"Escrito: {args.salida / 'garak_resumen.md'}"
+        f"Escrito: {salida / 'garak_resumen.md'}"
         + (f" y {grafica}" if hay_grafica else "")
     )
     return 0

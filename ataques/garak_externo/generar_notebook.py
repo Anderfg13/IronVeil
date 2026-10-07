@@ -23,7 +23,7 @@ DESTINO_JEV = RAIZ / "resultados" / "GARAK_JEV_COLAB_T4.ipynb"
 MAXIMO_DE_FALLOS = 0.20  # fraccion de llamadas a un clasificador que puede fallar
 
 
-def _cargar(nombre: str):  # noqa: ANN202 -- un modulo hermano, sin paquete
+def _cargar(nombre: str):  # noqa: ANN202
     especificacion = importlib.util.spec_from_file_location(
         nombre, AQUI / f"{nombre}.py"
     )
@@ -127,7 +127,7 @@ INTRO_JEV = """
 
 **Antes de empezar:** Entorno de ejecución → Cambiar tipo de entorno → **T4 GPU** (la necesitan Ollama y Llama Guard; Jev corre en TypeSafe). Luego ejecuta las celdas en orden.
 
-**Seguridad:** `TYPESAFE_API_KEY`, `SPT_SECRET` y `RRHH_SECRET` los escribes TÚ en la celda 4 (`getpass`). Nunca los pegues en una celda como texto, ni en un chat. Antes de empaquetar se comprueba que la clave no aparezca en ningún archivo. Los ataques solo van contra el proxy de **esta** sesión (localhost).
+**Seguridad:** `TYPESAFE_API_KEY`, `SPT_SECRET` y `RRHH_SECRET` (y, si quieres, `HF_TOKEN`) los escribes TÚ en la celda 4 (`getpass`). Nunca los pegues en una celda como texto, ni en un chat. `HF_TOKEN` es opcional (Garak no lo necesita para el proxy, pero algunos probes descargan datos y sin token Hugging Face los limita). Antes de empaquetar se comprueba que la clave de Jev no aparezca en ningún archivo. Los ataques solo van contra el proxy de **esta** sesión (localhost).
 
 **Tiempo estimado:** 30–50 min (instalar ≈ 10 min; ≈ 8–12 min por configuración).
 
@@ -136,6 +136,7 @@ INTRO_JEV = """
 SECRETOS_JEV = """import getpass, os
 
 os.environ["TYPESAFE_API_KEY"] = getpass.getpass("TYPESAFE_API_KEY: ")
+os.environ["HF_TOKEN"] = getpass.getpass("HF_TOKEN (opcional, Enter para omitir; ayuda a Garak a descargar datos): ")
 os.environ["SPT_SECRET"] = getpass.getpass("SPT_SECRET: ")
 os.environ["RRHH_SECRET"] = getpass.getpass("RRHH_SECRET: ")
 
@@ -353,7 +354,8 @@ def construir_notebook(variante: Variante = LOCAL) -> dict[str, Any]:
 !python --version
 %cd /content
 !test -d IronVeil || git clone https://github.com/Anderfg13/IronVeil.git
-%cd /content/IronVeil
+REPO = "/content/IronVeil"
+%cd {REPO}
 !git checkout develop
 !git pull
 """),
@@ -387,7 +389,7 @@ Te va a pedir 3 valores con `getpass` (no se muestran al escribirlos). `BASE_MOD
         _md("## 5. Crear los modelos `soporte` y `rrhh` + descargar el clasificador"),
         _codigo("""
 # init.sh espera los Modelfile en /modelfiles (ruta de Docker); en Colab es un symlink.
-!ln -sfn /content/IronVeil/ollama/modelfiles /modelfiles
+!ln -sfn {REPO}/ollama/modelfiles /modelfiles
 !bash ollama/init.sh
 !ollama list
 """),
@@ -399,12 +401,12 @@ Te va a pedir 3 valores con `getpass` (no se muestran al escribirlos). `BASE_MOD
 import subprocess, sys
 
 r = subprocess.run(["pip", "install", "-q", "-r", "proxy/requirements.txt"],
-                   cwd="/content/IronVeil", capture_output=True, text=True)
+                   cwd=REPO, capture_output=True, text=True)
 if r.returncode != 0:
     print("requirements.txt (hashes de Python 3.12) no aplica a este Colab; uso requirements.in")
     print(r.stderr[-500:])
     r = subprocess.run(["pip", "install", "-q", "-r", "proxy/requirements.in"],
-                       cwd="/content/IronVeil", capture_output=True, text=True)
+                       cwd=REPO, capture_output=True, text=True)
     print(r.stderr[-500:])
 comprobacion = subprocess.run(
     [sys.executable, "-c", "import fastapi, uvicorn, httpx, yaml, transformers, torch; print('dependencias del proxy: OK')"],
@@ -441,7 +443,6 @@ Garak llama a `chat(prompt)` por cada ataque y esto lo manda a `POST /chat`. Un 
         _codigo(f"""
 import json, os, subprocess, time, urllib.request
 
-REPO = "/content/IronVeil"
 URL_PROXY = "http://localhost:8000"
 GARAK_PY = "/content/venv_garak/bin/python"
 SALIDA = "/content/garak_out"
@@ -476,7 +477,7 @@ def escribir_config_garak(tope):
     return ruta
 
 
-def correr_garak(nombre, probes, tope):
+def correr_garak(nombre, probes, tope, timeout=None):
     os.makedirs(f"{{SALIDA}}/{{nombre}}", exist_ok=True)
     cmd = [GARAK_PY, "-m", "garak",
            "--config", escribir_config_garak(tope),
@@ -487,7 +488,7 @@ def correr_garak(nombre, probes, tope):
            "PYTHONPATH": "/content/garak_externo",
            "IRONVEIL_URL": f"{{URL_PROXY}}/chat",
            "IRONVEIL_ESTADOS": f"{{SALIDA}}/{{nombre}}/estados.jsonl"}}
-    return subprocess.run(cmd, env=env, capture_output=True, text=True)
+    return subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=timeout)
 
 print("Listo:", len(PROBES), "probes,", len(CONFIGS_A_CORRER), "configuraciones.")
 """),
@@ -527,11 +528,32 @@ Un prompt por probe, en C0. Si falta un dato o una dependencia de algún probe, 
 """),
         _codigo("""
 PROBES_HUMO = [p for p in PROBES if p != "dan.Ablation_Dan_11_0"]
+TIMEOUT_HUMO_S = 240   # un probe sano tarda segundos; si pasa de esto, se cuelga
 escribir_config("C0")
-r = correr_garak("humo", PROBES_HUMO, tope=1)
-print((r.stdout + r.stderr)[-2500:])
-print("exit", r.returncode)
-assert r.returncode == 0, "Garak fallo en la prueba de humo: revisa la salida de arriba antes de seguir."
+problemas = []
+for probe in PROBES_HUMO:
+    t0 = time.time()
+    try:
+        r = correr_garak("humo", [probe], tope=1, timeout=TIMEOUT_HUMO_S)
+    except subprocess.TimeoutExpired:
+        problemas.append(probe)
+        print(f"{probe}: SIN RESPUESTA tras {TIMEOUT_HUMO_S} s (se corto)")
+        continue
+    if r.returncode == 0:
+        print(f"{probe}: OK ({time.time() - t0:.0f} s)")
+    else:
+        problemas.append(probe)
+        print(f"{probe}: FALLO, exit {r.returncode} ({time.time() - t0:.0f} s)")
+        print((r.stdout + r.stderr)[-1200:])
+if problemas:
+    for orden in (["tail", "-n", "40", "/content/proxy.log"], ["ollama", "ps"]):
+        print("$", " ".join(orden))
+        print(subprocess.run(orden, capture_output=True, text=True).stdout[-2000:])
+    raise RuntimeError(
+        f"La prueba de humo fallo o se colgo en: {problemas}. NO sigas con la corrida "
+        "completa: copia la salida de arriba."
+    )
+print("Todos los probes cargan y responden: se puede seguir.")
 """),
         _md("""
 ## 12. La corrida completa

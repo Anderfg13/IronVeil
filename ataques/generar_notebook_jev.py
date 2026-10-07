@@ -19,6 +19,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 DESTINO = RAIZ / "resultados" / "JEV_COLAB.ipynb"
 ARCHIVOS_EMBEBIDOS = (
     "analisis/estadistica.py",
+    "analisis/rutas.py",
     "ataques/corpus_multilingue.py",
     "ataques/medir_clasificador_entrada.py",
 )
@@ -46,7 +47,7 @@ def _codigo(texto: str) -> dict[str, Any]:
 def _escribir_archivo(ruta: str) -> dict[str, Any]:
     """Una celda `%%writefile` con el contenido exacto del archivo del repo."""
     contenido = (RAIZ / ruta).read_text(encoding="utf-8")
-    return _codigo(f"%%writefile /content/IronVeil/{ruta}\n{contenido}")
+    return _codigo(f"%%writefile {ruta}\n{contenido}")
 
 
 def construir_notebook() -> dict[str, Any]:
@@ -87,11 +88,11 @@ Se escriben desde este notebook (son los mismos del repo) para no depender de lo
         *(_escribir_archivo(ruta) for ruta in ARCHIVOS_EMBEBIDOS),
         _codigo("""
 # Comprueba que todo importa antes de pedir la clave (httpx y yaml ya vienen en Colab).
-import subprocess, sys
+import os, subprocess, sys
 
 r = subprocess.run(
     [sys.executable, "-c", "import ataques.medir_clasificador_entrada; print('importa: OK')"],
-    cwd="/content/IronVeil", capture_output=True, text=True)
+    cwd=os.getcwd(), capture_output=True, text=True)
 print(r.stdout + r.stderr[-800:])
 assert r.returncode == 0, "No importa: revisa el error de arriba antes de seguir."
 """),
@@ -117,9 +118,9 @@ Si el número no es el que esperas, cámbialo en `MODO` o `REPETICIONES` antes d
 REPETICIONES = 1
 MODO = "solo_idiomas"   # "solo_idiomas" (24), "todo" (53) o "espanol" (29)
 BANDERAS = {"solo_idiomas": "--solo-idiomas", "todo": "--con-idiomas", "espanol": ""}[MODO]
-SALIDA = "/content/jev_out"
+SALIDA = "resultados/jev_colab"   # dentro del repo: el script no escribe fuera del proyecto
 !mkdir -p {SALIDA}
-!cd /content/IronVeil && python ataques/medir_clasificador_entrada.py --simular --repeticiones {REPETICIONES} {BANDERAS}
+!python ataques/medir_clasificador_entrada.py --simular --repeticiones {REPETICIONES} {BANDERAS}
 """),
         _md("""
 ## 5. La medición (aquí sí se paga)
@@ -127,7 +128,7 @@ SALIDA = "/content/jev_out"
 Se registra la hora de cada envío (`momento` en el archivo): sirve para saber con qué carga del servicio se midió la latencia. Una pausa de 0,2 s entre envíos evita saturar el límite de uso.
 """),
         _codigo("""
-!cd /content/IronVeil && python ataques/medir_clasificador_entrada.py --repeticiones {REPETICIONES} {BANDERAS} --crudo {SALIDA}/jev_crudo.jsonl --salida {SALIDA}/jev_efectividad.md
+!python ataques/medir_clasificador_entrada.py --repeticiones {REPETICIONES} {BANDERAS} --crudo {SALIDA}/jev_crudo.jsonl --salida {SALIDA}/jev_efectividad.md
 """),
         _md("""
 ## 6. Re-analizar sin pagar
@@ -135,7 +136,7 @@ Se registra la hora de cada envío (`momento` en el archivo): sirve para saber c
 El informe se puede regenerar desde el archivo crudo cuantas veces quieras, sin ningún envío. Útil si quieres otro formato o comparar umbrales con calma.
 """),
         _codigo("""
-!cd /content/IronVeil && python ataques/medir_clasificador_entrada.py --resumir-desde {SALIDA}/jev_crudo.jsonl --salida {SALIDA}/jev_efectividad.md > /dev/null && echo "informe regenerado sin ningun envio"
+!python ataques/medir_clasificador_entrada.py --resumir-desde {SALIDA}/jev_crudo.jsonl --salida {SALIDA}/jev_efectividad.md > /dev/null && echo "informe regenerado sin ningun envio"
 """),
         _md("""
 ## 7. Comprobar que el archivo no lleva la clave ni texto

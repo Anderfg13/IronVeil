@@ -36,7 +36,7 @@ class ConectorArchivoLocal:
             ) from exc
 
 
-def fabrica_archivo(destino: str, contexto: ContextoConector) -> ConectorSIEM:
+def fabrica_archivo(destino: str, _contexto: ContextoConector) -> ConectorSIEM:
     """`archivo:///ruta/al/archivo.jsonl` -> el archivo que vigila el agente."""
     if not destino.strip():
         raise ErrorSIEM("falta la ruta del archivo SIEM", reintentable=False)

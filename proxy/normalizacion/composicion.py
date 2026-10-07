@@ -70,14 +70,16 @@ def construir(configuracion: Configuracion) -> Normalizador:
     try:
         registro = construir_registro(configuracion.adaptadores)
     except ErrorNormalizacion as exc:
-        logger.error("normalizacion: %s; se usan los decodificadores incluidos.", exc)
+        logger.exception(
+            "normalizacion: %s; se usan los decodificadores incluidos.", exc
+        )
         registro = construir_registro()
     creados = []
     for nombre in configuracion.decodificadores:
         try:
             creados += registro.crear([nombre])
         except ErrorNormalizacion as exc:
-            logger.error("normalizacion: %s; se omite.", exc)
+            logger.exception("normalizacion: %s; se omite.", exc)
     return Normalizador(creados)
 
 

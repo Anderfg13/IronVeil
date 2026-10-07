@@ -25,6 +25,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 if str(RAIZ) not in sys.path:
     sys.path.insert(0, str(RAIZ))
 
+from analisis.rutas import ruta_permitida  # noqa: E402
 from ataques.medir_costo_mecanismos import (  # noqa: E402
     CASOS_DE_BLOQUEO,
     PROMPTS_LEGITIMOS,
@@ -207,7 +208,7 @@ def main(argv: list[str] | None = None) -> int:
         [*PROMPTS_LEGITIMOS, *LEGITIMOS_DIFICILES], normalizador
     )
     informe = construir_markdown(filas, ignoradas, falsos_positivos, len(ataques))
-    args.salida.write_text(informe, encoding="utf-8")
+    ruta_permitida(args.salida).write_text(informe, encoding="utf-8")
     print(informe)
     return 0
 

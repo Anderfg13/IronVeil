@@ -304,7 +304,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         modelos_protegidos.resolver("")  # valida MODELOS_REMOTOS al arrancar
     except ErrorConfiguracion as exc:
-        logger.error("MODELOS_REMOTOS esta mal configurado: %s", exc)
+        logger.exception("MODELOS_REMOTOS esta mal configurado: %s", exc)
     _avisar_estado_de_la_memoria()
     _avisar_estado_del_siem()
     _avisar_estado_de_la_normalizacion()
@@ -714,7 +714,7 @@ async def _llamar_modelo_protegido(
     try:
         remoto = modelos_protegidos.resolver(modelo)
     except ErrorConfiguracion as exc:
-        logger.error("MODELOS_REMOTOS esta mal configurado: %s", exc)
+        logger.exception("MODELOS_REMOTOS esta mal configurado: %s", exc)
         raise HTTPException(status_code=502, detail=_DETALLE_ERROR_OLLAMA) from exc
     if remoto is None:
         respuesta = await _llamar_ollama(modelo, mensaje)
@@ -1148,6 +1148,49 @@ async def _completar_peticion(
     return respuesta, mecanismo_bloqueo
 
 
+def _bloqueo_previo(
+    request: ChatRequest,
+    http_request: Request,
+    config: dict[str, bool],
+    metricas: _MetricasCadena,
+    id_revision: str | None,
+) -> str | None:
+    """Lo que puede cortar la peticion antes de la cadena: memoria y limite de tasa."""
+    if _consultar_memoria(request, config, metricas):
+        return "aprobacion_humana"  # rechazo recordado: final, sin cola
+    if not config["aprobacion_humana"]:
+        return None
+    inicio_ns = time.perf_counter_ns()
+    mecanismo_bloqueo = _verificar_limite_de_tasa(request, http_request, id_revision)
+    metricas.sumar("limite", time.perf_counter_ns() - inicio_ns)
+    return mecanismo_bloqueo
+
+
+async def _revisar_entrada(
+    request: ChatRequest,
+    http_request: Request,
+    config: dict[str, bool],
+    metricas: _MetricasCadena,
+    id_revision: str | None,
+) -> tuple[str, str | None]:
+    """La cadena de entrada y, con aprobacion humana activa, su conversion a cola.
+
+    Mecanismo 5, disparador 2: la cadena de entrada ya marco un bloqueo y, con
+    aprobacion_humana activo, ese bloqueo se convierte en cola en vez de rechazo
+    automatico (ver `_gestionar_aprobacion_humana()`).
+    """
+    mensaje, mecanismo_bloqueo = await _cadena_de_entrada(
+        request.mensaje, request.modelo, config, metricas
+    )
+    if config["aprobacion_humana"]:
+        inicio_ns = time.perf_counter_ns()
+        mecanismo_bloqueo = _gestionar_aprobacion_humana(
+            request, http_request, mecanismo_bloqueo, id_revision
+        )
+        metricas.sumar("aprobacion_humana", time.perf_counter_ns() - inicio_ns)
+    return mensaje, mecanismo_bloqueo
+
+
 @app.post("/chat", responses=_RESPUESTAS_CHAT)
 async def chat(request: ChatRequest, http_request: Request) -> dict[str, Any]:
     inicio = time.perf_counter()
@@ -1155,35 +1198,18 @@ async def chat(request: ChatRequest, http_request: Request) -> dict[str, Any]:
     activos = _mecanismos_activos(config)
     metricas = _MetricasCadena()
 
-    mecanismo_bloqueo: str | None = None
     mensaje = request.mensaje
     # Identificador del turno si termina en cola de revision: viaja en la
     # cabecera X-Revision-Id del 429 (el cuerpo no cambia), ver espera_revision.py.
     id_revision = uuid.uuid4().hex if config["aprobacion_humana"] else None
 
-    if _consultar_memoria(request, config, metricas):
-        mecanismo_bloqueo = "aprobacion_humana"  # rechazo recordado: final, sin cola
-    elif config["aprobacion_humana"]:
-        inicio_ns = time.perf_counter_ns()
-        mecanismo_bloqueo = _verificar_limite_de_tasa(
-            request, http_request, id_revision
-        )
-        metricas.sumar("limite", time.perf_counter_ns() - inicio_ns)
-
+    mecanismo_bloqueo = _bloqueo_previo(
+        request, http_request, config, metricas, id_revision
+    )
     if mecanismo_bloqueo is None:
-        mensaje, mecanismo_bloqueo = await _cadena_de_entrada(
-            request.mensaje, request.modelo, config, metricas
+        mensaje, mecanismo_bloqueo = await _revisar_entrada(
+            request, http_request, config, metricas, id_revision
         )
-        # Mecanismo 5, disparador 2: la cadena de entrada ya marco un
-        # bloqueo. Con aprobacion_humana activo, ese bloqueo se convierte
-        # en cola en vez de rechazo automatico (ver
-        # _gestionar_aprobacion_humana()).
-        if config["aprobacion_humana"]:
-            inicio_ns = time.perf_counter_ns()
-            mecanismo_bloqueo = _gestionar_aprobacion_humana(
-                request, http_request, mecanismo_bloqueo, id_revision
-            )
-            metricas.sumar("aprobacion_humana", time.perf_counter_ns() - inicio_ns)
 
     respuesta: dict[str, Any] | None = None
 

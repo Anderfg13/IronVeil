@@ -337,3 +337,16 @@ def test_simular_solo_idiomas_cuenta_solo_los_nuevos(monkeypatch, capsys) -> Non
     monkeypatch.setenv("CLASIFICADOR_PERMITIR_REMOTO", "1")
     assert m.main(["--simular", "--solo-idiomas"]) == 0
     assert "Se haran 24 envios" in capsys.readouterr().err
+
+
+def test_una_salida_fuera_del_proyecto_se_rechaza_sin_enviar_nada(
+    monkeypatch, capsys
+) -> None:
+    from pathlib import Path
+
+    from analisis import rutas
+
+    ajena = Path(rutas.RAIZ.anchor) / "carpeta_ajena_al_proyecto" / "informe.md"
+    resultado = m.main(["--resumir-desde", str(ajena), "--salida", str(ajena)])
+    assert resultado == 2
+    assert "queda fuera del proyecto" in capsys.readouterr().err

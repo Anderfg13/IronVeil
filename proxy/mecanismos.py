@@ -853,7 +853,7 @@ def _resultado_respuesta_llama_guard(contenido: object) -> ResultadoBackend:
     try:
         veredicto = _perfil_salida().evaluar(primera_linea)
     except adaptador.ErrorConfiguracion as exc:  # variables de perfil mal declaradas
-        logger.error("clasificar(): perfil de salida invalido: %s", exc)
+        logger.exception("clasificar(): perfil de salida invalido: %s", exc)
         return ResultadoBackend(True, "error_configuracion")
     if veredicto is not None:
         return ResultadoBackend(
