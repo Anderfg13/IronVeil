@@ -51,8 +51,11 @@ logger = logging.getLogger(__name__)
 ENV_USUARIOS = "REVISION_USUARIOS"
 ENV_SESION_MINUTOS = "REVISION_SESION_MINUTOS"
 ENV_COOKIE_SECURE = "REVISION_COOKIE_SECURE"
+ENV_CHAT_AUTENTICACION = "CHAT_REQUIERE_AUTENTICACION"
 
 NOMBRE_COOKIE = "ironveil_sesion"
+ESQUEMA_BASIC = "basic"
+REINO_BASIC = "IronVeil"
 CABECERA_CSRF = "X-CSRF-Token"
 ROL_REVISOR = "revisor"
 ROL_OBSERVADOR = "observador"
@@ -389,6 +392,100 @@ def exigir_revisor(request: Request) -> Identidad | None:
     return sesion.identidad
 
 
+# --- Autenticacion del chat (POST /chat) ------------------------------------
+
+
+def chat_auth_requerida() -> bool:
+    """True si `CHAT_REQUIERE_AUTENTICACION=1`: `/chat` exige usuario y clave."""
+    return os.environ.get(ENV_CHAT_AUTENTICACION, "").strip() == "1"
+
+
+def _no_autorizado(detalle: str = "Autenticación requerida.") -> HTTPException:
+    return HTTPException(
+        status_code=401,
+        detail=detalle,
+        headers={"WWW-Authenticate": f'Basic realm="{REINO_BASIC}"'},
+    )
+
+
+def _credenciales_basic(request: Request) -> tuple[str, str] | None:
+    """Usuario y clave de la cabecera `Authorization: Basic`, o None si no hay
+    una cabecera Basic bien formada."""
+    cabecera = request.headers.get("Authorization", "")
+    esquema, _, valor = cabecera.partition(" ")
+    if esquema.lower() != ESQUEMA_BASIC or not valor:
+        return None
+    try:
+        usuario, separador, clave = (
+            base64.b64decode(valor.strip(), validate=True)
+            .decode("utf-8")
+            .partition(":")
+        )
+    except (ValueError, UnicodeDecodeError):
+        return None
+    return (usuario, clave) if separador and usuario else None
+
+
+def _identidad_basic(request: Request) -> Identidad | None:
+    """Valida Basic con el proveedor activo y el limite de intentos fallidos."""
+    credenciales = _credenciales_basic(request)
+    if credenciales is None:
+        return None
+    usuario, clave = credenciales
+    clave_ip = "chat-ip:" + ip_cliente(request)
+    clave_usuario = "chat-usuario:" + usuario.strip().lower()
+    if limitador.bloqueado(clave_ip) or limitador.bloqueado(clave_usuario):
+        logger.warning("chat: autenticacion bloqueada (ip=%s)", ip_cliente(request))
+        raise HTTPException(status_code=429, detail="Demasiados intentos.")
+    try:
+        identidad = obtener_proveedor().autenticar(usuario, clave)
+    except Exception:
+        logger.exception("chat: el proveedor de identidad fallo")
+        raise HTTPException(status_code=503, detail="Servicio no disponible.") from None
+    if identidad is None:
+        limitador.registrar_fallo(clave_ip)
+        limitador.registrar_fallo(clave_usuario)
+        logger.warning("chat: autenticacion fallida (ip=%s)", ip_cliente(request))
+        return None
+    limitador.reiniciar(clave_usuario)
+    return identidad
+
+
+def _identidad_de_sesion(request: Request) -> Identidad | None:
+    """Identidad de la cookie de sesion de la consola/demo; si la peticion cambia
+    estado exige ademas el token CSRF de esa sesion."""
+    sesion = sesion_de(request)
+    if sesion is None:
+        return None
+    if request.method not in ("GET", "HEAD", "OPTIONS"):
+        enviado = request.headers.get(CABECERA_CSRF, "")
+        if not hmac.compare_digest(enviado.encode(), sesion.csrf.encode()):
+            raise HTTPException(status_code=403, detail="Token CSRF inválido.")
+    return sesion.identidad
+
+
+def exigir_cliente(request: Request) -> Identidad | None:
+    """Dependencia de `/chat`: opt-in con `CHAT_REQUIERE_AUTENTICACION=1`.
+
+    Apagada (el valor por defecto) no hace nada, asi que los scripts de ataque y
+    las pruebas del experimento no cambian. Encendida acepta `Authorization:
+    Basic` (curl, scripts) o la sesion de la pantalla `/demo`. FALLA CERRADA: si
+    esta encendida y no hay ninguna cuenta configurada, responde 503 en vez de
+    dejar pasar a todos.
+    """
+    if not chat_auth_requerida():
+        return None
+    if not auth_habilitada():
+        logger.error(
+            "%s=1 pero no hay cuentas (%s)", ENV_CHAT_AUTENTICACION, ENV_USUARIOS
+        )
+        raise HTTPException(status_code=503, detail="Servicio no disponible.")
+    identidad = _identidad_basic(request) or _identidad_de_sesion(request)
+    if identidad is None:
+        raise _no_autorizado()
+    return identidad
+
+
 # --- Herramienta de linea de comandos: generar la entrada de una cuenta -----
 
 
@@ -455,11 +552,12 @@ def _cli_demo(argv: list[str]) -> int:
         f"Cuenta creada: usuario '{usuario}' (rol revisor).\n"
         f"La clave quedo en {ARCHIVO_CLAVE_DEMO} (no se muestra aqui).\n"
         "Reinicia el proxy para aplicarla: docker compose up -d proxy\n"
+        f"Para que /chat tambien la exija, pon {ENV_CHAT_AUTENTICACION}=1 en el .env.\n"
     )
     return 0
 
 
-def _cli(argv: list[str]) -> int:
+def cli(argv: list[str]) -> int:
     """`python -m proxy.auth USUARIO [ROL]`: pide la clave sin eco e imprime la
     entrada `usuario:rol:hash` para pegar en `REVISION_USUARIOS` del `.env`.
     `python -m proxy.auth --demo` crea la cuenta `admin` de demo ya configurada."""
@@ -488,4 +586,4 @@ def _cli(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(_cli(sys.argv[1:]))
+    sys.exit(cli(sys.argv[1:]))

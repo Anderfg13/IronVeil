@@ -18,6 +18,9 @@ cinco mecanismos defensivos activables por bandera y siete configuraciones exper
   modelo protegido remoto y clasificador alternativo (Jev).
 - **Documentación visual:** diagrama de arquitectura y de clases animados (`docs/assets/`) y un visor interactivo
   (`docs/diagramas/index.html`).
+- **Autenticación opcional del proxy:** `CHAT_REQUIERE_AUTENTICACION=1` (Basic o sesión, falla cerrada) con usuario de
+  demo de clave aleatoria (`python -m proxy.auth --demo`).
+- **Sitio público** (GitHub Pages) y **paquete `ironveil`** instalable con `pip` (comando `ironveil`).
 - **CI** (ruff, black, pytest) y publicación de la imagen del proxy en GitHub Packages al subir una etiqueta.
 
 ## Resultados (resumen; detalle y límites en `analisis/resultados_finales.md`)

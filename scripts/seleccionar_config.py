@@ -5,7 +5,8 @@ Uso (desde la raiz del repo):
     python scripts/seleccionar_config.py C3
 
 El proxy relee `config.yaml` en cada peticion (esta montado de solo lectura en el
-contenedor), asi que el cambio se aplica sin reconstruir ni reiniciar nada.
+contenedor), asi que el cambio se aplica sin reconstruir ni reiniciar nada. La
+correspondencia C0..C6 vive en `proxy/configuraciones.py` (una sola definicion).
 """
 
 from __future__ import annotations
@@ -15,43 +16,18 @@ import sys
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
-if str(RAIZ) not in sys.path:
-    sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(RAIZ))
 
-from analisis.rutas import ErrorRutaNoPermitida, ruta_permitida  # noqa: E402
+from proxy.configuraciones import (  # noqa: E402
+    CONFIGURACIONES,
+    MECANISMOS,
+    construir_config,
+    descripcion_activos,
+)
 
 RUTA_CONFIG = RAIZ / "config.yaml"
 
-MECANISMOS: tuple[str, ...] = (
-    "filtrado",
-    "delimitacion",
-    "clasificacion",
-    "minimo_privilegio",
-    "aprobacion_humana",
-)
-
-# C0 = nada; C1..C5 = el mecanismo n-esimo solo; C6 = los cinco.
-CONFIGURACIONES: dict[str, tuple[str, ...]] = {
-    "C0": (),
-    **{f"C{i}": (m,) for i, m in enumerate(MECANISMOS, start=1)},
-    "C6": MECANISMOS,
-}
-
-ENCABEZADO = (
-    "# Banderas de los 5 mecanismos defensivos de IronVeil.\n"
-    "# Escrito por scripts/seleccionar_config.py (configuracion {nombre}).\n"
-    "# Todas en false = configuracion C0 (baseline, passthrough puro).\n"
-)
-
-
-def construir_config(nombre: str) -> str:
-    """Devuelve el texto de `config.yaml` de la configuracion `nombre` (C0..C6)."""
-    if nombre not in CONFIGURACIONES:
-        validas = ", ".join(CONFIGURACIONES)
-        raise ValueError(f"Configuracion desconocida {nombre!r}; validas: {validas}")
-    activas = CONFIGURACIONES[nombre]
-    lineas = [f"{m}: {'true' if m in activas else 'false'}" for m in MECANISMOS]
-    return ENCABEZADO.format(nombre=nombre) + "\n".join(lineas) + "\n"
+__all__ = ["CONFIGURACIONES", "MECANISMOS", "construir_config", "main"]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -60,13 +36,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("configuracion", choices=sorted(CONFIGURACIONES))
     parser.add_argument("--salida", type=Path, default=RUTA_CONFIG)
     args = parser.parse_args(argv)
-    try:
-        salida = ruta_permitida(args.salida)
-    except ErrorRutaNoPermitida as exc:
-        parser.error(str(exc))
-    salida.write_text(construir_config(args.configuracion), encoding="utf-8")
-    activas = ", ".join(CONFIGURACIONES[args.configuracion]) or "ninguno (baseline)"
-    print(f"{salida.name}: {args.configuracion} -> mecanismos activos: {activas}")
+    args.salida.write_text(construir_config(args.configuracion), encoding="utf-8")
+    activos = descripcion_activos(args.configuracion)
+    print(f"{args.salida.name}: {args.configuracion} -> mecanismos activos: {activos}")
     return 0
 
 

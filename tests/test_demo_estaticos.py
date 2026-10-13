@@ -144,10 +144,11 @@ def test_la_demo_solo_usa_tokens_que_existen() -> None:
 
 
 def test_el_chat_solo_llama_a_chat_y_a_la_espera_de_su_propio_turno() -> None:
-    """/chat y, si queda en revision, /chat/revision/{turno}: nada mas."""
+    """/chat y, si queda en revision, /chat/revision/{turno}; ademas /revision/sesion,
+    solo para leer el token CSRF de su propia sesion cuando el chat exige login."""
     llamadas = re.findall(r"fetch\((?:\"|`)(/[^\"`$?]*)", JS)
 
-    assert sorted(llamadas) == ["/chat", "/chat/revision/"]
+    assert sorted(llamadas) == ["/chat", "/chat/revision/", "/revision/sesion"]
 
 
 def test_el_chat_no_muestra_nada_del_pipeline() -> None:

@@ -24,9 +24,10 @@ import asyncio
 import threading
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Path, Query
+from fastapi import APIRouter, Depends, Path, Query
 from fastapi.responses import JSONResponse
 
+import proxy.auth as auth
 import proxy.cola as cola
 
 CABECERA_ID_REVISION = "X-Revision-Id"
@@ -130,7 +131,11 @@ async def esperar_cambio(
         _liberar_espera()
 
 
-@router.get("/chat/revision/{id_revision}", include_in_schema=False)
+@router.get(
+    "/chat/revision/{id_revision}",
+    include_in_schema=False,
+    dependencies=[Depends(auth.exigir_cliente)],
+)
 async def estado_de_la_revision(
     id_revision: Annotated[str, Path(pattern=_PATRON_ID)],
     espera: Annotated[float, Query(ge=0, le=ESPERA_MAXIMA_S)] = ESPERA_DEFECTO_S,
