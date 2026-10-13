@@ -496,3 +496,5 @@ Estas tres son **evidencia adicional de aplicabilidad**: ninguna entra en las ta
 > **Diagrama animado (2026-10-13):** `docs/assets/arquitectura-animada.{svg,gif,mp4}` ahora incluyen la autenticacion opcional (puerta en la entrada del proxy).
 
 > **Diagrama de clases (2026-10-13):** `docs/assets/diagrama-clases.svg` ahora incluye el paquete de autenticación (`auth.py`).
+
+> **Dependencias (2026-10-13):** `fastapi` 0.115.0 -> 0.143.0 (arrastra `starlette` 0.38.6 -> 1.7.0) y `setuptools` 78.1.0 -> 84.0.0 en la imagen del clasificador, para cerrar las alertas de Dependabot; la suite (1729 pruebas) sigue en verde.
