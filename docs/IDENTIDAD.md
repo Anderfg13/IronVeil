@@ -12,23 +12,23 @@ Referencia de la marca para el chat de la demo (`/demo`), la consola de revisió
 
 ## Logo
 
-Escudo de grafito cubierto por un velo diagonal de vidrio glaciar. Sin texto dentro: escala bien y no depende de fuentes.
+Hexágono burdeos con un velo blanco en forma de «V» y un punto de luz, junto al nombre «**Iron**Veil» y el lema «Defensa en profundidad para LLMs».
 
 | Archivo | Uso |
 | --- | --- |
-| `proxy/static/logo.svg` | El que se muestra (barra, login, icono de pestaña). **Elegido: C, velo en diagonal.** |
-| `docs/identidad/logo_alternativa_A_velo-ondulado.svg` | Alternativa: un velo ondulado que cruza el escudo. |
-| `docs/identidad/logo_alternativa_B_dos-velos.svg` | Alternativa: dos velos superpuestos. |
+| `docs/identidad/ironveil-logo.png` | Logo completo (icono + nombre + lema), fondo blanco: README, informe y diapositivas. |
+| `docs/identidad/ironveil-icono.png` | Solo el hexágono, fondo transparente, 256 px. |
+| `proxy/static/logo.png` | El mismo icono, el que muestran la consola, el login y la pestaña del navegador. |
+| `docs/identidad/logo_*.svg` | Propuestas anteriores (escudo de grafito y vidrio), solo como historial. |
 
-- **Tamaños:** de 20 a 160 px; por debajo de 20 px usa solo el escudo, sin el nombre.
-- **Zona libre:** un cuarto del ancho del escudo por cada lado.
-- **Nombre:** «**Iron**Veil» como texto, no como imagen: «Iron» en negrita, «Veil» en regular (`.nombre-marca`). Nunca todo en negrita ni todo en mayúsculas.
-- **Fondos:** funciona sobre grafito (barra) y sobre hielo claro u oscuro. Sobre fotos o degradados saturados, ponlo dentro de la barra de vidrio.
-- **No:** girarlo, estirarlo, cambiarle el azul por otro color, añadirle sombras o ponerlo repetido en la misma pantalla.
+- **Tamaños:** el icono de 20 a 160 px; por debajo de 20 px usa solo el hexágono, sin el nombre.
+- **Zona libre:** un cuarto del ancho del hexágono por cada lado.
+- **Nombre:** «**Iron**Veil» como texto en la interfaz (`.nombre-marca`); en el logo completo ya viene dibujado.
+- **No:** girarlo, estirarlo, cambiarle los colores, añadirle sombras o ponerlo repetido en la misma pantalla.
 
 ### Cómo poner otro logo
 
-1. Guarda el tuyo como `proxy/static/logo.svg` (o `.png` con el mismo nombre y cambia la ruta en `revision.html`, `login.html` y `demo.html`).
+1. Guarda el tuyo como `proxy/static/logo.png` (cuadrado, fondo transparente; si es `.svg`, cambia la ruta en `revision.html`, `login.html` y `demo.html`).
 2. Cabe solo en la caja `.marca-logo` (36 px en las barras, 64 px en el login; se cambia con `--logo` en el CSS) y se ajusta con `object-fit: contain`.
 3. Reconstruye con `docker compose up -d --build proxy`: los estáticos van dentro de la imagen.
 

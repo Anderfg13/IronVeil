@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="proxy/static/logo.svg" alt="Logo de IronVeil" width="96">
+<img src="docs/identidad/ironveil-logo.png" alt="IronVeil: defensa en profundidad para LLMs" width="320">
 
 # IronVeil
 

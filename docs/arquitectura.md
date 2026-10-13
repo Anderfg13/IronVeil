@@ -457,7 +457,7 @@ con `json.dumps(evento, ensure_ascii=False)` + salto de línea.
   (decisiones: quién, cuándo, cuánto tardó; **nunca el texto**). El texto de
   una petición puede ser un ataque: viaja como JSON y la página lo pinta con
   `textContent`, sin `innerHTML` (lo verifica un test). El logo es
-  `proxy/static/logo.svg`, reemplazable.
+  `proxy/static/logo.png`, reemplazable.
 - `proxy/demo_chat.py` + `proxy/static/demo.*` (pantalla de chat de la demo,
   **opt-in** con `IRONVEIL_DEMO=1`, apagada por defecto): `GET /demo` sirve una
   pantalla tipo chat que llama a `POST /chat` y muestra solo la respuesta (o un
