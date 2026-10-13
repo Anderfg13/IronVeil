@@ -494,3 +494,5 @@ Estas tres son **evidencia adicional de aplicabilidad**: ninguna entra en las ta
 > **Informe (2026-10-13):** `informe/main.tex` y `informe/main.pdf` actualizados con Jev, Garak, arquitectura de clases, distribución y conclusiones; las cifras salen de `analisis/` y se citan con su intervalo.
 
 > **Diagrama animado (2026-10-13):** `docs/assets/arquitectura-animada.{svg,gif,mp4}` ahora incluyen la autenticacion opcional (puerta en la entrada del proxy).
+
+> **Diagrama de clases (2026-10-13):** `docs/assets/diagrama-clases.svg` ahora incluye el paquete de autenticación (`auth.py`).
