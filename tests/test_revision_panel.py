@@ -490,4 +490,4 @@ def test_las_paginas_no_cargan_recursos_externos(archivo: str) -> None:
 
 
 def test_hay_un_logo_provisional_reemplazable() -> None:
-    assert (panel.DIRECTORIO_ESTATICO / "logo.svg").is_file()
+    assert (panel.DIRECTORIO_ESTATICO / "logo.png").is_file()

@@ -217,7 +217,7 @@ Esta es la estructura **objetivo**. Lo marcado `[ya existe]` está en el repo ho
                         X-Revision-Id al 429, su cuerpo no cambia)
                         auth.py + revision_panel.py + static/ (consola de revision humana
                         con login opcional REVISION_USUARIOS y canal en vivo SSE /revision/eventos;
-                        logo en static/logo.svg)
+                        logo en static/logo.png)
                         herramientas.py + notificaciones.py (EXTENSIONES opcionales:
                         herramientas SIMULADAS de rrhh-agente y avisos por webhook/
                         Slack/correo/WhatsApp cuando aprobacion humana encola;

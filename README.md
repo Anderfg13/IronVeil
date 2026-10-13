@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="proxy/static/logo.svg" alt="Logo de IronVeil" width="96">
+<img src="docs/identidad/ironveil-logo.png" alt="IronVeil: defensa en profundidad para LLMs" width="320">
 
 # IronVeil
 
@@ -115,7 +115,7 @@ sequenceDiagram
 
 ### Diagrama de clases (animado)
 
-<p align="center"><img src="docs/assets/diagrama-clases.svg" alt="Diagrama de clases de IronVeil: núcleo del proxy y las extensiones memoria_decisiones, siem y normalizacion con sus puertos y adaptadores" width="100%"></p>
+<p align="center"><img src="docs/assets/diagrama-clases.svg" alt="Diagrama de clases de IronVeil: núcleo del proxy y las extensiones memoria_decisiones, siem, normalizacion y auth con sus puertos y adaptadores" width="100%"></p>
 
 El núcleo depende de **puertos** (`Protocol`) y los **adaptadores** (almacenes, formatos y destinos SIEM, decodificadores) se registran por configuración, sin editar el núcleo. Los paquetes `memoria_decisiones/` y `siem/` son la referencia del patrón (SOLID, ver [`CLAUDE.md`](CLAUDE.md) §7).
 

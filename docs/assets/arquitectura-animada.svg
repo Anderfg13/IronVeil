@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1110 640" width="1110" height="640" role="img" aria-labelledby="t d">
 <title id="t">Arquitectura de IronVeil animada</title>
-<desc id="d">Una petición legítima atraviesa filtrado, clasificación, mínimo privilegio y delimitación, llega a Ollama y su respuesta vuelve por filtrado y clasificación de salida. Después un ataque es detenido por la clasificación y la aprobación humana lo encola con un 429. Cada evento sale también hacia uno o varios SIEM, y los de ataque generan alerta. Por último, el mismo mensaje vuelve a llegar y la memoria de decisiones, que recuerda el rechazo de la persona, lo rechaza al instante. El modelo protegido y los clasificadores pueden ser locales o de frontera.</desc>
+<desc id="d">Una petición legítima pasa primero por la autenticación opcional (usuario y clave, o sesión) y atraviesa filtrado, clasificación, mínimo privilegio y delimitación, llega a Ollama y su respuesta vuelve por filtrado y clasificación de salida. Después un ataque es detenido por la clasificación y la aprobación humana lo encola con un 429. Cada evento sale también hacia uno o varios SIEM, y los de ataque generan alerta. Por último, el mismo mensaje vuelve a llegar y la memoria de decisiones, que recuerda el rechazo de la persona, lo rechaza al instante. El modelo protegido y los clasificadores pueden ser locales o de frontera.</desc>
 <style>
  text{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"JetBrains Mono",monospace}
  .t{font-size:14px;font-weight:700;fill:#f8fafc} .s{font-size:10.5px;fill:#94a3b8} .num{font-size:12px;font-weight:700}
@@ -29,6 +29,25 @@
 <!-- Cliente -->
 <rect x="30" y="265" width="140" height="70" rx="10" fill="#0f172a" stroke="#22d3ee" stroke-width="1.6"/>
 <text x="100" y="296" text-anchor="middle" class="t">Cliente</text><text x="100" y="316" text-anchor="middle" class="s">POST /chat</text>
+
+
+<!-- autenticacion opcional: la puerta del proxy -->
+<g>
+ <rect x="182" y="268" width="46" height="64" rx="8" fill="#0f172a" stroke="#a3e635" stroke-width="1.6" stroke-dasharray="6 4"/>
+ <path d="M197,293 L197,288 A8,8 0 0 1 213,288 L213,293" fill="none" stroke="#a3e635" stroke-width="2"/>
+ <rect x="193" y="293" width="24" height="18" rx="3" fill="#a3e635"/>
+ <circle cx="205" cy="302" r="2.5" fill="#0f172a"/>
+</g>
+<rect x="182" y="268" width="46" height="64" rx="8" fill="#a3e635" opacity="0"><animate attributeName="opacity" dur="30s" repeatCount="indefinite" values="0;0;0.5;0;0" keyTimes="0.0000;0.0100;0.0200;0.0600;1.0000"/></rect><rect x="182" y="268" width="46" height="64" rx="8" fill="#a3e635" opacity="0"><animate attributeName="opacity" dur="30s" repeatCount="indefinite" values="0;0;0.5;0;0" keyTimes="0.0000;0.4100;0.4200;0.4600;1.0000"/></rect><rect x="182" y="268" width="46" height="64" rx="8" fill="#a3e635" opacity="0"><animate attributeName="opacity" dur="30s" repeatCount="indefinite" values="0;0;0.5;0;0" keyTimes="0.0000;0.6900;0.7000;0.7400;1.0000"/></rect>
+<g>
+ <rect x="30" y="350" width="150" height="88" rx="10" fill="#0f172a" stroke="#a3e635" stroke-width="1.2" stroke-dasharray="6 4"/>
+ <text x="105" y="370" text-anchor="middle" class="t" font-size="12" fill="#a3e635">Autenticación</text>
+ <text x="105" y="386" text-anchor="middle" class="s" font-size="9.5">Basic o sesión + CSRF</text>
+ <text x="105" y="400" text-anchor="middle" class="s" font-size="9.5">5 fallos → 429</text>
+ <text x="105" y="414" text-anchor="middle" class="s" font-size="9.5">sin clave → 401</text>
+ <text x="105" y="430" text-anchor="middle" class="s" font-size="8.5" fill="#a3e635">extensión opcional</text>
+</g>
+<path d="M105,335 L105,350" stroke="#475569" stroke-width="1.4" stroke-dasharray="3 4"/>
 
 <!-- Ollama -->
 <rect x="950" y="70" width="140" height="130" rx="12" fill="#0f172a" stroke="#a78bfa" stroke-width="1.6"/>
@@ -91,7 +110,7 @@
 <path d="M565,460 L565,500" stroke="#475569" stroke-dasharray="3 5" class="flujo"/>
 
 <!-- leyenda inferior / subtitulos animados -->
-<g><text x="30" y="610" class="s" fill="#34d399">① Una petición legítima atraviesa la cadena completa y vuelve con la respuesta revisada.</text><animate attributeName="opacity" dur="30s" repeatCount="indefinite" values="0;1;1;0;0" keyTimes="0.0000;0.0067;0.3533;0.3633;1.0000"/></g>
+<g><text x="30" y="610" class="s" fill="#34d399">① Una petición legítima se autentica, atraviesa la cadena completa y vuelve con la respuesta revisada.</text><animate attributeName="opacity" dur="30s" repeatCount="indefinite" values="0;1;1;0;0" keyTimes="0.0000;0.0067;0.3533;0.3633;1.0000"/></g>
 <g><text x="30" y="610" class="s" fill="#fb7185">② Un ataque: la clasificación lo bloquea y la aprobación humana lo encola (429) para revisión.</text><animate attributeName="opacity" dur="30s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0.0000;0.4000;0.4133;0.6467;0.6600;1.0000"/></g>
 
 <!-- paquete legitimo -->

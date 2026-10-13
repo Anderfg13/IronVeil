@@ -301,7 +301,7 @@ def test_el_indicador_de_espera_tiene_texto_visible_y_no_depende_de_la_animacion
 def test_el_logo_no_se_repite_en_la_pantalla_de_chat() -> None:
     """branding.md: logo solo donde da contexto; aqui basta el de la barra."""
     assert HTML.count("<img") == 1  # solo la barra (el icono de pestaña es un <link>)
-    assert "logo.svg" not in JS
+    assert "logo.png" not in JS
     assert "demo-avatar" not in CSS_DEMO
 
 
