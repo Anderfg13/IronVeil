@@ -2,6 +2,13 @@ services:
   ollama:
     image: ollama/ollama:latest
     container_name: ironveil-ollama
+    environment:
+      # Cuantos modelos puede tener cargados a la vez. Con los modelos de la demo
+      # (soporte/rrhh/rrhh-agente + llama-guard3) un valor bajo hace que un
+      # modelo expulse a otro de memoria y la siguiente peticion pague una
+      # recarga (cola de latencia). 3 es el valor por defecto de Ollama; sube a 4
+      # solo si la maquina tiene memoria de sobra (p. ej. la GPU T4 de Colab).
+      OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-3}
     volumes:
       - ollama_data:/root/.ollama
     networks:
@@ -51,6 +58,105 @@ services:
       # (unsafe) en cada peticion -- ver docs/FUENTE_DE_VERDAD.md, seccion 4.
       MODELO_PROMPT_GUARD_ID: ${MODELO_PROMPT_GUARD_ID:-meta-llama/Llama-Prompt-Guard-2-86M}
       HF_TOKEN: ${HF_TOKEN}
+      # Latencia del clasificador (sin cambiar lo que revisa): tope de tokens de
+      # la respuesta de Llama Guard y media precision de Prompt Guard con GPU.
+      LLAMA_GUARD_MAX_TOKENS: ${LLAMA_GUARD_MAX_TOKENS:-32}
+      PROMPT_GUARD_FP16: ${PROMPT_GUARD_FP16:-1}
+      # Adaptador del clasificador (proxy/adaptador_clasificador.py): vacias = el
+      # perfil por defecto del modelo. Ver docs/CAMBIAR_MODELO_CLASIFICADOR.md.
+      CLASIFICADOR_ENTRADA_BACKEND: ${CLASIFICADOR_ENTRADA_BACKEND:-huggingface}
+      CLASIFICADOR_ENTRADA_ETIQUETAS_MALICIOSAS: ${CLASIFICADOR_ENTRADA_ETIQUETAS_MALICIOSAS:-}
+      CLASIFICADOR_ENTRADA_ETIQUETAS_BENIGNAS: ${CLASIFICADOR_ENTRADA_ETIQUETAS_BENIGNAS:-}
+      CLASIFICADOR_SALIDA_VEREDICTOS_INSEGUROS: ${CLASIFICADOR_SALIDA_VEREDICTOS_INSEGUROS:-}
+      CLASIFICADOR_SALIDA_VEREDICTOS_SEGUROS: ${CLASIFICADOR_SALIDA_VEREDICTOS_SEGUROS:-}
+      # Otros backends del clasificador de entrada (proxy/backends_entrada.py). Los remotos
+      # (Jev, APIs de frontera) estan APAGADOS salvo CLASIFICADOR_PERMITIR_REMOTO=1: sacan
+      # el texto de cada peticion del laboratorio. Las claves viven solo en .env.
+      CLASIFICADOR_ENTRADA_MODELO: ${CLASIFICADOR_ENTRADA_MODELO:-}
+      CLASIFICADOR_ENTRADA_URL_BASE: ${CLASIFICADOR_ENTRADA_URL_BASE:-}
+      CLASIFICADOR_ENTRADA_API_KEY: ${CLASIFICADOR_ENTRADA_API_KEY:-}
+      CLASIFICADOR_ENTRADA_PARAMETROS_EXTRA: ${CLASIFICADOR_ENTRADA_PARAMETROS_EXTRA:-}
+      CLASIFICADOR_PERMITIR_REMOTO: ${CLASIFICADOR_PERMITIR_REMOTO:-}
+      # Hosts de la PROPIA organizacion (separados por comas): no necesitan el permiso de
+      # terceros, pero si https y clave. Ver docs/CAMBIAR_MODELO_CLASIFICADOR.md.
+      CLASIFICADOR_HOSTS_PROPIOS: ${CLASIFICADOR_HOSTS_PROPIOS:-}
+      TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+      TYPESAFE_ENDPOINT: ${TYPESAFE_ENDPOINT:-https://api.typesafe.ai}
+      JEV_MODELO: ${JEV_MODELO:-jev-latest}
+      JEV_UMBRAL: ${JEV_UMBRAL:-0.5}
+      # Cuanto tiempo mantiene Ollama un modelo cargado en memoria tras la
+      # ultima peticion (nativo de su API). 30m por defecto, mas que el 5m
+      # de Ollama, para que una pausa entre peticiones (demo en vivo,
+      # bateria de ataques con huecos) no fuerce una recarga en frio.
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
+      # Extensiones opcionales (vacias = apagadas). Ver .env.example.
+      MODELOS_CON_HERRAMIENTAS: ${MODELOS_CON_HERRAMIENTAS:-}
+      # Proteger un modelo servido por otra API en vez de Ollama (opcional, apagado por
+      # defecto; docs/MODELO_PROTEGIDO_REMOTO.md). Un TERCERO recibe el prompt completo con
+      # el system prompt, canario incluido: exige MODELO_PROTEGIDO_PERMITIR_TERCEROS=1.
+      MODELOS_REMOTOS: ${MODELOS_REMOTOS:-}
+      MODELO_PROTEGIDO_PERMITIR_TERCEROS: ${MODELO_PROTEGIDO_PERMITIR_TERCEROS:-}
+      MODELO_PROTEGIDO_HOSTS_PROPIOS: ${MODELO_PROTEGIDO_HOSTS_PROPIOS:-}
+      MODELO_PROTEGIDO_OPENAI_API_KEY: ${MODELO_PROTEGIDO_OPENAI_API_KEY:-}
+      MODELO_PROTEGIDO_ANTHROPIC_API_KEY: ${MODELO_PROTEGIDO_ANTHROPIC_API_KEY:-}
+      # Memoria de decisiones humanas (opcional, apagada por defecto; docs/MEMORIA_DE_DECISIONES.md):
+      # un rechazo de la revision humana se recuerda y el mismo mensaje se rechaza solo.
+      MEMORIA_RECHAZOS: ${MEMORIA_RECHAZOS:-}
+      MEMORIA_RECHAZOS_ALMACEN: ${MEMORIA_RECHAZOS_ALMACEN:-jsonl:///app/memoria/rechazos.jsonl}
+      MEMORIA_RECHAZOS_ADAPTADORES: ${MEMORIA_RECHAZOS_ADAPTADORES:-}
+      MEMORIA_RECHAZOS_MAXIMO: ${MEMORIA_RECHAZOS_MAXIMO:-5000}
+      MEMORIA_RECHAZOS_VISTA_PREVIA: ${MEMORIA_RECHAZOS_VISTA_PREVIA:-1}
+      # Exportacion de cada evento a un archivo en formato Wazuh JSON (ver
+      # docs/siem/wazuh/LEEME.md). Vacio = apagada. La ruta es DENTRO del
+      # contenedor; ./docs/siem/exportados se monta mas abajo.
+      SIEM_ARCHIVO_WAZUH: ${SIEM_ARCHIVO_WAZUH:-}
+      # Exportacion a cualquier SIEM (docs/SIEM.md): lista separada por comas de
+      # [formato@]esquema://destino. Vacio = apagada. Los destinos de red se
+      # entregan en un hilo aparte: un SIEM caido nunca frena /chat.
+      SIEM_DESTINOS: ${SIEM_DESTINOS:-}
+      SIEM_ADAPTADORES: ${SIEM_ADAPTADORES:-}
+      # Normalizacion de entrada (EXTENSION opcional, apagada por defecto): decodifica
+      # Base64/hex/ROT13 y quita caracteres invisibles antes de la cadena. Con ella
+      # encendida C0-C6 ya no son las del experimento (docs/NORMALIZACION_DE_ENTRADA.md).
+      NORMALIZACION_ENTRADA: ${NORMALIZACION_ENTRADA:-}
+      NORMALIZACION_DECODIFICADORES: ${NORMALIZACION_DECODIFICADORES:-}
+      NORMALIZACION_ADAPTADORES: ${NORMALIZACION_ADAPTADORES:-}
+      SIEM_CA_ARCHIVO: ${SIEM_CA_ARCHIVO:-}
+      # Credenciales de cada destino: SOLO aqui (.env), nunca dentro de la URL.
+      SIEM_HTTPS_TOKEN: ${SIEM_HTTPS_TOKEN:-}
+      SIEM_SPLUNK_TOKEN: ${SIEM_SPLUNK_TOKEN:-}
+      SIEM_ELASTIC_API_KEY: ${SIEM_ELASTIC_API_KEY:-}
+      SIEM_ELASTIC_USUARIO: ${SIEM_ELASTIC_USUARIO:-}
+      SIEM_ELASTIC_CLAVE: ${SIEM_ELASTIC_CLAVE:-}
+      SIEM_AZURE_TENANT_ID: ${SIEM_AZURE_TENANT_ID:-}
+      SIEM_AZURE_CLIENT_ID: ${SIEM_AZURE_CLIENT_ID:-}
+      SIEM_AZURE_CLIENT_SECRET: ${SIEM_AZURE_CLIENT_SECRET:-}
+      SIEM_AZURE_ALCANCE: ${SIEM_AZURE_ALCANCE:-}
+      SIEM_AZURE_AUTORIDAD: ${SIEM_AZURE_AUTORIDAD:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+      # Login de la consola de revision humana (vacio = sin login, como antes).
+      # Genera cada cuenta con: python -m proxy.auth USUARIO [revisor|observador]
+      # Pantalla de chat de la demo en /demo (vacio = apagada). Usa POST /chat.
+      IRONVEIL_DEMO: ${IRONVEIL_DEMO:-}
+      REVISION_USUARIOS: ${REVISION_USUARIOS:-}
+      REVISION_SESION_MINUTOS: ${REVISION_SESION_MINUTOS:-30}
+      REVISION_COOKIE_SECURE: ${REVISION_COOKIE_SECURE:-1}
+      CHAT_REQUIERE_AUTENTICACION: ${CHAT_REQUIERE_AUTENTICACION:-}
+      NOTIFICAR_WEBHOOK_URL: ${NOTIFICAR_WEBHOOK_URL:-}
+      NOTIFICAR_SLACK_WEBHOOK_URL: ${NOTIFICAR_SLACK_WEBHOOK_URL:-}
+      REVISION_URL_BASE: ${REVISION_URL_BASE:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USUARIO: ${SMTP_USUARIO:-}
+      SMTP_CLAVE: ${SMTP_CLAVE:-}
+      SMTP_REMITENTE: ${SMTP_REMITENTE:-}
+      NOTIFICAR_CORREO_DESTINO: ${NOTIFICAR_CORREO_DESTINO:-}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_WHATSAPP_ORIGEN: ${TWILIO_WHATSAPP_ORIGEN:-}
+      NOTIFICAR_WHATSAPP_DESTINO: ${NOTIFICAR_WHATSAPP_DESTINO:-}
     volumes:
       # Monta config.yaml (no se copia en la imagen) para poder cambiar de
       # configuracion (C0..C6) con solo editar el archivo y reiniciar el
@@ -58,6 +164,10 @@ services:
       # en el host: son evidencia, no deben perderse si el contenedor cae.
       - ./config.yaml:/app/config.yaml:ro
       - ./resultados:/app/resultados
+      # La memoria de decisiones vive en el host (no en un volumen de Docker): sobrevive
+      # a reinicios, a recrear el contenedor y a `docker compose down -v`.
+      - ./memoria:/app/memoria
+      - ./docs/siem/exportados:/app/siem
     depends_on:
       ollama-init:
         condition: service_completed_successfully

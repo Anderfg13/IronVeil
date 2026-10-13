@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="IronVeil">
+  <defs>
+    <linearGradient id="hierro" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3A4757"/><stop offset="1" stop-color="#151B23"/></linearGradient>
+    <linearGradient id="v1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#B6DCFF" stop-opacity=".9"/><stop offset="1" stop-color="#4A9BF5" stop-opacity=".55"/></linearGradient>
+    <linearGradient id="v2" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6FB8FF" stop-opacity=".75"/><stop offset="1" stop-color="#1F78E0" stop-opacity=".9"/></linearGradient>
+    <clipPath id="e"><path id="s" d="M32 4 55 12.5V31C55 45.5 45.5 55.5 32 60 18.5 55.5 9 45.5 9 31V12.5z"/></clipPath>
+  </defs>
+  <use href="#s" fill="url(#hierro)"/>
+  <g clip-path="url(#e)">
+    <path d="M6 24C17 16 26 18 33 23s16 4 27-4v14C49 41 40 40 33 35S16 31 6 39z" fill="url(#v1)"/>
+    <path d="M6 36C17 29 26 31 33 36s16 5 27-1v28H6z" fill="url(#v2)"/>
+    <path d="M6 24C17 16 26 18 33 23s16 4 27-4" fill="none" stroke="#fff" stroke-opacity=".8" stroke-width="1.1" stroke-linecap="round"/>
+    <path d="M6 36C17 29 26 31 33 36s16 5 27-1" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="1" stroke-linecap="round"/>
+  </g>
+  <use href="#s" fill="none" stroke="#fff" stroke-opacity=".2" stroke-width="1"/>
+</svg>

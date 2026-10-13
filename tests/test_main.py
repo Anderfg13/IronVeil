@@ -97,7 +97,7 @@ def _preparar_entorno(
         "message": {"role": "assistant", "content": contenido_respuesta_ollama}
     }
     cliente_falso = _ClienteOllamaFalso(payload_ollama)
-    monkeypatch.setattr(main.httpx, "AsyncClient", lambda *a, **k: cliente_falso)
+    monkeypatch.setattr(main, "_obtener_cliente_http", lambda: cliente_falso)
 
     return cliente_falso, resultados_dir
 
@@ -116,6 +116,44 @@ class _ClienteOllamaConError:
 
     async def post(self, *args: object, **kwargs: object) -> Any:
         raise self._excepcion
+
+
+# --- _obtener_cliente_http(): conexion HTTP reutilizada hacia Ollama ------
+#
+# Optimizacion de latencia (evita abrir una conexion TCP nueva en cada
+# llamada): un cliente compartido, creado perezosamente, en vez de uno por
+# peticion.
+
+
+def test_obtener_cliente_http_reutiliza_la_misma_instancia(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(main, "_cliente_http_ollama", None)
+
+    primero = main._obtener_cliente_http()
+    segundo = main._obtener_cliente_http()
+
+    assert primero is segundo
+
+
+# --- _sanear_para_log() (CWE-117, log injection) --------------------------
+
+
+def test_sanear_para_log_escapa_saltos_de_linea() -> None:
+    entrada = "modelo-real\nINFO: linea de log falsa"
+
+    saneado = main._sanear_para_log(entrada)
+
+    assert "\n" not in saneado
+    assert saneado == "modelo-real\\nINFO: linea de log falsa"
+
+
+def test_sanear_para_log_escapa_retorno_de_carro() -> None:
+    assert main._sanear_para_log("a\rb") == "a\\rb"
+
+
+def test_sanear_para_log_no_toca_texto_normal() -> None:
+    assert main._sanear_para_log("soporte") == "soporte"
 
 
 # --- Manejo de errores de Ollama: mensaje generico (OWASP Error Handling) --
@@ -143,7 +181,7 @@ def test_chat_error_http_de_ollama_no_revela_detalle_crudo(
         "404 Not Found", request=peticion_ollama, response=respuesta_ollama
     )
     monkeypatch.setattr(
-        main.httpx, "AsyncClient", lambda *a, **k: _ClienteOllamaConError(excepcion)
+        main, "_obtener_cliente_http", lambda: _ClienteOllamaConError(excepcion)
     )
 
     respuesta = client.post("/chat", json={"modelo": "noexiste", "mensaje": "hola"})
@@ -162,7 +200,7 @@ def test_chat_error_de_conexion_a_ollama_no_revela_detalle_crudo(
 
     excepcion = httpx.ConnectError("Connection refused a ironveil-ollama.internal")
     monkeypatch.setattr(
-        main.httpx, "AsyncClient", lambda *a, **k: _ClienteOllamaConError(excepcion)
+        main, "_obtener_cliente_http", lambda: _ClienteOllamaConError(excepcion)
     )
 
     respuesta = client.post("/chat", json={"modelo": "soporte", "mensaje": "hola"})
@@ -183,7 +221,7 @@ def _mockear_clasificador(
     monkeypatch: pytest.MonkeyPatch,
     veredicto: bool | dict[str, bool],
 ) -> list[tuple[str, str]]:
-    """Reemplaza mecanismos.clasificar por un doble determinista, sin red.
+    """Reemplaza mecanismos.clasificar_con_detalle por un doble determinista, sin red.
 
     `veredicto` puede ser un bool (mismo resultado en entrada y salida) o un
     dict {"entrada": bool, "salida": bool}. Devuelve la lista de llamadas
@@ -192,13 +230,16 @@ def _mockear_clasificador(
     """
     llamadas: list[tuple[str, str]] = []
 
-    def _fake_clasificar(texto: str, direccion: str) -> bool:
+    def _fake_clasificar(
+        texto: str, direccion: str
+    ) -> tuple[bool, mecanismos.DetalleClasificacion]:
         llamadas.append((texto, direccion))
-        if isinstance(veredicto, dict):
-            return veredicto[direccion]
-        return veredicto
+        inseguro = veredicto[direccion] if isinstance(veredicto, dict) else veredicto
+        return inseguro, mecanismos.DetalleClasificacion(
+            backend="falso", modelo="falso", destino="local", estado="ok"
+        )
 
-    monkeypatch.setattr(mecanismos, "clasificar", _fake_clasificar)
+    monkeypatch.setattr(mecanismos, "clasificar_con_detalle", _fake_clasificar)
     return llamadas
 
 
@@ -216,6 +257,8 @@ def test_chat_filtrado_apagado_es_passthrough(
 
     assert respuesta.status_code == 200
     assert cliente_falso.llamado is True
+    assert cliente_falso.ultimo_payload is not None
+    assert cliente_falso.ultimo_payload["keep_alive"] == main.KEEP_ALIVE_OLLAMA
     eventos = _leer_eventos(resultados_dir)
     assert eventos[0]["configuracion"] == "C0"
     assert eventos[0]["resultado"] == "permitido_normal"
@@ -1104,8 +1147,10 @@ def test_revision_lista_una_peticion_pendiente(
     assert item["mensaje"] == MENSAJE_MALICIOSO
     assert item["vector_probado"] == "V3-A"
     assert item["motivo"] == "filtrado"
-    assert "id" in item and item["id"]
-    assert "encolado_en" in item and item["encolado_en"]  # timestamp de llegada
+    assert "id" in item
+    assert item["id"]
+    assert "encolado_en" in item
+    assert item["encolado_en"]  # timestamp de llegada
     assert cliente_falso.llamado is False
 
 
@@ -1271,20 +1316,25 @@ def test_revision_aprobar_no_afecta_otras_peticiones_en_cola(
     assert restantes[0]["id"] == pendientes[1]["id"]
 
 
-def test_revision_ui_sirve_html_minimo(
+def test_revision_ui_sirve_la_consola(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """La pagina es estatica; la logica de aprobar/rechazar vive en su JS."""
     _preparar_entorno(
         monkeypatch, tmp_path, dict.fromkeys(mecanismos.FLAGS_REQUERIDAS, False), ""
     )
+    monkeypatch.delenv("REVISION_USUARIOS", raising=False)
 
-    respuesta = client.get("/revision/ui")
+    pagina = client.get("/revision/ui")
+    script = client.get("/revision/static/revision.js")
 
-    assert respuesta.status_code == 200
-    assert "text/html" in respuesta.headers["content-type"]
-    assert "/revision" in respuesta.text
-    assert "aprobar" in respuesta.text.lower()
-    assert "rechazar" in respuesta.text.lower()
+    assert pagina.status_code == 200
+    assert "text/html" in pagina.headers["content-type"]
+    assert "/revision/static/revision.js" in pagina.text
+    assert script.status_code == 200
+    assert "/revision/" in script.text
+    assert "aprobar" in script.text.lower()
+    assert "rechazar" in script.text.lower()
 
 
 # --- Integracion cruzada, semana de C6 (matriz-integracion) ---------------

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IronVeil · defensa en profundidad para LLMs</title>
+<meta name="description" content="Framework académico de defensa en profundidad para LLMs autoalojados (Ollama): proxy con 5 mecanismos y 7 configuraciones medidas.">
+<style>
+:root{--bg:#020617;--panel:#0f172a;--borde:#1e293b;--txt:#f8fafc;--mut:#94a3b8;--cian:#22d3ee}
+@media (prefers-color-scheme:light){:root{--bg:#f8fafc;--panel:#fff;--borde:#cbd5e1;--txt:#0f172a;--mut:#475569}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:16px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+main{max-width:1000px;margin:0 auto;padding:32px 16px 56px}
+h1{font-size:28px;margin:0 0 6px}p.lead{color:var(--mut);margin:0 0 24px}
+.enlaces{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 28px}
+.enlaces a{padding:8px 14px;border:1px solid var(--borde);border-radius:8px;color:var(--txt);text-decoration:none;background:var(--panel)}
+.enlaces a:hover,.enlaces a:focus-visible{border-color:var(--cian);outline:none}
+img{max-width:100%;height:auto;border-radius:12px;border:1px solid var(--borde)}
+h2{font-size:18px;margin:32px 0 10px}
+</style>
+</head>
+<body>
+<main>
+<h1>IronVeil</h1>
+<p class="lead">Defensa en profundidad para LLMs autoalojados expuestos por accidente en internet: un proxy con cinco mecanismos activables por bandera y siete configuraciones medidas.</p>
+<nav class="enlaces" aria-label="Enlaces">
+  <a href="diagramas/">Visor interactivo</a>
+  <a href="https://github.com/Anderfg13/IronVeil">Repositorio</a>
+  <a href="https://github.com/Anderfg13/IronVeil/blob/HEAD/analisis/resultados_finales.md">Resultados finales</a>
+  <a href="https://github.com/Anderfg13/IronVeil/blob/HEAD/docs/arquitectura.md">Arquitectura</a>
+</nav>
+<h2>Arquitectura (animada)</h2>
+<img src="assets/arquitectura-animada.svg" alt="Una petición legítima atraviesa la cadena de mecanismos; un ataque es bloqueado por la clasificación y encolado por la aprobación humana" width="1110" height="640">
+<h2>Diagrama de clases</h2>
+<img src="assets/diagrama-clases.svg" alt="Diagrama de clases del núcleo del proxy y las extensiones con puertos y adaptadores" width="1240" height="810">
+</main>
+</body>
+</html>

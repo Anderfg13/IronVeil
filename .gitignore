@@ -3,3 +3,34 @@ __pycache__/
 *.pyc
 .venv/
 *.log
+
+# Salida derivada/sintetica de analisis/exportar_lote_siem.py (no es evidencia)
+docs/siem/exportados/
+
+# Clave de la cuenta de demo generada por `python -m proxy.auth --demo` (local, secreta)
+credenciales-demo.local.txt
+
+# Memoria de decisiones humanas (datos locales; docs/MEMORIA_DE_DECISIONES.md)
+memoria/
+
+# Cache de Hugging Face de la segunda instancia del proxy para Garak (cientos de MB, no es evidencia)
+resultados/garak/**/hf_cache/
+
+# Resultados crudos de Garak: llevan prompts de ataque y respuestas del modelo con credenciales
+# filtradas (regla 2 de CLAUDE.md), y el HTML pesa ~1,7 MB por configuracion. Se conservan en el zip;
+# lo derivado (analisis/garak_resumen.*, resultados/graficas_garak/) si se versiona.
+resultados/garak/
+
+# Caches y artefactos locales de herramientas (no aportan nada al repositorio)
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.egg-info/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp

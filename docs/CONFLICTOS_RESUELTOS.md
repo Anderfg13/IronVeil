@@ -133,6 +133,88 @@
 
 ---
 
+## 5. Backends remotos del clasificador de entrada vs. "todo local" (2026-10-05)
+
+**Conflicto.** García pidió que el proxy pueda conectarse a modelos locales y también a
+modelos de frontera por API key y a Jev (documentación de TypeSafe) para decidir si un
+texto es prompt injection. Un backend remoto envía el texto de **cada petición** a un
+tercero, lo que choca con la regla 1 de `CLAUDE.md` (laboratorio aislado), con el criterio
+dado antes de que todo fuera local, y con la regla 2 (los canarios, aunque ficticios, se
+tratan como reales: V4 paso 2 los lleva dentro del mensaje).
+
+**Decisión.** Se implementan los cuatro backends (`ollama`, `openai`, `anthropic`, `jev`;
+`proxy/backends_entrada.py`) pero **lo remoto queda apagado por defecto**:
+- exige `CLASIFICADOR_PERMITIR_REMOTO=1`, destino HTTPS y clave en `.env`;
+- un destino local (localhost, el Ollama del stack, un servidor local tipo OpenAI) no
+  necesita permiso;
+- todos fallan cerrado y nunca escriben claves ni el texto del usuario en el log;
+- solo sustituyen al clasificador de **entrada** (el de salida sigue siendo Llama Guard).
+
+**Ajuste (2026-10-05, a pedido de García): remoto no es lo mismo que de un tercero.** Un Prompt
+Guard desplegado en la nube de la propia organización mantiene el texto dentro de su perímetro.
+Se distinguen tres destinos: `local`, `propio` (hosts declarados en `CLASIFICADOR_HOSTS_PROPIOS`:
+exigen HTTPS y clave, no el permiso) y `tercero` (todo lo demás: sigue apagado salvo
+`CLASIFICADOR_PERMITIR_REMOTO=1`). Se agregó el backend `http` para un clasificador servido
+remotamente. Cada evento registra el `destino` y el `estado` del clasificador
+(`clasificador_entrada` / `clasificador_salida`).
+
+**Pendiente (no lo decide el código).** Antes de usar un backend de un tercero en corridas del
+informe: aprobación del equipo, revisar los términos de uso del proveedor para pruebas de
+seguridad, y anotar en cada corrida qué backend, modelo y umbral se usó (el log de eventos
+no lo guarda). Mientras tanto, el valor por defecto sigue siendo Prompt Guard 2 86M local.
+
+---
+
+## 6. Un modelo protegido servido por una API de un tercero vs. "todo local" (2026-10-05)
+
+**Conflicto.** García pidió que el proxy pueda proteger también un modelo de frontera por API
+key, solo para que sea más versátil (no para medir). Eso es distinto de los backends del
+clasificador (conflicto 5): aquí el tercero recibe el **prompt completo y el system prompt, con
+el canario**, y devuelve la respuesta. Choca con la regla 1 (laboratorio aislado) y con la regla
+2 (los canarios, aunque ficticios, se tratan como reales). Además, los términos de uso de varios
+proveedores restringen las pruebas de seguridad.
+
+**Decisión.** Se implementa como **extensión aparte** (`proxy/modelos_protegidos.py`, opcional y
+apagada por defecto):
+- permiso propio, distinto del de los clasificadores: `MODELO_PROTEGIDO_PERMITIR_TERCEROS=1`;
+  un host de la propia organización (`MODELO_PROTEGIDO_HOSTS_PROPIOS`) no lo necesita; fuera de
+  esta máquina siempre HTTPS y clave;
+- los 5 mecanismos no cambian: el adaptador devuelve la forma de Ollama;
+- el canario no se escribe en el código ni en el JSON: el system prompt lleva `${VARIABLE}`;
+- los eventos de un modelo remoto llevan `es_extension` para que **no se mezclen con C0–C6**:
+  un modelo de frontera trae su propio entrenamiento de seguridad y no es comparable;
+- cualquier fallo es un 502 genérico, sin el cuerpo de error del proveedor.
+
+**Pendiente (no lo decide el código).** Antes de activar un tercero: aprobación del equipo, revisar
+los términos de uso del proveedor para pruebas de seguridad, y **no enviarle los ataques de
+V2–V4**.
+
+---
+
+## 7. La memoria de decisiones vs. la validez de los resultados (2026-10-06)
+
+**Conflicto.** García pidió que el proxy «aprenda» de las decisiones de la revisión humana: tras
+rechazar un mensaje, el mismo mensaje debe rechazarse solo. Las baterías de ataque repiten el mismo
+payload decenas de veces, así que con la memoria activa el primer rechazo bloquearía el resto y el
+**ASR de C5 y C6 bajaría artificialmente**. Además, un `config.yaml` con una sexta bandera rompe el
+contrato de las 5 claves, y un nombre de mecanismo nuevo rompe las invariantes del esquema de log.
+
+**Decisión.** Se implementa como **extensión opcional apagada por defecto**
+(`proxy/memoria_decisiones.py`, `MEMORIA_RECHAZOS=1`), sin tocar el contrato de `config.yaml`:
+- **solo rechazos** (nunca aprobaciones) y solo retenciones por contenido; coincidencia exacta tras
+  normalizar, por modelo; no frena paráfrasis;
+- **persistente** (archivo JSON Lines con `fsync`, en `./memoria`, fuera de los volúmenes de Docker)
+  y **revocable** desde la consola;
+- se guardan huellas y una vista previa de 60 caracteres con credenciales redactadas;
+- un rechazo por memoria se atribuye a `aprobacion_humana` con el campo extendido
+  `origen_decision: "memoria"` y `es_extension: true`, así que no entra en el núcleo ni en el análisis
+  de costo y el esquema conserva sus invariantes.
+
+**Pendiente (no lo decide el código).** Los resultados de C0–C6 se midieron **sin** la memoria; no
+activarla en una corrida del experimento y presentarla en el informe como extensión aparte.
+
+---
+
 ## Matriz de integración — semana de clasificación
 
 Línea base: `pytest` completo en verde (80 tests) antes de cerrar.

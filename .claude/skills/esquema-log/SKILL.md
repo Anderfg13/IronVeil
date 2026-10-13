@@ -42,11 +42,16 @@ Se pueden agregar campos nuevos. **Nunca se renombran ni se eliminan los 8 base.
 | Campo | Tipo | Cuándo |
 |---|---|---|
 | `latencia_clasificador_ms` | int | mecanismo 3 activo |
+| `origen_decision` | string | `"memoria"` si un humano ya habia rechazado ese mensaje y el proxy lo rechazo solo (memoria de decisiones, `MEMORIA_RECHAZOS=1`). Se atribuye a `aprobacion_humana`, con `latencia_memoria_us` y `es_extension: true` |
+| `modelo_protegido` | objeto | `backend` (`ollama`/`openai`/`anthropic`), `modelo`, `destino` (`local`/`propio`/`tercero`), `estado`; sin texto ni claves. Un modelo remoto además lleva `es_extension: true` |
+| `clasificador_entrada` / `clasificador_salida` | objeto | direcciones clasificadas: `backend`, `modelo`, `destino` (`local`/`propio`/`tercero`), `estado` (`ok` o el motivo del fallo cerrado) y, si aplican, `umbral`, `puntaje`, `etiqueta`. Sin texto del usuario ni claves |
 | `tiempo_revision_humana_ms` | int | petición que pasó por la cola |
 | `tipo_variante` | `original` \| `nueva` | V3 desde la semana del 12 de septiembre |
 | `paso_bloqueado` | `1` \| `2` \| null | V4 (movimiento lateral) |
 | `nivel_carga` | int | V5 (peticiones concurrentes) |
 | `es_extension` | bool | resultados fuera del núcleo de 7 configuraciones |
+| `normalizacion` | objeto | solo con `NORMALIZACION_ENTRADA=1`: conteos de lo que hizo la extensión (`invisibles_eliminados`, `decodificaciones`, `variante_inspeccionada`, `bloqueo_en_variante`, `truncada`, `error`); nunca texto del usuario |
+| `latencia_<pieza>_us` | int | solo en el `eventos.jsonl` del proxy (no en el CSV): microsegundos de cada pieza que se ejecutó (`filtrado`, `delimitacion`, `clasificacion`, `minimo_privilegio`, `limite`, `aprobacion_humana`) y del `modelo`. Una pieza que no corrió no deja campo. Además `clasificacion_entrada` y `clasificacion_salida` (desglose de `clasificacion`, no sumar) |
 
 **Antes de inventar un campo nuevo:** revisa si uno de estos ya cubre el caso, y avisa al equipo. Un campo que solo entiende quien lo escribió es ruido en el dataset.
 

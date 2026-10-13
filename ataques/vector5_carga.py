@@ -131,6 +131,30 @@ def validar_host_laboratorio_propio(url: str, permitir_host_remoto: bool) -> Non
     )
 
 
+def validar_ruta_salida_segura(ruta: Path, *, base: Path | None = None) -> Path:
+    """Verifica que `ruta` (tipicamente de `--salida`/`--salida-dir`) quede
+    dentro de `base` (por defecto, la raiz del repo) antes de usarla para
+    escribir o crear directorios.
+
+    Devuelve la ruta ya resuelta (absoluta, sin `..`). Lanza ValueError si
+    `ruta` escapa de `base` -- p. ej. un `--salida ../../../etc/algo`
+    (CWE-22, path traversal). El operador de este script controla la CLI
+    directamente, pero se valida igual: es la misma disciplina de "nunca
+    confiar en un argumento sin verificar" que ya aplica
+    `validar_host_laboratorio_propio()` para `--url`.
+    """
+    base_resuelta = (base or _REPO_ROOT).resolve()
+    ruta_resuelta = ruta.resolve()
+    if not ruta_resuelta.is_relative_to(base_resuelta):
+        raise ValueError(
+            f"La ruta de salida {ruta} (resuelta: {ruta_resuelta}) queda "
+            f"fuera de {base_resuelta}. No se acepta, para evitar escribir "
+            "fuera del repositorio por un argumento mal formado (path "
+            "traversal, CWE-22)."
+        )
+    return ruta_resuelta
+
+
 def validar_configuracion_consistente(
     configuracion: str, mecanismos_activos: list[str]
 ) -> None:
@@ -312,6 +336,7 @@ async def ejecutar_rafaga(
     timeout_peticion: float,
     status_bloqueo: int,
     salida: TextIO,
+    permitir_host_remoto: bool = False,
 ) -> list[ResultadoPeticion]:
     """Dispara la rafaga concurrente y devuelve todos los ResultadoPeticion.
 
@@ -320,7 +345,14 @@ async def ejecutar_rafaga(
     distinto por peticion via `generar_mensaje`. Cada resultado se escribe
     en `salida` (JSON Lines) a medida que se completa, para no perder
     evidencia si la rafaga se interrumpe a la mitad.
+
+    Revalida `url` contra `validar_host_laboratorio_propio()` aqui mismo
+    (no solo en `main()`): es el punto real donde se dispara la peticion
+    de red (SSRF, CWE-918), y esta funcion tambien la llama
+    `vector5_agotamiento.ejecutar_niveles()`, otro punto de entrada
+    distinto de `main()`. Defensa en profundidad, no una repeticion inutil.
     """
+    validar_host_laboratorio_propio(url, permitir_host_remoto)
     resultados: list[ResultadoPeticion] = []
     contador = itertools.count()
     deadline = time.perf_counter() + duracion_s
@@ -468,7 +500,7 @@ def main(argv: list[str] | None = None) -> None:
     mecanismos_activos = [nombre for nombre in FLAGS_REQUERIDAS if config[nombre]]
     validar_configuracion_consistente(args.configuracion, mecanismos_activos)
 
-    salida_path = args.salida or _ruta_salida_defecto()
+    salida_path = validar_ruta_salida_segura(args.salida or _ruta_salida_defecto())
     salida_path.parent.mkdir(parents=True, exist_ok=True)
 
     LOGGER.info(
@@ -497,6 +529,7 @@ def main(argv: list[str] | None = None) -> None:
                 timeout_peticion=args.timeout_peticion,
                 status_bloqueo=args.status_bloqueo,
                 salida=salida,
+                permitir_host_remoto=args.permitir_host_remoto,
             )
         )
 

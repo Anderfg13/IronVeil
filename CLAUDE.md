@@ -1,5 +1,11 @@
 # CLAUDE.md — IronVeil
 
+> ## 📌 ¿Vas a escribir el paper o a sacar tablas y números?
+> **Lee primero [`docs/GUIA_PARA_EL_PAPER.md`](docs/GUIA_PARA_EL_PAPER.md).** Dice dónde está cada cifra, cuál es la
+> definitiva, qué comando regenera cada tabla y qué **no** se puede afirmar (por ejemplo, no hay cifra oficial de idiomas
+> de Jev). Si eres un asistente de IA: no inventes números; cada cifra sale de `analisis/` o `resultados/`, y siempre
+> con su intervalo de confianza.
+
 Guía operativa para asistentes de IA que trabajen en este repositorio. Léela completa antes de tocar código.
 
 ---
@@ -161,6 +167,8 @@ aprobacion_humana: false
 
 Campos adicionales acordados sobre la marcha (latencia propia del clasificador, tiempo humano de revisión, tipo de variante `original`/`nueva`, paso 1/2 en V4) se agregan **sin renombrar los 8 campos base**.
 
+**Costo por pieza (2026-10-05).** El `eventos.jsonl` del proxy (no el CSV de resultados) lleva, para cada pieza que **se ejecutó** en esa petición, `latencia_<pieza>_us` en **microsegundos** (entero): `filtrado`, `delimitacion`, `clasificacion`, `minimo_privilegio`, `limite` y `aprobacion_humana` (la comprobación de si hay algo que retener), más `modelo` (el tiempo del modelo protegido). Una pieza apagada, o que no corrió porque la cadena se cortó antes, **no deja campo** (no se confunde «no corrió» con «fue rápido»). `latencia_ms - latencia_modelo_us/1000` es el costo propio del proxy, sin compararse contra C0. `latencia_clasificador_ms` se conserva igual. Desde 2026-10-05 la clasificación también se desglosa en `latencia_clasificacion_entrada_us` (Prompt Guard) y `latencia_clasificacion_salida_us` (Llama Guard), ya contenidas en `latencia_clasificacion_us` (no sumarlas dos veces). Desde 2026-10-05 el evento también lleva `clasificador_entrada` y `clasificador_salida` (solo las direcciones que se clasificaron): un objeto con el mismo esquema para todos los backends (`backend`, `modelo`, `destino` = `local`/`propio`/`tercero`, `estado` = `ok` o el motivo del fallo cerrado, y si aplican `umbral`, `puntaje`, `etiqueta`), sin texto del usuario ni claves; separa los bloqueos reales (`estado == "ok"`) de una caída del servicio (ver `docs/CAMBIAR_MODELO_CLASIFICADOR.md`). También `modelo_protegido` (`backend`, `modelo`, `destino`, `estado`: qué modelo respondió; sin texto ni claves) y, si el modelo es remoto (`MODELOS_REMOTOS`), `es_extension: true` (ver `docs/MODELO_PROTEGIDO_REMOTO.md`). Con la memoria de decisiones activa (`MEMORIA_RECHAZOS=1`), un mensaje rechazado antes por un humano se rechaza solo y su evento lleva `origen_decision: "memoria"`, `latencia_memoria_us` y `es_extension: true` (se atribuye a `aprobacion_humana`; ver `docs/MEMORIA_DE_DECISIONES.md`). Con la normalizacion de entrada encendida (`NORMALIZACION_ENTRADA=1`) el evento lleva `normalizacion` (conteos: `invisibles_eliminados`, `decodificaciones`, `variante_inspeccionada`, `bloqueo_en_variante`; nunca texto) y `es_extension: true` (ver `docs/NORMALIZACION_DE_ENTRADA.md`). Se resume con `analisis/costo_por_mecanismo.py`; la carga de medición es `ataques/medir_costo_mecanismos.py`.
+
 ---
 
 ## 5. Estructura del repositorio
@@ -168,19 +176,79 @@ Campos adicionales acordados sobre la marcha (latencia propia del clasificador, 
 Esta es la estructura **objetivo**. Lo marcado `[ya existe]` está en el repo hoy; el resto es lo que se va creando a medida que avanzan las semanas — no asumas que ya está ahí sin comprobarlo.
 
 ```
-/proxy/                 main.py (FastAPI) [ya existe], mecanismos.py, cola.py
-/ollama/modelfiles/     Modelfile.soporte.template, Modelfile.rrhh.template [ya existen]
+/proxy/                 main.py (FastAPI) [ya existe], mecanismos.py, cola.py,
+                        siem/ (PAQUETE con puertos y adaptadores, cableado a /chat de forma
+                        opcional: puertos FormateadorSIEM y ConectorSIEM, servicio, registro,
+                        formatos/ json|cef|leef|ecs y transportes/ archivo, syslog UDP/TCP/TLS,
+                        https, Splunk, Elastic, Azure Monitor y CloudWatch; los de red se
+                        entregan en un hilo aparte; SIEM_DESTINOS elige formato y destino, y
+                        SIEM_ADAPTADORES conecta otro SIEM sin editar IronVeil;
+                        exportar_a_siem(evento, "json"|"cef"|"leef"|"ecs") sigue siendo una
+                        funcion pura; docs/SIEM.md y docs/siem/wazuh/)
+                        complementos.py (carga de modulos de terceros que registran adaptadores,
+                        compartida por la memoria de decisiones y el SIEM)
+                        memoria_decisiones/ (EXTENSION opcional, PAQUETE con puertos y adaptadores:
+                        dominio, puerto AlmacenMemoria, servicio, registro, almacenes/ y composicion;
+                        recuerda los rechazos de la revision humana y rechaza solo el mismo mensaje;
+                        persistente con almacen intercambiable (JSON Lines o SQLite en ./memoria; la
+                        base de una empresa se conecta con MEMORIA_RECHAZOS_ADAPTADORES sin editar
+                        IronVeil); apagada salvo MEMORIA_RECHAZOS=1; eventos con es_extension;
+                        docs/MEMORIA_DE_DECISIONES.md)
+                        normalizacion/ (EXTENSION opcional, PAQUETE con puertos y adaptadores:
+                        decodifica Base64/hex/ROT13 y quita caracteres invisibles ANTES de la
+                        cadena, y los mecanismos revisan tambien lo que estaba escondido;
+                        apagada salvo NORMALIZACION_ENTRADA=1, y con ella los eventos llevan
+                        normalizacion y es_extension; docs/NORMALIZACION_DE_ENTRADA.md)
+                        modelos_protegidos.py (EXTENSION opcional: proteger un modelo servido
+                        por otra API, openai/anthropic, en vez de Ollama; devuelve la forma de
+                        Ollama, los 5 mecanismos no cambian; terceros apagados salvo
+                        MODELO_PROTEGIDO_PERMITIR_TERCEROS=1; eventos con es_extension)
+                        backends_entrada.py (clasificador de entrada alternativo: ollama,
+                        openai, anthropic y jev; los remotos apagados salvo
+                        CLASIFICADOR_PERMITIR_REMOTO=1)
+                        adaptador_clasificador.py (traduce el veredicto de cada modelo
+                        clasificador a "malicioso / no" y elige el backend de entrada;
+                        cambiar de modelo no toca clasificar(); guia en
+                        docs/CAMBIAR_MODELO_CLASIFICADOR.md)
+                        demo_chat.py (pantalla de chat /demo, solo la cara visible de /chat;
+                        opt-in IRONVEIL_DEMO=1; no cambia /chat)
+                        espera_revision.py (GET /chat/revision/{id}: quien escribio se
+                        entera de la decision humana; /chat solo suma la cabecera
+                        X-Revision-Id al 429, su cuerpo no cambia)
+                        auth.py + revision_panel.py + static/ (consola de revision humana
+                        con login opcional REVISION_USUARIOS y canal en vivo SSE /revision/eventos;
+                        logo en static/logo.svg)
+                        herramientas.py + notificaciones.py (EXTENSIONES opcionales:
+                        herramientas SIMULADAS de rrhh-agente y avisos por webhook/
+                        Slack/correo/WhatsApp cuando aprobacion humana encola;
+                        apagadas por defecto, ver .env.example)
+/ollama/modelfiles/     Modelfile.soporte.template, Modelfile.rrhh.template [ya existen],
+                        Modelfile.rrhh_agente.template (extension, herramientas simuladas)
+/scripts/               utilidades (seleccionar_config.py: escribe config.yaml para C0..C6)
+                        proxy/configuraciones.py (C0..C6 <-> banderas, una sola definicion) y
+                        proxy/cli.py (comando `ironveil`: config, serve, auth-demo; pyproject.toml,
+                        docs/PUBLICAR_PYPI.md). Autenticacion opcional de /chat con
+                        CHAT_REQUIERE_AUTENTICACION=1 (proxy/auth.py, docs/AUTENTICACION.md)
 /tests/                 pruebas unitarias y de integración
-/ataques/               variantes_ataque.md, vector4_*.py, vector5_*.py, promptfooconfig.yaml
+/ataques/               variantes_ataque.md, vector4_*.py, vector5_*.py, promptfooconfig.yaml,
+                        garak_externo/ (EXTENSION: validacion externa con Garak contra una
+                        segunda instancia del proxy, via IRONVEIL_CONFIG e IRONVEIL_RESULTADOS,
+                        sin tocar el dataset; docs/GARAK.md)
 /resultados/            resultados_template.csv, /YYYY-MM-DD/ logs crudos, /graficas/
 /analisis/              consolidar.py, validar_dataset.py, análisis en Markdown
+                        (resumen_garak.py: resumen de la extension Garak, aparte del nucleo)
+                        (extension_agencia_excesiva.py: resumen de la extensión V7; sus
+                        filas del CSV llevan es_extension=True y cargar_resultados() las
+                        excluye del núcleo)
+/.github/workflows/     ci.yml (ruff, black, pytest, paquete), publicar.yml (release + imagen en ghcr.io),
+                        pages.yml (sitio en GitHub Pages) y pypi.yml (PyPI con trusted publishing)
 /docs/                  arquitectura.md [ya existe], FUENTE_DE_VERDAD.md [ya existe, por rellenar],
                         CONFLICTOS_RESUELTOS.md, LIMPIEZA_DATOS.md, CHECKLIST_ENTREGA.md
 /informe/               main.tex, PDF compilado
-docker-compose.yml [ya existe] · config.yaml · .env.example [ya existe] · README.md [ya existe]
+LICENSE (MIT) · pyproject.toml · docker-compose.yml [ya existe] · config.yaml · .env.example [ya existe] · README.md [ya existe]
 ```
 
-Nada suelto en la raíz salvo lo listado arriba.
+Nada suelto en la raíz salvo lo listado arriba y los archivos de comunidad de GitHub (`LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CITATION.cff`).
 
 ---
 
@@ -225,16 +293,121 @@ python analisis/validar_dataset.py
 - Ramas para trabajo exploratorio sobre código compartido; merge solo con las pruebas en verde.
 - Nada de `--force` sobre `main`.
 
+### Seguridad del código (SonarCloud en A)
+
+Aplica al código de infraestructura del proyecto (`proxy/`, `ataques/`,
+`analisis/`) — **no** a los canarios (`SPT-DEMO-*`, `RRHH-DEMO-*`) ni a
+los payloads de ataque en `ataques/variantes_ataque.md`: esos son el
+objeto de estudio del experimento, no una vulnerabilidad del código, y
+`.env`/`.env.example` los declara así a propósito (regla 2, sección 2).
+Sobre el código que sí es "nuestro":
+
+- **Nunca credenciales, tokens ni secretos hardcodeados fuera de `.env` /
+  Modelfiles** (ya era regla 2 de este documento; SonarCloud lo marca como
+  vulnerabilidad `Hardcoded credentials`, no solo como estilo). Tampoco en
+  tests: usar valores claramente ficticios y distintos de los canarios
+  reales (patrón ya seguido en `tests/test_main.py`, p. ej.
+  `SPT-DEMO-4321`).
+- **`yaml.safe_load()` siempre, nunca `yaml.load()`** (ya era contrato de
+  `cargar_config()`, sección 4) — `yaml.load()` sin `Loader` es
+  deserialización insegura (RCE), uno de los hotspots más comunes que
+  reporta SonarCloud en proyectos Python.
+- **Aleatoriedad de propósito criptográfico/de seguridad usa `secrets`,
+  nunca `random`.** Ya es el caso de los marcadores de `delimitar()`
+  (`secrets.token_hex()`); mantenerlo si se agrega cualquier otro token,
+  ID de sesión o valor impredecible con fines de seguridad.
+- **Nunca `subprocess` con `shell=True` sobre una cadena construida con
+  entrada externa** (inyección de comandos). Si un script de `ataques/`
+  necesita invocar una herramienta externa (p. ej. `nmap`, `hey`), pasar
+  los argumentos como lista, nunca como string interpolado.
+- **Nunca desactivar la verificación TLS** (`verify=False` en `httpx`/
+  `requests`) ni bajar a versiones de TLS obsoletas, ni siquiera "solo
+  para probar en local".
+- **Mensajes de error hacia el cliente, siempre genéricos** (ya aplicado
+  en `proxy/main.py` tras la revisión OWASP del V1): el detalle real
+  (traceback, texto de excepción, nombre de modelo/backend) se loggea
+  server-side, nunca se reenvía tal cual en una respuesta HTTP — evita
+  tanto fuga de información como los hotspots de "Error messages should
+  not reveal implementation details" de SonarCloud.
+- **Nunca loggear el cuerpo completo de una petición/respuesta a nivel
+  INFO si puede contener una credencial** (el propio experimento las
+  maneja a propósito). El esquema de log de 8 campos ya evita esto: loggea
+  campos estructurados, no el payload crudo sin pasar antes por
+  `filtrado`/`clasificación`.
+- **Dependencias con versión exacta fijada** en `requirements.txt` /
+  `requirements-dev.txt` / `Dockerfile` (ya es la convención del
+  proyecto) — una dependencia sin pin es un hallazgo de SonarCloud
+  (`Vulnerable and outdated dependencies`) y además rompe la
+  reproducibilidad entre las 4 máquinas del equipo.
+- **Si se agrega CORS al proxy en algún momento:** nunca
+  `allow_origins=["*"]` combinado con `allow_credentials=True`. Hoy el
+  proxy no tiene CORS configurado; si hace falta, restringir a orígenes
+  explícitos.
+- Antes de comitear, si hay tiempo, correr un vistazo con `ruff check .`
+  pensando específicamente en estas categorías (hoy `ruff.toml` no tiene
+  habilitado el set `S` de flake8-bandit, que cubre buena parte de esto
+  automáticamente — considerarlo como mejora futura, avisando antes al
+  equipo porque cambia lo que `ruff check .` reporta para las 4 personas).
+- **Security Hotspots de SonarCloud que sean falsos positivos deliberados
+  de este proyecto** (p. ej. algo relacionado con los canarios o con que
+  el proxy intencionalmente no tiene autenticación de usuario, fuera de
+  alcance del experimento): márcalos como revisados con una nota en
+  SonarCloud explicando por qué, en vez de ignorarlos en silencio — igual
+  que `CONFLICTOS_RESUELTOS.md` exige registrar toda decisión de diseño no
+  obvia.
+
+### Principios de diseño (SOLID y código limpio)
+
+Valen para **todo código nuevo o que se toque**. El patrón de referencia del repositorio son
+`proxy/memoria_decisiones/` y `proxy/siem/`: léelos antes de diseñar otra extensión.
+
+**SOLID**
+- **S — una sola razón para cambiar.** Un módulo o clase hace una cosa: el dominio no sabe de E/S, el
+  servicio no sabe de archivos ni de redes, un adaptador no sabe de otro adaptador. Si para describir
+  una clase necesitas «y», parte la clase.
+- **O — abierto a extensión, cerrado a modificación.** Un destino, un formato o una base de datos
+  nuevos son **un módulo nuevo registrado por configuración**, nunca un `if/elif` más en el núcleo.
+- **L — sustituibles.** Todo adaptador cumple el contrato del puerto completo (mismas excepciones,
+  mismas garantías: `ErrorSIEM`, `ErrorAlmacen`); si hace falta la prueba compartida
+  (`tests/contrato_almacen.py`), existe.
+- **I — contratos pequeños.** Un puerto expone lo mínimo (`formatear`, `enviar`); lo opcional va en
+  otro (`Cerrable`). Nadie implementa un método que no usa.
+- **D — depender de abstracciones.** El núcleo depende de `Protocol`s; los adaptadores concretos se
+  inyectan desde **un único lugar de composición** (`composicion.py`), el único que lee el entorno.
+
+**Código limpio**
+- Nombres que dicen la intención; funciones cortas con una sola tarea; sin números ni textos mágicos
+  (constantes con nombre, definidas una vez).
+- Sin duplicación: si dos módulos hacen lo mismo se extrae (`proxy/complementos.py`).
+- Los errores se traducen en la frontera (el adaptador lanza el error del puerto) y **nunca** llevan
+  claves ni contenido del usuario; nada de `pass` silencioso.
+- Estado compartido solo detrás de un objeto con su lock; nada de diccionarios globales mutables
+  (un **registro es un objeto**).
+- Sin dependencias ocultas: lo que una clase necesita (reloj, cliente HTTP, redactor) se recibe, no se
+  importa a mano ni se lee de `os.environ`.
+
+**Cómo se vigila.** Cada paquete con puertos y adaptadores lleva **pruebas de arquitectura** con `ast`
+(`tests/test_siem_arquitectura.py`, `tests/test_memoria_servicio.py`): qué capa puede importar a cuál,
+quién puede leer el entorno, que no se desactive TLS. Si una te falla, el acoplamiento es real:
+corrige el diseño, no la prueba.
+
+**Estado honesto (2026-10-06).** Aplicado de punta a punta en `memoria_decisiones/` y `siem/`. **Aún no**
+lo cumplen, y se refactorizan al tocarlos (no en bloque, para no romper un experimento ya medido):
+`proxy/main.py` (~1400 líneas: endpoint, orquestación de la cadena, construcción del evento, métricas),
+`proxy/mecanismos.py` (~950), `backends_entrada.py` (diccionario de backends en vez de un registro
+objeto) y `modelos_protegidos.py`. Cambiar la cadena de mecanismos exige además repetir la validación
+de las 7 configuraciones.
+
 ---
 
 ## 8. Coordinación del equipo
 
 Cuatro personas trabajan sobre el mismo repo en paralelo. Reparto grueso:
 
-- **García** — infraestructura, Docker, filtrado, clasificación, mínimo privilegio, cola + rate limit, medición de costo.
-- **Piedrahita** — configuración y stubs, delimitación, cableado de mecanismos al pipeline, interfaz de aprobación, integración/conflictos, limpieza de datos, export SIEM.
-- **Sabogal** — ejecución de todos los vectores de ataque y registro de resultados crudos.
-- **Fiquitiva** — esquema de log, consolidación, tablas, gráficas e informe.
+- **Anderson Fabian Garcia Nieto (García)** — infraestructura, Docker, filtrado, clasificación, mínimo privilegio, cola + rate limit, medición de costo.
+- **Carlos Mario Piedrahita Arango (Piedrahita)** — configuración y stubs, delimitación, cableado de mecanismos al pipeline, interfaz de aprobación, integración/conflictos, limpieza de datos, export SIEM.
+- **Andres Felipe Sabogal Wilches (Sabogal)** — ejecución de todos los vectores de ataque y registro de resultados crudos.
+- **Ana Gabriela Fiquitiva Poveda (Fiquitiva)** — esquema de log, consolidación, tablas, gráficas e informe.
 
 **Antes de cambiar** una firma en `mecanismos.py`, un nombre de campo del log, o una columna del CSV: avisar. Ese es el punto donde este proyecto se rompe.
 
@@ -259,4 +432,7 @@ Cuatro personas trabajan sobre el mismo repo en paralelo. Reparto grueso:
 - [ ] Los criterios de aceptación de la tarea de la semana están todos marcados.
 - [ ] Si cambió un contrato compartido, este archivo está actualizado en el mismo commit.
 - [ ] Si se resolvió un conflicto de integración, quedó en `CONFLICTOS_RESUELTOS.md`.
+- [ ] El código nuevo respeta los principios de diseño de la sección 7 (puertos y adaptadores, un solo lugar
+      que lee el entorno, sin duplicación) y sus pruebas de arquitectura pasan.
+- [ ] Sin credenciales/tokens hardcodeados, sin `yaml.load()` sin `Loader`, sin `subprocess(shell=True)` con entrada externa, sin TLS deshabilitado (ver sección 7, "Seguridad del código").
 - [ ] Commit con mensaje descriptivo y push.

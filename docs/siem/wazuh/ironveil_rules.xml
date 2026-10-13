@@ -1,0 +1,57 @@
+<!--
+  Reglas locales de Wazuh para los eventos de IronVeil exportados con
+  proxy.siem.exportar_a_siem(evento, "json").
+
+  Instalacion (manager de Wazuh): copiar este archivo a
+  /var/ossec/etc/rules/ironveil_rules.xml y reiniciar el manager. En el
+  despliegue single-node de wazuh-docker, el manager es el contenedor
+  `wazuh.manager` (ver docs/siem/wazuh/LEEME.md).
+
+  Wazuh NO deriva el nivel de alerta del evento: lo fija una regla. Esta es
+  la traduccion resultado -> nivel:
+      permitido_normal       -> nivel 3  (informativo)
+      bloqueado              -> nivel 5  (un mecanismo hizo su trabajo)
+      exitoso_para_atacante  -> nivel 12 (fuga: lo unico que hay que mirar)
+
+  Rango de IDs 100100-100199: reservado para IronVeil (Wazuh deja 100000+
+  para reglas propias).
+-->
+<group name="ironveil,">
+
+  <!-- Base: cualquier JSON con la marca integration=ironveil. -->
+  <rule id="100100" level="3">
+    <decoded_as>json</decoded_as>
+    <field name="integration">^ironveil$</field>
+    <description>IronVeil: evento del proxy (config $(configuracion), vector $(vector_probado))</description>
+  </rule>
+
+  <rule id="100101" level="5">
+    <if_sid>100100</if_sid>
+    <field name="resultado">^bloqueado$</field>
+    <description>IronVeil: peticion bloqueada por $(mecanismo_que_bloqueo) (vector $(vector_probado), config $(configuracion))</description>
+  </rule>
+
+  <rule id="100102" level="12">
+    <if_sid>100100</if_sid>
+    <field name="resultado">^exitoso_para_atacante$</field>
+    <description>IronVeil: ATAQUE EXITOSO, el atacante obtuvo lo que buscaba (vector $(vector_probado), config $(configuracion))</description>
+  </rule>
+
+  <!-- Extension de Excessive Agency: una herramienta simulada quedo en la
+       cola de aprobacion humana. Es la senal que dispara la notificacion
+       (proxy/notificaciones.py). -->
+  <rule id="100103" level="8">
+    <if_sid>100101</if_sid>
+    <field name="mecanismo_que_bloqueo">^aprobacion_humana$</field>
+    <field name="es_extension">^true$</field>
+    <description>IronVeil: solicitud de herramienta SIMULADA en la cola de aprobacion humana (vector $(vector_probado))</description>
+  </rule>
+
+  <!-- Correlacion: ráfaga de bloqueos del mismo vector en 60 s (p. ej. V5). -->
+  <rule id="100104" level="10" frequency="5" timeframe="60">
+    <if_matched_sid>100101</if_matched_sid>
+    <same_field>vector_probado</same_field>
+    <description>IronVeil: 5 o mas bloqueos del vector $(vector_probado) en 60 s (posible ataque sostenido)</description>
+  </rule>
+
+</group>

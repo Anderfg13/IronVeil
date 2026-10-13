@@ -61,7 +61,9 @@ def _mockear_llama_guard(
     excepcion: Exception | None = None,
 ) -> _ClienteLlamaGuardFalso:
     cliente_falso = _ClienteLlamaGuardFalso(contenido, excepcion)
-    monkeypatch.setattr(mecanismos.httpx, "Client", lambda *a, **k: cliente_falso)
+    monkeypatch.setattr(
+        mecanismos, "_obtener_cliente_http_llama_guard", lambda: cliente_falso
+    )
     return cliente_falso
 
 
@@ -77,12 +79,12 @@ def _mockear_prompt_guard(
     """
     llamadas: list[str] = []
 
-    def _falso(texto: str) -> str:
+    def _falso(texto: str) -> tuple[str, float | None]:
         llamadas.append(texto)
         if excepcion is not None:
             raise excepcion
         assert etiqueta is not None
-        return etiqueta
+        return etiqueta, None
 
     monkeypatch.setattr(mecanismos, "_predecir_prompt_guard", _falso)
     return llamadas
@@ -143,7 +145,9 @@ def test_clasificar_entrada_no_llama_a_llama_guard(
     def _fallar_si_se_llama(*a: object, **k: object) -> None:
         raise AssertionError("clasificar() en entrada no deberia llamar a httpx.Client")
 
-    monkeypatch.setattr(mecanismos.httpx, "Client", _fallar_si_se_llama)
+    monkeypatch.setattr(
+        mecanismos, "_obtener_cliente_http_llama_guard", _fallar_si_se_llama
+    )
     _mockear_prompt_guard(monkeypatch, etiqueta="LABEL_0")
 
     clasificar("texto de entrada", "entrada")
@@ -159,6 +163,21 @@ def test_clasificar_envia_rol_assistant_en_salida(
     assert cliente_falso.ultimo_payload is not None
     assert cliente_falso.ultimo_payload["messages"][0]["role"] == "assistant"
     assert cliente_falso.ultimo_payload["model"] == mecanismos.MODELO_CLASIFICADOR
+    assert cliente_falso.ultimo_payload["keep_alive"] == mecanismos.KEEP_ALIVE_OLLAMA
+
+
+def test_obtener_cliente_http_llama_guard_reutiliza_la_misma_instancia(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Conexion HTTP compartida hacia Ollama (optimizacion de latencia):
+    no se abre una conexion nueva en cada clasificacion.
+    """
+    monkeypatch.setattr(mecanismos, "_cliente_http_llama_guard", None)
+
+    primero = mecanismos._obtener_cliente_http_llama_guard()
+    segundo = mecanismos._obtener_cliente_http_llama_guard()
+
+    assert primero is segundo
 
 
 # --- Fail closed ante error/excepcion, por direccion -------------------------
@@ -218,3 +237,120 @@ def test_clasificar_salida_respuesta_vacia_es_fail_closed(
 def test_clasificar_direccion_invalida_lanza_value_error() -> None:
     with pytest.raises(ValueError, match="direccion invalida"):
         clasificar("cualquier texto", "lateral")
+
+
+def _inyectar_transformers_y_torch(
+    monkeypatch: pytest.MonkeyPatch, cuda_disponible: bool
+) -> dict[str, object]:
+    """Reemplaza `transformers` y `torch` por dobles, para ver con que
+    `device` se construye el pipeline sin descargar ni cargar el modelo real.
+    """
+    import sys
+    import types
+
+    capturado: dict[str, object] = {}
+
+    def _pipeline_falso(*args: object, **kwargs: object) -> str:
+        capturado.update(kwargs)
+        return "pipeline-falso"
+
+    transformers_falso = types.ModuleType("transformers")
+    transformers_falso.pipeline = _pipeline_falso  # type: ignore[attr-defined]
+    torch_falso = types.ModuleType("torch")
+    torch_falso.cuda = types.SimpleNamespace(  # type: ignore[attr-defined]
+        is_available=lambda: cuda_disponible
+    )
+    torch_falso.float16 = "fp16-falso"  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "transformers", transformers_falso)
+    monkeypatch.setitem(sys.modules, "torch", torch_falso)
+    monkeypatch.setattr(mecanismos, "_pipeline_prompt_guard", None)
+    monkeypatch.setattr(mecanismos, "HF_TOKEN", "token-de-prueba")
+    return capturado
+
+
+def test_prompt_guard_usa_la_gpu_si_hay_cuda(monkeypatch: pytest.MonkeyPatch) -> None:
+    capturado = _inyectar_transformers_y_torch(monkeypatch, cuda_disponible=True)
+
+    mecanismos._obtener_pipeline_prompt_guard()
+
+    assert capturado["device"] == 0
+
+
+def test_prompt_guard_usa_cpu_si_no_hay_cuda(monkeypatch: pytest.MonkeyPatch) -> None:
+    capturado = _inyectar_transformers_y_torch(monkeypatch, cuda_disponible=False)
+
+    mecanismos._obtener_pipeline_prompt_guard()
+
+    assert capturado["device"] == -1
+
+
+# --- Latencia: limites seguros (2026-10-05) ----------------------------------
+
+
+def test_prompt_guard_usa_fp16_solo_con_gpu(monkeypatch: pytest.MonkeyPatch) -> None:
+    capturado = _inyectar_transformers_y_torch(monkeypatch, cuda_disponible=True)
+
+    mecanismos._obtener_pipeline_prompt_guard()
+
+    assert capturado["torch_dtype"] == "fp16-falso"
+
+
+def test_prompt_guard_en_cpu_no_pide_fp16(monkeypatch: pytest.MonkeyPatch) -> None:
+    capturado = _inyectar_transformers_y_torch(monkeypatch, cuda_disponible=False)
+
+    mecanismos._obtener_pipeline_prompt_guard()
+
+    assert "torch_dtype" not in capturado
+
+
+def test_fp16_se_puede_apagar_con_la_variable(monkeypatch: pytest.MonkeyPatch) -> None:
+    capturado = _inyectar_transformers_y_torch(monkeypatch, cuda_disponible=True)
+    monkeypatch.setattr(mecanismos, "PROMPT_GUARD_FP16", False)
+
+    mecanismos._obtener_pipeline_prompt_guard()
+
+    assert "torch_dtype" not in capturado
+    assert capturado["device"] == 0  # sigue en GPU, solo sin media precision
+
+
+def test_prompt_guard_nunca_trunca_el_texto(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Truncar a 512 tokens dejaria sin revisar lo que venga despues (hueco)."""
+    capturado = _inyectar_transformers_y_torch(monkeypatch, cuda_disponible=True)
+
+    mecanismos._obtener_pipeline_prompt_guard()
+
+    assert "truncation" not in capturado
+    assert "max_length" not in capturado
+
+
+def test_llama_guard_pide_veredicto_corto_y_determinista(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cliente_falso = _mockear_llama_guard(monkeypatch, contenido="safe")
+
+    clasificar("hola", "salida")
+
+    assert cliente_falso.ultimo_payload is not None
+    opciones = cliente_falso.ultimo_payload["options"]
+    assert opciones["temperature"] == 0
+    assert opciones["num_predict"] == mecanismos.LLAMA_GUARD_MAX_TOKENS
+
+
+def test_llama_guard_no_reduce_el_contexto(monkeypatch: pytest.MonkeyPatch) -> None:
+    """num_ctx pequeno haria que Ollama descartara el inicio del texto."""
+    cliente_falso = _mockear_llama_guard(monkeypatch, contenido="safe")
+
+    clasificar("hola", "salida")
+
+    assert cliente_falso.ultimo_payload is not None
+    assert "num_ctx" not in cliente_falso.ultimo_payload["options"]
+
+
+def test_el_tope_de_tokens_alcanza_para_la_respuesta_mas_larga_posible() -> None:
+    """'unsafe' + las 13 categorias S1..S13 separadas por comas cabe de sobra."""
+    peor_caso = "unsafe\n" + ",".join(f"S{i}" for i in range(1, 14))
+
+    # ~1 token por categoria y por coma + la palabra: muy por debajo del tope.
+    assert len(peor_caso.replace("\n", " ").replace(",", " ").split()) * 2 <= (
+        mecanismos.LLAMA_GUARD_MAX_TOKENS
+    )

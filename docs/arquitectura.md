@@ -274,10 +274,15 @@ con `json.dumps(evento, ensure_ascii=False)` + salto de línea.
   `validar_privilegio()`): en `"salida"` su paso siempre retorna sin
   bloquear. **Aprobación humana tampoco vive en `_CADENA_MECANISMOS`**
   (ver sección 3, paso 5, y el comentario junto a `_CADENA_MECANISMOS` en
-  el código): `_gestionar_aprobacion_humana()` intercepta el resultado de
-  la cadena de entrada (o corre antes, si el rate limit ya se excedió) y lo
-  convierte en "encolar" (`429`) en vez de "rechazar" (`400`) cuando
-  `aprobacion_humana` está activo. El endpoint escribe el log JSONL de la
+  el código): `chat()` delega en dos funciones auxiliares (desde 2026-10-06, para
+  que el endpoint se mantenga corto): `_bloqueo_previo()` (memoria de decisiones y
+  límite de tasa, que corren antes de la cadena) y `_revisar_entrada()` (la cadena de
+  entrada y, con `aprobacion_humana` activo, su conversión a cola).
+  `_gestionar_aprobacion_humana()`, llamada desde `_revisar_entrada()`, intercepta el
+  resultado de la cadena de entrada (o el límite de tasa ya se excedió en
+  `_bloqueo_previo()`) y lo convierte en "encolar" (`429`) en vez de "rechazar"
+  (`400`) cuando `aprobacion_humana` está activo. El orden y el comportamiento no
+  cambiaron: solo se sacó código de `chat()`. El endpoint escribe el log JSONL de la
   sección 5 en cada petición; añade `latencia_clasificador_ms` siempre que
   `config["clasificacion"]` sea `true`. **Las 7 configuraciones (`C0`..`C6`)
   ya se ejecutan de punta a punta.**
@@ -298,6 +303,88 @@ con `json.dumps(evento, ensure_ascii=False)` + salto de línea.
     ráfaga contra `/chat`, con cualquier mecanismo activo, corría el mismo
     riesgo). Corregido con un `threading.Lock` (`_registro_lock`) alrededor
     de la escritura — ver `docs/FUENTE_DE_VERDAD.md`, sección 9.
+- **Extensiones opcionales (apagadas por defecto, no tocan el núcleo):**
+  - `proxy/herramientas.py` + modelo `rrhh-agente`
+    (`ollama/modelfiles/Modelfile.rrhh_agente.template`): function calling
+    nativo de Ollama con dos herramientas **SIMULADAS** (`enviar_correo`,
+    `consultar_base_datos`: solo escriben en el log, ningún efecto real).
+    Solo se activan para los modelos listados en `MODELOS_CON_HERRAMIENTAS`.
+    El modelo únicamente *solicita* una herramienta;
+    `_gestionar_llamadas_a_herramientas()` (llamada desde
+    `_completar_peticion()`) la encola en la cola de revisión humana si
+    `aprobacion_humana` está activa y la deniega si no — nunca se ejecuta
+    sin pasar por la cola. `POST /revision/{id}/aprobar` ejecuta entonces la
+    versión simulada (`_aprobar_herramienta()`). Es un modelo distinto de
+    `rrhh` a propósito: cambiar el system prompt de `rrhh` invalidaría la
+    comparación entre las 7 configuraciones ya medidas.
+  - `proxy/notificaciones.py`: cada vez que aprobación humana coloca una
+    petición en la cola (límite de tasa, bloqueo de otro mecanismo o
+    solicitud de herramienta), `_notificar_en_revision()` avisa por los
+    canales configurados por variables de entorno (webhook genérico, Slack,
+    correo SMTP, WhatsApp vía Twilio). **No bloqueante**: hilo daemon, un
+    `try/except` y un timeout por canal; un fallo solo pierde la
+    notificación. El mensaje lleva mecanismo/motivo, vector, configuración y
+    timestamp, nunca el texto de la petición.
+  - `proxy/memoria_decisiones.py` — **memoria de decisiones humanas**
+    (`MEMORIA_RECHAZOS=1`; guía en `docs/MEMORIA_DE_DECISIONES.md`): cuando un
+    revisor **rechaza** una petición que filtrado, clasificación o mínimo
+    privilegio retuvo, `rechazar_revision()` guarda la huella SHA-256 del par
+    (modelo, mensaje normalizado) y `_consultar_memoria()` rechaza solo el mismo
+    mensaje al principio de `/chat` (400 inmediato, sin cola, sin aviso, sin llegar
+    al modelo). Solo rechazos (nunca aprobaciones), por modelo, coincidencia exacta:
+    no frena paráfrasis. Es un **paquete con puertos y adaptadores**
+    (`proxy/memoria_decisiones/`: dominio, puerto `AlmacenMemoria`, servicio, registro,
+    `almacenes/` y composición; cada capa depende solo de la de abajo y solo la
+    composición lee el entorno). **Persistente** con almacén intercambiable (JSON Lines
+    o SQLite en `./memoria`, carpeta del host); la base de datos de una empresa se
+    conecta con `MEMORIA_RECHAZOS_ADAPTADORES`, sin editar IronVeil. Visible y
+    revocable desde la pestaña *Memoria* de la consola. Los resultados de C0-C6 se midieron **sin** ella; sus
+    eventos llevan `origen_decision: "memoria"`, `latencia_memoria_us` y
+    `es_extension: true`, y se atribuyen a `aprobacion_humana`.
+  - `proxy/modelos_protegidos.py` — **modelo protegido remoto**
+    (`MODELOS_REMOTOS`; `docs/MODELO_PROTEGIDO_REMOTO.md`): el proxy puede proteger un
+    modelo servido por otra API (`openai`, `anthropic`) en vez de Ollama.
+    `_llamar_modelo_protegido()` despacha y el adaptador devuelve la forma de Ollama,
+    así que los 5 mecanismos no cambian. Un tercero exige
+    `MODELO_PROTEGIDO_PERMITIR_TERCEROS=1`; sus eventos llevan `es_extension`.
+  - `proxy/backends_entrada.py` + `proxy/adaptador_clasificador.py` — **clasificador de
+    entrada intercambiable** (`CLASIFICADOR_ENTRADA_BACKEND`;
+    `docs/CAMBIAR_MODELO_CLASIFICADOR.md`): Prompt Guard local por defecto, o `http`,
+    `ollama`, `openai`, `anthropic`, `jev`. El adaptador traduce el veredicto de cada
+    modelo a «malicioso / no» (etiqueta desconocida = malicioso) y cada evento deja
+    `clasificador_entrada` / `clasificador_salida` con backend, modelo, destino y
+    estado (separa una detección real de una caída del servicio). `clasificar()` no
+    cambia de firma.
+  - `proxy/siem/` — exportación de cada evento a **cualquier SIEM**, como paquete con
+    puertos y adaptadores (`docs/SIEM.md`). Cada capa depende solo de la de abajo:
+    composición (lee el entorno, único lugar) → servicio `ExportadorSIEM` (entrega a todos los
+    destinos, aislados entre sí, sin poder lanzar) → registro (`[formato@]esquema://destino`) →
+    adaptadores. Dos puertos de un método cada uno: `FormateadorSIEM` (json para Wazuh/Splunk/Sentinel,
+    cef, leef, ecs) y `ConectorSIEM` (archivo, syslog UDP/TCP/TLS, https, Splunk HEC, Elastic/OpenSearch,
+    Azure Monitor, CloudWatch con firma SigV4 propia). Formato y transporte se combinan libremente.
+    Los transportes de red se entregan en un hilo aparte (`ConectorAsincrono`: cola acotada,
+    reintentos, descarta lo más nuevo si el SIEM lleva rato caído): **un SIEM lento o caído nunca
+    frena ni rompe `/chat`**. `exportar_a_siem(evento, formato) -> str` sigue siendo una función
+    pura (campos con su nombre, listas aplanadas, `null` omitido porque Wazuh lo vuelve la cadena
+    `"null"`, `integration: "ironveil"`). Reglas de Wazuh en `docs/siem/wazuh/ironveil_rules.xml`
+    y lote por lotes en `analisis/exportar_lote_siem.py`.
+    **Cableado a `/chat`** (opt-in): `_registrar_evento()` escribe primero el dataset
+    (`eventos.jsonl`, intacto) y después llama a `siem.exportar_evento()`, que solo actúa si hay
+    `SIEM_DESTINOS` (o la forma histórica `SIEM_ARCHIVO_WAZUH`). Los eventos de `/revision/*`
+    también se exportan, porque pasan por la misma `_registrar_evento()`. Otro SIEM se conecta con
+    un módulo propio listado en `SIEM_ADAPTADORES`, sin editar IronVeil.
+- `proxy/normalizacion/` — **extensión opcional** (apagada salvo `NORMALIZACION_ENTRADA=1`): cubre
+  los ataques que se esconden (Base64, hexadecimal, ROT13, caracteres Unicode invisibles) que ni el
+  filtro ni Prompt Guard ven. Actúa **antes** de la cadena: quita los invisibles (el modelo recibe
+  el texto limpio), decodifica los tramos hasta dos capas y, si lo decodificado parece lenguaje,
+  hace una segunda pasada con los **mismos** mecanismos (`_cadena_de_entrada()` en `main.py`; el
+  primero que bloquea gana). No es un mecanismo nuevo: solo muestra a los existentes lo que estaba
+  escondido, así que sin mecanismos activos no bloquea nada. Paquete con puertos y adaptadores
+  (dominio → puerto `Decodificador` → servicio → registro → `decodificadores/` → composición, la
+  única que lee el entorno); otra codificación se agrega con `NORMALIZACION_ADAPTADORES`. Con ella
+  encendida los eventos llevan `normalizacion` y `es_extension`, y C0–C6 dejan de ser las del
+  experimento. Medido sin LLM: 0/6 → 6/6 por codificación y 0/18 falsos positivos
+  (`analisis/medir_normalizacion.py`; muestra pequeña). Guía: `docs/NORMALIZACION_DE_ENTRADA.md`.
 - `proxy/mecanismos.py`: las 5 funciones tienen lógica real. `filtrar()`
   bloquea en entrada por patrones de prompt injection y redacta
   credenciales canario en salida. `delimitar()` envuelve la entrada del
@@ -359,10 +446,80 @@ con `json.dumps(evento, ensure_ascii=False)` + salto de línea.
   aprobación, `latencia_ms` es el tiempo **total** (espera en cola +
   tiempo de completar la petición), y `tiempo_revision_humana_ms` es solo
   la parte de espera — la métrica de costo que necesita Fiquitiva, sin
-  reemplazar el total (invariante 5 del esquema de log). `GET /revision/ui`
-  sirve una página HTML mínima (JS vanilla, sin plantillas ni dependencias
-  nuevas) sobre esos mismos 3 endpoints, para no depender de `curl` a mano
-  durante las pruebas del equipo.
+  reemplazar el total (invariante 5 del esquema de log).
+- `proxy/revision_panel.py` + `proxy/static/` (consola de revisión humana,
+  extensión de la interfaz de arriba): `GET /revision/ui` sirve una consola
+  (HTML/CSS/JS vanilla, sin dependencias nuevas, sin recursos externos) que
+  consume `GET /revision/panel` (la cola **analizada**: mecanismo que la
+  retuvo y por qué, fragmentos que coinciden con patrones conocidos, señales
+  y una lectura **orientativa** falso positivo / ataque; para herramientas
+  simuladas, las reglas de `rrhh-agente`) y `GET /revision/historial`
+  (decisiones: quién, cuándo, cuánto tardó; **nunca el texto**). El texto de
+  una petición puede ser un ataque: viaja como JSON y la página lo pinta con
+  `textContent`, sin `innerHTML` (lo verifica un test). El logo es
+  `proxy/static/logo.svg`, reemplazable.
+- `proxy/demo_chat.py` + `proxy/static/demo.*` (pantalla de chat de la demo,
+  **opt-in** con `IRONVEIL_DEMO=1`, apagada por defecto): `GET /demo` sirve una
+  pantalla tipo chat que llama a `POST /chat` y muestra solo la respuesta (o un
+  aviso genérico si hubo bloqueo o revisión). No agrega endpoints de datos ni
+  toca el pipeline: lo que hizo cada mecanismo no se muestra en pantalla y queda
+  en el log JSONL, los logs del proxy y el SIEM, para quien opera el sistema.
+  Con login activo exige sesión. Un test impide que la pantalla nombre
+  mecanismos o llame a otro endpoint que `/chat` (y, si el mensaje queda en
+  revisión, `GET /chat/revision/{id}`, abajo).
+- **Espera de la decisión humana** (`proxy/espera_revision.py`, `ResultadosRevision`
+  en `proxy/cola.py`): al encolar, `/chat` sigue respondiendo 429 de inmediato
+  (**el cuerpo no cambia**) pero agrega la cabecera `X-Revision-Id` con el id del
+  turno (uuid4, 128 bits: es la llave); solo si la petición quedó de verdad en
+  la cola. Antes, lo que decidiera el revisor nunca le llegaba a quien escribió
+  (`aprobar` devuelve la respuesta al revisor). Ahora la consola, al decidir,
+  deja el resultado (`aprobada` con la respuesta ya filtrada por la cadena de
+  salida, `rechazada` o `fallida`) en un registro en memoria con caducidad de
+  30 min y tope de 500. `GET /chat/revision/{id}?espera=25` dice el estado y
+  **espera hasta 25 s a que cambie** (long polling; se despierta al instante, no
+  sondea). Con `desde=pendiente|en_curso` vuelve en cuanto el estado sea otro: así
+  el chat se entera de que ya se aprobó y se está generando la respuesta
+  (`en_curso`) y puede mostrar «Preparando la respuesta…» y bloquear el envío.
+  Estados: `pendiente`, `en_curso`, `aprobada`, `rechazada`, `fallida`,
+  `desconocida`. Sin login, como `/chat` (el id es la llave); nunca devuelve el
+  texto de la petición; tope de 100 esperas abiertas. Quien decide marca
+  `en_curso` **antes** de sacar la petición de la cola, así quien espera nunca
+  ve un hueco entre `pendiente` y el resultado.
+- **Costo por pieza** (`_MetricasCadena.tiempos_ns` en `proxy/main.py`): cada
+  mecanismo que corre, y el modelo, se cronometran con `perf_counter_ns` y salen
+  en el `eventos.jsonl` como `latencia_<pieza>_us` (microsegundos; ver
+  `CLAUDE.md`, sección 4). Restar `latencia_modelo_us` a `latencia_ms` da el
+  costo propio del proxy sin compararse contra C0. Solo se registra lo que se
+  ejecutó; los 8 campos base no cambian. `ataques/medir_costo_mecanismos.py`
+  genera la carga (mensajes legítimos de tres tamaños y algunos que algún
+  mecanismo retiene; el calentamiento lleva `vector_probado="CALENTAMIENTO"`) y
+  `analisis/costo_por_mecanismo.py` resume por configuración.
+- `proxy/auth.py` (login de la consola): **opt-in** — con `REVISION_USUARIOS`
+  vacía todo se comporta como antes (scripts y tests del experimento
+  intactos); con cuentas definidas, `GET /revision`, `/revision/panel`,
+  `/revision/historial` y `POST /revision/{id}/aprobar|rechazar` exigen
+  sesión (cookie `HttpOnly` + `SameSite=Strict` + `Secure`, token aleatorio con
+  `secrets`, expiración por inactividad) y las decisiones exigen además rol
+  `revisor` y la cabecera `X-CSRF-Token`. Claves con scrypt (`python -m
+  proxy.auth USUARIO`), límite de intentos por usuario e IP, y la verificación
+  cuesta lo mismo exista o no el usuario. `ProveedorAutenticacion` (patrón
+  Adapter, como `proxy/siem/`) es el punto para conectar el LDAP, la base de datos
+  de usuarios o el SSO de la organización sin tocar sesiones ni CSRF. Las
+  sesiones viven en memoria del proceso. `python -m proxy.auth --demo` crea la
+  cuenta `admin` (rol `revisor`) con una **clave aleatoria por máquina**: escribe
+  solo el hash en el `.env` y la clave en `credenciales-demo.local.txt` (ignorado
+  por Git); no hay ninguna clave por defecto en el código.
+- **Consola en tiempo real** (`GET /revision/eventos`, SSE, en `revision_panel.py`):
+  la cola (`ColaRevision.suscribir()/cancelar()`) avisa de cada cambio —encolar o
+  retirar— a quien esté escuchando; el generador `flujo_eventos()` lo convierte en
+  eventos `cambio`, funde ráfagas en un solo aviso y manda un latido cada 15 s.
+  **El canal no lleva datos** (solo «cambió»): la consola vuelve a pedir
+  `/revision/panel` por la vía autenticada de siempre, así que el texto de una
+  petición nunca viaja por él. Exige sesión; cada latido comprueba que la sesión
+  siga vigente **sin renovarla** (una pestaña abierta no mantiene viva una sesión
+  inactiva) y, si venció, manda `sesion` y cierra. Tope de 50 consolas
+  conectadas (`lleno` → la consola cae al sondeo). El cliente solo sondea como
+  respaldo (cada 3 s si el canal está caído, cada 30 s aunque esté vivo).
 - `config.yaml`: las 5 banderas existen; el estado por defecto del repo es
   todas en `false` (`C0`).
 - `proxy/Dockerfile` y `docker-compose.yml`: el build context es la raíz

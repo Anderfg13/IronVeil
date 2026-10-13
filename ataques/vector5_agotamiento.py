@@ -76,6 +76,7 @@ from ataques.vector5_carga import (  # noqa: E402
     ejecutar_rafaga,
     validar_configuracion_consistente,
     validar_host_laboratorio_propio,
+    validar_ruta_salida_segura,
 )
 from proxy.mecanismos import CONFIG_PATH, FLAGS_REQUERIDAS, cargar_config  # noqa: E402
 
@@ -184,6 +185,7 @@ async def ejecutar_niveles(
     timeout_peticion: float,
     status_bloqueo: int,
     salida_dir: Path,
+    permitir_host_remoto: bool = False,
 ) -> list[ResumenNivel]:
     """Corre `ejecutar_rafaga()` de vector5_carga en cada nivel, en orden.
 
@@ -191,8 +193,12 @@ async def ejecutar_niveles(
     evidencia cruda de ningun nivel individual. Los niveles se corren
     secuencialmente, nunca en paralelo entre si -- si se corrieran a la vez
     la carga de un nivel contaminaria la medicion del otro.
+
+    `salida_dir` se valida contra `validar_ruta_salida_segura()` antes de
+    crearla/escribir en ella (CWE-22, path traversal via `--salida-dir`).
     """
     resumenes: list[ResumenNivel] = []
+    salida_dir = validar_ruta_salida_segura(salida_dir)
     salida_dir.mkdir(parents=True, exist_ok=True)
 
     for nivel in niveles:
@@ -218,6 +224,7 @@ async def ejecutar_niveles(
                 timeout_peticion=timeout_peticion,
                 status_bloqueo=status_bloqueo,
                 salida=salida,
+                permitir_host_remoto=permitir_host_remoto,
             )
         resumen = resumir(nivel, resultados)
         resumenes.append(resumen)
@@ -361,6 +368,7 @@ def main(argv: list[str] | None = None) -> None:
             timeout_peticion=args.timeout_peticion,
             status_bloqueo=args.status_bloqueo,
             salida_dir=salida_dir,
+            permitir_host_remoto=args.permitir_host_remoto,
         )
     )
 

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -24,8 +25,23 @@ RESULTADOS_CSV = RAIZ / "resultados" / "resultados_template.csv"
 DESCARTADOS_CSV = RAIZ / "resultados" / "descartados.csv"
 
 
-def mover_a_descartados(configuraciones: list[str], razon: str) -> int:
-    """Mueve las filas cuya 'configuracion' este en `configuraciones`.
+PATRON_VECTOR_BASE = re.compile(r"^V\d+")
+
+
+def _vector_base(vector_probado: str) -> str:
+    coincidencia = PATRON_VECTOR_BASE.match(vector_probado)
+    return coincidencia.group(0) if coincidencia else vector_probado
+
+
+def mover_a_descartados(
+    configuraciones: list[str],
+    razon: str,
+    vectores_base: list[str] | None = None,
+) -> int:
+    """Mueve las filas cuya 'configuracion' este en `configuraciones` y,
+    si se pasa `vectores_base` (p. ej. ["V1", "V4"]), cuyo vector base
+    ("V4-A-paso1" -> "V4") tambien este en esa lista. Sin `vectores_base`
+    se mueve la configuracion completa, como siempre.
 
     Devuelve cuantas filas se movieron. Reescribe resultados_template.csv
     sin esas filas y las agrega (append) a descartados.csv con una columna
@@ -36,8 +52,15 @@ def mover_a_descartados(configuraciones: list[str], razon: str) -> int:
         columnas = list(lector.fieldnames or [])
         filas = list(lector)
 
-    a_mover = [f for f in filas if f["configuracion"] in configuraciones]
-    a_conservar = [f for f in filas if f["configuracion"] not in configuraciones]
+    def _debe_moverse(fila: dict[str, str]) -> bool:
+        if fila["configuracion"] not in configuraciones:
+            return False
+        return vectores_base is None or (
+            _vector_base(fila["vector_probado"]) in vectores_base
+        )
+
+    a_mover = [f for f in filas if _debe_moverse(f)]
+    a_conservar = [f for f in filas if not _debe_moverse(f)]
 
     if not a_mover:
         return 0
@@ -71,6 +94,15 @@ def _parsear_argumentos(argv: list[str] | None = None) -> argparse.Namespace:
         help="Una o mas configuraciones (p. ej. C3 C6) cuyas filas se mueven.",
     )
     parser.add_argument(
+        "--vector-base",
+        nargs="+",
+        default=None,
+        help=(
+            "Opcional: limita el descarte a estos vectores base (p. ej. V1 "
+            "V2 V3 V4). Sin esto se mueve la configuracion completa."
+        ),
+    )
+    parser.add_argument(
         "--razon",
         required=True,
         help="Razon documentada del descarte (obligatoria, regla 4 de CLAUDE.md).",
@@ -80,10 +112,12 @@ def _parsear_argumentos(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> None:
     args = _parsear_argumentos(argv)
-    movidas = mover_a_descartados(args.configuracion, args.razon)
+    movidas = mover_a_descartados(args.configuracion, args.razon, args.vector_base)
+    alcance = f", vectores: {', '.join(args.vector_base)}" if args.vector_base else ""
     print(
         f"{movidas} fila(s) movidas de resultados_template.csv a "
-        f"descartados.csv (configuraciones: {', '.join(args.configuracion)})."
+        f"descartados.csv (configuraciones: {', '.join(args.configuracion)}"
+        f"{alcance})."
     )
 
 

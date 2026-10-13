@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta name="color-scheme" content="light dark">
+  <title>Iniciar sesión · IronVeil</title>
+  <link rel="icon" href="/revision/static/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/revision/static/consola.css">
+</head>
+<body>
+  <div class="acceso">
+    <section class="marca-lado">
+      <!-- Espacio del logo: reemplaza proxy/static/logo.svg (SVG o PNG con el mismo nombre) y se ajusta solo a esta caja; el tamano se cambia con --logo. -->
+      <div class="marca"><span class="marca-logo"><img src="/revision/static/logo.svg" alt="" width="64" height="64"></span><div class="nombre-marca"><b>Iron</b>Veil</div></div>
+      <div>
+        <p class="lema">Antes de que el modelo responda, una persona decide.</p>
+        <p>Revisa las peticiones que los mecanismos de defensa retuvieron y confirma si son un ataque o un falso positivo.</p>
+      </div>
+      <footer>IronVeil protege tu LLM local desde un proxy. Acceso solo para personal autorizado.</footer>
+    </section>
+
+    <main class="formulario">
+      <form id="form" novalidate>
+        <h1>Iniciar sesión</h1>
+        <p>Usa la cuenta que tu organización creó para la revisión humana.</p>
+        <div class="campo">
+          <label for="usuario">Usuario</label>
+          <input id="usuario" name="usuario" autocomplete="username" autocapitalize="none" spellcheck="false" required maxlength="64" aria-describedby="error">
+        </div>
+        <div class="campo">
+          <label for="clave">Contraseña</label>
+          <div class="campo-clave">
+            <input id="clave" name="clave" type="password" autocomplete="current-password" required maxlength="256" aria-describedby="error">
+            <button class="ver-clave" id="ver-clave" type="button" aria-pressed="false" aria-controls="clave">Mostrar<span class="solo-lectores"> contraseña</span></button>
+          </div>
+        </div>
+        <div class="error-form" id="error" role="alert"></div>
+        <button class="entrar" id="entrar" type="submit">Iniciar sesión</button>
+        <p class="nota">Los intentos fallidos se limitan y quedan registrados en el servidor.</p>
+      </form>
+    </main>
+  </div>
+  <script src="/revision/static/login.js"></script>
+</body>
+</html>

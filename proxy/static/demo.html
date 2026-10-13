@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
+  <meta name="robots" content="noindex">
+  <meta name="color-scheme" content="light dark">
+  <title>Chat · IronVeil</title>
+  <link rel="icon" href="/revision/static/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/revision/static/consola.css">
+  <link rel="stylesheet" href="/revision/static/demo.css">
+</head>
+<body class="demo-cuerpo">
+  <header class="barra">
+    <div class="marca">
+      <!-- Espacio del logo: reemplaza proxy/static/logo.svg (SVG o PNG con el mismo nombre) y se ajusta solo a esta caja; el tamano se cambia con --logo. -->
+      <span class="marca-logo"><img src="/revision/static/logo.svg" alt="" width="36" height="36"></span>
+      <div class="nombre-marca"><b>Iron</b>Veil</div>
+    </div>
+    <div class="relleno"></div>
+    <button type="button" class="boton-barra" id="nueva" hidden>Nueva conversación</button>
+  </header>
+
+  <main class="demo-chat" id="principal">
+    <h1 class="solo-lectores">Chat</h1>
+
+    <!-- Las respuestas se anuncian por #anuncios (una sola región viva); el hilo es
+         un log navegable que no se anuncia a sí mismo, para no leerlo dos veces. -->
+    <div class="demo-hilo" id="hilo" role="log" aria-live="off" aria-label="Conversación" tabindex="0">
+      <section class="demo-inicio" id="inicio">
+        <h2>¿En qué puedo ayudarte?</h2>
+      </section>
+    </div>
+
+    <form class="demo-compositor" id="formulario" novalidate>
+      <label class="solo-lectores" for="mensaje">Mensaje</label>
+      <div class="demo-caja vidrio">
+        <textarea id="mensaje" name="mensaje" rows="1" maxlength="12000" placeholder="Escribe tu mensaje…" autocomplete="off" spellcheck="true" aria-describedby="ayuda"></textarea>
+        <div class="demo-controles">
+          <div class="demo-campo">
+            <label for="modelo">Asistente</label>
+            <select id="modelo" name="modelo">
+              <option value="soporte">Soporte</option>
+              <option value="rrhh">Recursos humanos</option>
+            </select>
+          </div>
+          <span class="demo-contador" id="contador" hidden></span>
+          <button type="submit" class="demo-enviar" id="enviar">Enviar</button>
+        </div>
+      </div>
+      <div class="demo-notas">
+        <p class="demo-ayuda" id="ayuda">
+          <span class="demo-solo-fino">Enter envía, Mayús+Enter agrega una línea.</span>
+          <span class="demo-solo-tactil">Toca Enviar para mandar tu mensaje.</span>
+        </p>
+        <p class="demo-ayuda">Cada mensaje se responde por separado. Las respuestas las genera un modelo y pueden tener errores.</p>
+      </div>
+    </form>
+  </main>
+
+  <output class="solo-lectores" id="anuncios" aria-live="polite"></output>
+  <script src="/revision/static/demo.js"></script>
+</body>
+</html>
