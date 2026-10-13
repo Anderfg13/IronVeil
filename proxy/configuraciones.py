@@ -6,6 +6,8 @@ Es la unica definicion de la correspondencia C0..C6 <-> banderas: la usan el scr
 
 from __future__ import annotations
 
+from pathlib import Path
+
 MECANISMOS: tuple[str, ...] = (
     "filtrado",
     "delimitacion",
@@ -41,3 +43,12 @@ def construir_config(nombre: str) -> str:
 def descripcion_activos(nombre: str) -> str:
     """Los mecanismos activos de `nombre`, para mostrarlos en una linea."""
     return ", ".join(CONFIGURACIONES[nombre]) or "ninguno (baseline)"
+
+
+def escribir_config(destino: Path, nombre: str) -> None:
+    """Escribe en `destino` el `config.yaml` de la configuracion `nombre`.
+
+    Quien llama decide el destino (un archivo fijo del proyecto o del directorio
+    actual); ninguna linea de comandos recibe una ruta de salida.
+    """
+    destino.write_text(construir_config(nombre), encoding="utf-8")

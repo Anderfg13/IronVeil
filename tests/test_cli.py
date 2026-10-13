@@ -11,10 +11,13 @@ import proxy.cli as cli
 from proxy.configuraciones import CONFIGURACIONES, MECANISMOS
 
 
-def test_config_escribe_las_cinco_banderas(tmp_path: Path) -> None:
+def test_config_escribe_las_cinco_banderas(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
     destino = tmp_path / "config.yaml"
 
-    codigo = cli.main(["config", "C4", "--salida", str(destino)])
+    codigo = cli.main(["config", "C4"])
 
     banderas = yaml.safe_load(destino.read_text(encoding="utf-8"))
     assert codigo == 0
@@ -22,10 +25,12 @@ def test_config_escribe_las_cinco_banderas(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("nombre", sorted(CONFIGURACIONES))
-def test_config_acepta_las_siete_configuraciones(nombre: str, tmp_path: Path) -> None:
-    destino = tmp_path / "config.yaml"
+def test_config_acepta_las_siete_configuraciones(
+    nombre: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
 
-    assert cli.main(["config", nombre, "--salida", str(destino)]) == 0
+    assert cli.main(["config", nombre]) == 0
 
 
 def test_config_rechaza_una_configuracion_desconocida() -> None:

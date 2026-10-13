@@ -36,6 +36,6 @@ jobs:
           python-version: "3.13"
       - name: El paquete se construye y su metadata es valida
         run: |
-          pip install build==1.2.2.post1 twine==6.1.0
+          pip install --only-binary :all: build==1.2.2.post1 twine==6.1.0
           python -m build
           twine check dist/*

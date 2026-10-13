@@ -1,6 +1,6 @@
 """Linea de comandos `ironveil` (instalacion con `pip install ironveil`).
 
-    ironveil config C3          escribe ./config.yaml con la configuracion C3
+    ironveil config C3          escribe ./config.yaml (directorio actual) con C3
     ironveil serve              levanta el proxy en :8000 (lee ./config.yaml)
     ironveil auth-demo          crea la cuenta de demo "admin" (clave aleatoria)
 
@@ -20,8 +20,8 @@ from pathlib import Path
 
 from proxy.configuraciones import (
     CONFIGURACIONES,
-    construir_config,
     descripcion_activos,
+    escribir_config,
 )
 
 NOMBRE_CONFIG = "config.yaml"
@@ -31,8 +31,8 @@ HOST_DEFECTO = "127.0.0.1"
 
 
 def _comando_config(args: argparse.Namespace) -> int:
-    destino = Path(args.salida)
-    destino.write_text(construir_config(args.configuracion), encoding="utf-8")
+    destino = Path.cwd() / NOMBRE_CONFIG
+    escribir_config(destino, args.configuracion)
     activos = descripcion_activos(args.configuracion)
     sys.stdout.write(f"{destino}: {args.configuracion} -> {activos}\n")
     return 0
@@ -67,7 +67,6 @@ def construir_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="comando", required=True)
     cfg = sub.add_parser("config", help="escribe config.yaml para C0..C6")
     cfg.add_argument("configuracion", choices=sorted(CONFIGURACIONES))
-    cfg.add_argument("--salida", default=NOMBRE_CONFIG)
     cfg.set_defaults(funcion=_comando_config)
     srv = sub.add_parser("serve", help="levanta el proxy")
     srv.add_argument("--host", default=HOST_DEFECTO)

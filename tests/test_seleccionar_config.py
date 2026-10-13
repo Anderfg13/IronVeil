@@ -55,7 +55,16 @@ def test_una_configuracion_desconocida_falla_con_mensaje_claro() -> None:
         sc.construir_config("C9")
 
 
-def test_main_escribe_el_archivo_pedido(tmp_path: Path) -> None:
+def test_escribir_config_escribe_el_archivo_pedido(tmp_path: Path) -> None:
     destino = tmp_path / "config.yaml"
-    assert sc.main(["C2", "--salida", str(destino)]) == 0
+    sc.escribir_config(destino, "C2")
     assert yaml.safe_load(destino.read_text(encoding="utf-8"))["delimitacion"] is True
+
+
+def test_main_escribe_solo_el_config_del_repo(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    destino = tmp_path / "config.yaml"
+    monkeypatch.setattr(sc, "RUTA_CONFIG", destino)
+    assert sc.main(["C3"]) == 0
+    assert yaml.safe_load(destino.read_text(encoding="utf-8"))["clasificacion"] is True

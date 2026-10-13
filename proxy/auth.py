@@ -421,7 +421,7 @@ def _credenciales_basic(request: Request) -> tuple[str, str] | None:
             .decode("utf-8")
             .partition(":")
         )
-    except (ValueError, UnicodeDecodeError):
+    except ValueError:  # base64 mal formado o bytes que no son UTF-8
         return None
     return (usuario, clave) if separador and usuario else None
 

@@ -23,22 +23,28 @@ from proxy.configuraciones import (  # noqa: E402
     MECANISMOS,
     construir_config,
     descripcion_activos,
+    escribir_config,
 )
 
 RUTA_CONFIG = RAIZ / "config.yaml"
 
-__all__ = ["CONFIGURACIONES", "MECANISMOS", "construir_config", "main"]
+__all__ = [
+    "CONFIGURACIONES",
+    "MECANISMOS",
+    "construir_config",
+    "escribir_config",
+    "main",
+]
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Escribe `config.yaml` (o `--salida`) con la configuracion pedida."""
+    """Escribe el `config.yaml` de la raiz del repo con la configuracion pedida."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("configuracion", choices=sorted(CONFIGURACIONES))
-    parser.add_argument("--salida", type=Path, default=RUTA_CONFIG)
     args = parser.parse_args(argv)
-    args.salida.write_text(construir_config(args.configuracion), encoding="utf-8")
+    escribir_config(RUTA_CONFIG, args.configuracion)
     activos = descripcion_activos(args.configuracion)
-    print(f"{args.salida.name}: {args.configuracion} -> mecanismos activos: {activos}")
+    print(f"{RUTA_CONFIG.name}: {args.configuracion} -> mecanismos activos: {activos}")
     return 0
 
 
