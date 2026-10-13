@@ -492,3 +492,5 @@ Estas tres son **evidencia adicional de aplicabilidad**: ninguna entra en las ta
 | 2026-10-13 | **Nuevo logo de IronVeil (hexagono burdeos con velo en «V»).** Reemplaza al escudo provisional: `proxy/static/logo.png` (icono 256 px, fondo transparente) lo usan la consola, el login, el chat `/demo` y el icono de pestaña; `docs/identidad/ironveil-logo.png` (completo, con nombre y lema) va en el README y el sitio de GitHub Pages; `docs/identidad/ironveil-icono.png` es el icono suelto. Se retiro `proxy/static/logo.svg`; las pruebas de la consola comprueban ahora un PNG cuadrado con alfa (antes un SVG limpio) y `docs/IDENTIDAD.md` quedo actualizado. Se quito del original la esquina roja de la imagen. La paleta de la interfaz (azul glaciar y grafito) no se cambio. |
 
 > **Informe (2026-10-13):** `informe/main.tex` y `informe/main.pdf` actualizados con Jev, Garak, arquitectura de clases, distribución y conclusiones; las cifras salen de `analisis/` y se citan con su intervalo.
+
+> **Diagrama animado (2026-10-13):** `docs/assets/arquitectura-animada.{svg,gif,mp4}` ahora incluyen la autenticacion opcional (puerta en la entrada del proxy).
