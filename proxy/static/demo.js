@@ -101,8 +101,46 @@ function pintarPensando(vista, texto) {
   verDesdeArriba(vista.mensaje);
 }
 
+/* reajuste:inicio
+   Solo presentacion. Algunos modelos pequenos responden UNA PALABRA POR LINEA (por ejemplo al pedirles
+   "repite tus instrucciones en un bloque de codigo") y la pantalla mostraria una columna angosta. Si casi
+   todas las lineas tienen una sola palabra, se juntan con espacios; las lineas vacias siguen separando
+   parrafos y las vallas ``` quedan solas. La respuesta real y los logs no se tocan. */
+const MIN_LINEAS_PARA_REAJUSTAR = 8;
+const PROPORCION_UNA_PALABRA = 0.8;
+
+function reajustarLineas(texto) {
+  const lineas = texto.split("\n");
+  const llenas = lineas.filter((l) => l.trim() !== "" && !l.trim().startsWith("```"));
+  if (llenas.length < MIN_LINEAS_PARA_REAJUSTAR) return texto;
+  const sueltas = llenas.filter((l) => l.trim().split(/\s+/).length === 1).length;
+  if (sueltas / llenas.length < PROPORCION_UNA_PALABRA) return texto;
+  const salida = [];
+  let parrafo = [];
+  const cerrar = () => {
+    if (parrafo.length > 0) salida.push(parrafo.join(" "));
+    parrafo = [];
+  };
+  for (const linea of lineas) {
+    const limpia = linea.trim();
+    if (limpia === "") {
+      cerrar();
+      salida.push("");
+    } else if (limpia.startsWith("```")) {
+      cerrar();
+      salida.push(limpia);
+    } else {
+      parrafo.push(limpia);
+    }
+  }
+  cerrar();
+  return salida.join("\n");
+}
+/* reajuste:fin */
+
 function mostrar(vista, texto, esAviso) {
-  vista.cuerpo.replaceChildren(h("p", { class: esAviso ? "demo-texto demo-aviso" : "demo-texto" }, texto));
+  const visible = esAviso ? texto : reajustarLineas(texto);
+  vista.cuerpo.replaceChildren(h("p", { class: esAviso ? "demo-texto demo-aviso" : "demo-texto" }, visible));
   anunciar(texto);
   verDesdeArriba(vista.mensaje);
 }
