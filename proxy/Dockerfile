@@ -35,7 +35,7 @@ WORKDIR /app
 # El --index-url va dentro de requirements-torch.txt (pip lo respeta ahi),
 # no como flag aca, para que ambos install queden con la misma forma.
 COPY proxy/requirements-torch.txt proxy/requirements-torch.txt
-RUN pip install --no-cache-dir --only-binary :all: --require-hashes \
+RUN pip install --no-cache-dir --only-binary :all: --require-hashes --no-deps \
     -r proxy/requirements-torch.txt
 
 COPY proxy/requirements.txt proxy/requirements.txt

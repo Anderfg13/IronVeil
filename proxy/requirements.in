@@ -7,3 +7,6 @@ PyYAML==6.0.2
 # PyTorch (ver requirements-torch.in), para no traer la variante CUDA
 # (varios GB de mas, innecesarios sin GPU en el laboratorio).
 transformers==5.17.0
+# torch lo necesita en Python >= 3.12. Va aqui (PyPI) y no en requirements-torch.in
+# porque el indice CPU de PyTorch solo llega a setuptools 78.1.0 (con alertas de seguridad).
+setuptools==84.0.0
