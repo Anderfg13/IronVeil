@@ -97,6 +97,21 @@ Tiempo total de narración: unos 4:00 de voz sobre 4:45 de video (el resto son p
 
 ---
 
+## Segmentos añadidos: delimitación y mínimo privilegio (Sabogal o García)
+
+Entran entre el 4 y el 5 (`S4b`) y entre el 5 y el 6 (`S5b`). Nombra los audios `S4b_<apellido>` y `S5b_<apellido>`.
+
+**Segmento 4b · Delimitación (~15 s)**
+
+> Segunda defensa, la delimitación: separa lo que escribe el usuario de las instrucciones del sistema, para que el
+> modelo lo trate como información y no como una orden. Aquí el intento de hacerse pasar por el sistema recibe una
+> negativa.
+
+**Segmento 5b · Mínimo privilegio (~14 s)**
+
+> Cuarta defensa, el mínimo privilegio: cada asistente solo acepta lo de su propio dominio. Aquí enviamos al
+> asistente de recursos humanos la credencial del de soporte, y el proxy la rechaza.
+
 ## Entrega
 
 Súbanlos a una carpeta compartida o pásenlos a García, antes de la noche del 15 de octubre. Con los audios, el montaje
