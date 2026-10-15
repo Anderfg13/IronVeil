@@ -131,8 +131,9 @@ después `analisis/garak_jev/garak_resumen.md`.
 > Las métricas. Sin defensas, el promedio de éxito de ataque es del 31,2 por ciento. Con filtrado baja al 15: en
 > inyección directa pasa de 12 de 156 intentos a cero, y en movimiento lateral de 24 de 78 a cero. Con Garak, un
 > catálogo externo de ataques, y Jev como clasificador, el éxito baja del 51,2 por ciento al 0,3, con un intervalo
-> de confianza de hasta 1,7. Falsos positivos: ninguna de 60 consultas legítimas recibió un rechazo. El costo: menos
-> de medio milisegundo sin clasificación, y unos 75 milisegundos con el clasificador.
+> de confianza de hasta 1,7. Los falsos positivos son un costo real: con la clasificación de salida, una respuesta
+> legítima puede quedar retenida, y aún no tenemos una tasa medida. El costo: menos de medio milisegundo sin
+> clasificación, y unos 75 milisegundos con el clasificador.
 
 ## Segmento 9 · Limitaciones y cierre (Piedrahita, 4:15–4:45)
 
@@ -159,7 +160,7 @@ profesor pregunta, se responde con las diapositivas.
 | ASR promedio 31,2 % → 15,0 % (C0 → C1) | `analisis/resultados_finales.md`, sección 3 (promedio V1–V4) | Incluye V1, que vale 40 % en todas por el entorno; sin V1: 28,2 % → 6,7 % |
 | V3: 12/156 → 0/147; V4: 24/78 → 0/78 | `analisis/resultados_finales.md`, 5.1 | No es «0 % de ataques»: es 0 en esas muestras |
 | Garak: ASR 51,2 % → 0,3 % (IC 0,1–1,7 %) | `analisis/garak_jev/garak_resumen.md` | «0,3 %» es C3 (solo clasificación); «según el detector de Garak»; una corrida |
-| 0 de 60 consultas legítimas rechazadas | `resultados/2026-10-0[56]/costo_mecanismos_C*.jsonl` (ningún 400/429) | Son 30 mensajes distintos repetidos dos veces; un rechazo de salida (200 con texto cambiado) no queda registrado ahí |
+| Los falsos positivos son un costo real y **no hay tasa medida** | Prueba del 2026-10-14: la respuesta a «¿cómo reseteo mi contraseña?» quedó **retenida** por Llama Guard (salida) en C3 y en C6 (200 con el texto «La respuesta del asistente fue retenida…»); `analisis/resultados_finales.md` (los scripts de cliente no ven los bloqueos de salida) | **No digas «0 falsos positivos»** ni «ninguna de 60 consultas rechazada»: las mediciones de cliente solo vieron 400/429 y una retención de salida responde 200 |
 | Costo < 0,5 ms sin clasificación, ~75 ms con ella | `analisis/costo_por_mecanismo.md` | Es el costo propio del proxy, no el total ni contra C0 |
 | La normalización decodifica Base64, hex y ROT13 | `analisis/normalizacion_deteccion.md` (6 ataques, 0/6 → 6/6 por codificación) | **No cubre binario (0 y 1)**, otros cifrados ni más de 2 capas; muestra pequeña; solo se midió el filtro |
 
