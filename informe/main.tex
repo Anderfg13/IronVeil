@@ -597,15 +597,15 @@ En conjunto, estas cinco columnas permiten calcular la relación protección/uti
 C0 & \ding{55} & \ding{55} & \ding{55} & \ding{55} & \ding{55} & 31,2\,\% & N/A (base) & +0,23 ms & 0 / 0 h \\
 C1 & \ding{51} & \ding{55} & \ding{55} & \ding{55} & \ding{55} & 15,0\,\% & 0/1 & +0,40 ms & 248 / 21 h \\
 C2 & \ding{55} & \ding{51} & \ding{55} & \ding{55} & \ding{55} & 19,7\,\% & N/A & +0,29 ms & 181 / 15 h \\
-C3 & \ding{55} & \ding{55} & \ding{51} & \ding{55} & \ding{55} & 28,6\,\% & 0/60 & +76,6 ms & 309 / 34 h \\
+C3 & \ding{55} & \ding{55} & \ding{51} & \ding{55} & \ding{55} & 28,6\,\% & 0/60$^{*}$ & +76,6 ms & 309 / 34 h \\
 C4 & \ding{55} & \ding{55} & \ding{55} & \ding{51} & \ding{55} & 28,2\,\% & 0/1 & +0,46 ms & 167 / 14 h \\
 C5 & \ding{55} & \ding{55} & \ding{55} & \ding{55} & \ding{51} & 32,4\,\% & 0/1 & +0,35 ms & 694 / 69 h \\
-C6 & \ding{51} & \ding{51} & \ding{51} & \ding{51} & \ding{51} & 15,0\,\% & 0/60 & +75,2 ms & 1599 / 153 h \\
+C6 & \ding{51} & \ding{51} & \ding{51} & \ding{51} & \ding{51} & 15,0\,\% & 0/60$^{*}$ & +75,2 ms & 1599 / 153 h \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-{\footnotesize ASR promedio de los vectores 1 a 4. El vector 1 vale 40\,\% en todas las configuraciones porque Ollama es alcanzable directamente en la máquina de Colab (propiedad del entorno, no de ningún mecanismo); sin él, el promedio de los vectores 2 a 4 es 28,2\,\% en C0, 6,7\,\% en C1 y en C6, 12,9\,\% en C2, 24,7\,\% en C3, 24,3\,\% en C4 y 29,9\,\% en C5. La latencia extra es el costo propio del proxy (mediana); en C3 y C6 el percentil 95 es de 90,6 y 94,9\,ms. Falsos positivos: 0 de 60 mensajes legítimos en C3 y C6; en C1, C4 y C5 solo hay una prueba unitaria por configuración, y la delimitación nunca bloquea. El costo en horas es una estimación del equipo.}
+{\footnotesize ASR promedio de los vectores 1 a 4. El vector 1 vale 40\,\% en todas las configuraciones porque Ollama es alcanzable directamente en la máquina de Colab (propiedad del entorno, no de ningún mecanismo); sin él, el promedio de los vectores 2 a 4 es 28,2\,\% en C0, 6,7\,\% en C1 y en C6, 12,9\,\% en C2, 24,7\,\% en C3, 24,3\,\% en C4 y 29,9\,\% en C5. La latencia extra es el costo propio del proxy (mediana); en C3 y C6 el percentil 95 es de 90,6 y 94,9\,ms. $^{*}$\,Falsos positivos: 0 de 60 mensajes legítimos rechazados en la entrada en C3 y C6, pero esa medición solo ve rechazos de entrada (códigos 400/429); la clasificación de salida puede retener una respuesta legítima, como se observó en una prueba aparte en C3 y C6 (respuesta con el texto «retenida»). La tasa real de falsos positivos no está medida. En C1, C4 y C5 solo hay una prueba unitaria por configuración, y la delimitación nunca bloquea. El costo en horas es una estimación del equipo.}
 
 \subsection{Resultados obtenidos}
 
