@@ -144,10 +144,11 @@ def test_la_demo_solo_usa_tokens_que_existen() -> None:
 
 
 def test_el_chat_solo_llama_a_chat_y_a_la_espera_de_su_propio_turno() -> None:
-    """/chat y, si queda en revision, /chat/revision/{turno}: nada mas."""
+    """/chat y, si queda en revision, /chat/revision/{turno}; ademas /revision/sesion,
+    solo para leer el token CSRF de su propia sesion cuando el chat exige login."""
     llamadas = re.findall(r"fetch\((?:\"|`)(/[^\"`$?]*)", JS)
 
-    assert sorted(llamadas) == ["/chat", "/chat/revision/"]
+    assert sorted(llamadas) == ["/chat", "/chat/revision/", "/revision/sesion"]
 
 
 def test_el_chat_no_muestra_nada_del_pipeline() -> None:
@@ -300,7 +301,7 @@ def test_el_indicador_de_espera_tiene_texto_visible_y_no_depende_de_la_animacion
 def test_el_logo_no_se_repite_en_la_pantalla_de_chat() -> None:
     """branding.md: logo solo donde da contexto; aqui basta el de la barra."""
     assert HTML.count("<img") == 1  # solo la barra (el icono de pestaña es un <link>)
-    assert "logo.svg" not in JS
+    assert "logo.png" not in JS
     assert "demo-avatar" not in CSS_DEMO
 
 

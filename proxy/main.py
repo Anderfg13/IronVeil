@@ -645,9 +645,10 @@ def _registrar_evento(evento: dict[str, Any]) -> None:
     fecha = datetime.now().astimezone().strftime("%Y-%m-%d")
     directorio = RESULTADOS_DIR / fecha
     directorio.mkdir(parents=True, exist_ok=True)
-    with _registro_lock, (directorio / "eventos.jsonl").open(
-        "a", encoding="utf-8"
-    ) as f:
+    with (
+        _registro_lock,
+        (directorio / "eventos.jsonl").open("a", encoding="utf-8") as f,
+    ):
         f.write(json.dumps(evento, ensure_ascii=False) + "\n")
     siem.exportar_evento(evento)
 
@@ -1191,7 +1192,9 @@ async def _revisar_entrada(
     return mensaje, mecanismo_bloqueo
 
 
-@app.post("/chat", responses=_RESPUESTAS_CHAT)
+@app.post(
+    "/chat", responses=_RESPUESTAS_CHAT, dependencies=[Depends(auth.exigir_cliente)]
+)
 async def chat(request: ChatRequest, http_request: Request) -> dict[str, Any]:
     inicio = time.perf_counter()
     config = mecanismos.cargar_config(mecanismos.CONFIG_PATH)

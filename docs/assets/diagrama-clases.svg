@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 810" width="1240" height="810" role="img" aria-labelledby="t d">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1520 810" width="1520" height="810" role="img" aria-labelledby="t d">
 <title id="t">Diagrama de clases de IronVeil</title>
-<desc id="d">Clases y puertos de los paquetes proxy, memoria_decisiones, siem y normalizacion; los adaptadores implementan los Protocol y los servicios dependen de ellos.</desc>
+<desc id="d">Clases y puertos de los paquetes proxy, memoria_decisiones, siem, normalizacion y auth; los adaptadores implementan los Protocol y los servicios dependen de ellos.</desc>
 <style>
  text{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"JetBrains Mono",monospace;white-space:pre}
  .t{font-size:13px;font-weight:700} .e{font-size:10px;fill:#94a3b8} .m{font-size:10.5px;fill:#cbd5e1} .s{font-size:10.5px;fill:#94a3b8}
@@ -16,9 +16,9 @@
  <marker id="flecha" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#64748b"/></marker>
  <marker id="hueca" markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto"><path d="M1,1 L10,5.5 L1,10 z" fill="#020617" stroke="#94a3b8" stroke-width="1.2"/></marker>
 </defs>
-<rect width="1240" height="810" rx="16" fill="#020617"/>
+<rect width="1520" height="810" rx="16" fill="#020617"/>
 <text x="20" y="34" class="big">IronVeil · diagrama de clases</text>
-<text x="20" y="52" class="s">solo lo que existe en el código: núcleo + 3 extensiones con puertos y adaptadores</text>
+<text x="20" y="52" class="s">solo lo que existe en el código: núcleo + 4 extensiones (con la autenticación opcional) con puertos y adaptadores</text>
 <rect x="20" y="64" width="270" height="716" rx="14" fill="#22d3ee" fill-opacity=".04" stroke="#22d3ee" stroke-opacity=".35" stroke-dasharray="4 5"/>
 <rect x="20" y="64" width="270" height="716" rx="14" fill="#22d3ee" class="foco" style="animation-delay:0s"/>
 <text x="34" y="86" class="h" fill="#22d3ee">proxy/ · NÚCLEO</text>
@@ -31,6 +31,9 @@
 <rect x="955" y="64" width="265" height="716" rx="14" fill="#a78bfa" fill-opacity=".04" stroke="#a78bfa" stroke-opacity=".35" stroke-dasharray="4 5"/>
 <rect x="955" y="64" width="265" height="716" rx="14" fill="#a78bfa" class="foco" style="animation-delay:9s"/>
 <text x="969" y="86" class="h" fill="#a78bfa">normalizacion/</text>
+<rect x="1235" y="64" width="265" height="716" rx="14" fill="#a3e635" fill-opacity=".04" stroke="#a3e635" stroke-opacity=".35" stroke-dasharray="4 5"/>
+<rect x="1235" y="64" width="265" height="716" rx="14" fill="#a3e635" class="foco" style="animation-delay:12s"/>
+<text x="1249" y="86" class="h" fill="#a3e635">auth.py · AUTENTICACIÓN</text>
 <rect x="36" y="250" width="238" height="142" rx="8" fill="#0f172a" stroke="#22d3ee" stroke-width="1.5"/><text x="155.0" y="263" text-anchor="middle" class="e">«módulo»</text><text x="155.0" y="284" text-anchor="middle" class="t" fill="#22d3ee">mecanismos.py</text><line x1="36" y1="292" x2="274" y2="292" stroke="#22d3ee" stroke-opacity=".4"/><text x="46" y="307" class="m">filtrar(texto, direccion)</text><text x="46" y="322" class="m">delimitar(system, usuario)</text><text x="46" y="337" class="m">clasificar(texto, direccion)</text><text x="46" y="352" class="m">validar_privilegio(modelo, texto)</text><text x="46" y="367" class="m">enviar_a_revision(peticion)</text><text x="46" y="382" class="m">cargar_config() → dict[str,bool]</text>
 <rect x="36" y="420" width="238" height="98" rx="8" fill="#0f172a" stroke="#22d3ee" stroke-width="1.5"/><text x="155.0" y="440" text-anchor="middle" class="t" fill="#22d3ee">ColaRevision</text><line x1="36" y1="448" x2="274" y2="448" stroke="#22d3ee" stroke-opacity=".4"/><text x="46" y="463" class="m">encolar() · listar() · retirar()</text><text x="46" y="478" class="m">excede_limite(cliente)</text><text x="46" y="493" class="m">LIMITE_PETICIONES_POR_MINUTO</text><text x="46" y="508" class="m">MAX_TAMANO_COLA · lock</text>
 <rect x="36" y="560" width="84" height="68" rx="8" fill="#0f172a" stroke="#22d3ee" stroke-width="1.5"/><text x="78.0" y="580" text-anchor="middle" class="t" fill="#22d3ee">Avisos</text><line x1="36" y1="588" x2="120" y2="588" stroke="#22d3ee" stroke-opacity=".4"/><text x="46" y="603" class="m">suscribir()</text><text x="46" y="618" class="m">avisar()</text>
@@ -67,5 +70,13 @@
 <path d="M1087.5,235 L1087.5,177" class="rel impl" marker-end="url(#hueca)"/>
 <path d="M1087.5,340 L1087.5,177" class="rel" marker-end="url(#flecha)"/>
 <path d="M1087.5,470 L1087.5,437" class="rel" marker-end="url(#flecha)"/>
+<rect x="1251" y="110" width="233" height="82" rx="8" fill="#0f172a" stroke="#a3e635" stroke-width="1.5"/><text x="1367.5" y="123" text-anchor="middle" class="e">«Protocol»</text><text x="1367.5" y="144" text-anchor="middle" class="t" fill="#a3e635">ProveedorAutenticacion</text><line x1="1251" y1="152" x2="1484" y2="152" stroke="#a3e635" stroke-opacity=".4"/><text x="1261" y="167" class="m">autenticar(usuario, clave)</text><text x="1261" y="182" class="m">→ Identidad | None</text>
+<rect x="1251" y="235" width="233" height="68" rx="8" fill="#0f172a" stroke="#a3e635" stroke-width="1.5"/><text x="1367.5" y="255" text-anchor="middle" class="t" fill="#a3e635">ProveedorLocal</text><line x1="1251" y1="263" x2="1484" y2="263" stroke="#a3e635" stroke-opacity=".4"/><text x="1261" y="278" class="m">cuentas usuario:rol:hash</text><text x="1261" y="293" class="m">scrypt con sal propia</text>
+<rect x="1251" y="340" width="233" height="68" rx="8" fill="#0f172a" stroke="#a3e635" stroke-width="1.5"/><text x="1367.5" y="360" text-anchor="middle" class="t" fill="#a3e635">Identidad</text><line x1="1251" y1="368" x2="1484" y2="368" stroke="#a3e635" stroke-opacity=".4"/><text x="1261" y="383" class="m">usuario · rol</text><text x="1261" y="398" class="m">puede_decidir()</text>
+<rect x="1251" y="440" width="233" height="83" rx="8" fill="#0f172a" stroke="#a3e635" stroke-width="1.5"/><text x="1367.5" y="460" text-anchor="middle" class="t" fill="#a3e635">LimitadorIntentos</text><line x1="1251" y1="468" x2="1484" y2="468" stroke="#a3e635" stroke-opacity=".4"/><text x="1261" y="483" class="m">5 fallos / 5 min → 429</text><text x="1261" y="498" class="m">por usuario y por IP</text><text x="1261" y="513" class="m">lock</text>
+<rect x="1251" y="560" width="233" height="83" rx="8" fill="#0f172a" stroke="#a3e635" stroke-width="1.5"/><text x="1367.5" y="580" text-anchor="middle" class="t" fill="#a3e635">GestorSesiones</text><line x1="1251" y1="588" x2="1484" y2="588" stroke="#a3e635" stroke-opacity=".4"/><text x="1261" y="603" class="m">crear() · obtener() · cerrar()</text><text x="1261" y="618" class="m">cookie HttpOnly · CSRF</text><text x="1261" y="633" class="m">inactividad con tope</text>
+<path d="M1367.5,235 L1367.5,192" class="rel impl" marker-end="url(#hueca)"/>
+<path d="M1367.5,192 L1367.5,340" class="rel" marker-end="url(#flecha)"/>
+<path d="M1367.5,440 L1367.5,408" class="rel" marker-end="url(#flecha)"/>
 <text x="20" y="796" class="s">Líneas punteadas con punta hueca = implementa el puerto · líneas con flecha = usa. Patrón puertos y adaptadores: el núcleo depende de Protocols; los adaptadores se registran por configuración.</text>
 </svg>

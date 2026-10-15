@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="proxy/static/logo.svg" alt="Logo de IronVeil" width="96">
+<img src="docs/identidad/ironveil-logo.png" alt="IronVeil: defensa en profundidad para LLMs" width="320">
 
 # IronVeil
 
@@ -115,7 +115,7 @@ sequenceDiagram
 
 ### Diagrama de clases (animado)
 
-<p align="center"><img src="docs/assets/diagrama-clases.svg" alt="Diagrama de clases de IronVeil: núcleo del proxy y las extensiones memoria_decisiones, siem y normalizacion con sus puertos y adaptadores" width="100%"></p>
+<p align="center"><img src="docs/assets/diagrama-clases.svg" alt="Diagrama de clases de IronVeil: núcleo del proxy y las extensiones memoria_decisiones, siem, normalizacion y auth con sus puertos y adaptadores" width="100%"></p>
 
 El núcleo depende de **puertos** (`Protocol`) y los **adaptadores** (almacenes, formatos y destinos SIEM, decodificadores) se registran por configuración, sin editar el núcleo. Los paquetes `memoria_decisiones/` y `siem/` son la referencia del patrón (SOLID, ver [`CLAUDE.md`](CLAUDE.md) §7).
 
@@ -141,6 +141,20 @@ curl -X POST http://localhost:8000/chat -H 'Content-Type: application/json' \
 ```
 
 > **Clasificación de entrada (C3 y C6):** usa *Llama Prompt Guard 2*, un modelo con licencia restringida en Hugging Face. Acepta la licencia, crea un token y ponlo en `HF_TOKEN` dentro de `.env`. Sin token, esa pieza **falla cerrada** (bloquea todo), por diseño. Las demás configuraciones no lo necesitan.
+
+**Usuario de prueba (opcional).** El laboratorio arranca abierto, como lo necesitan los experimentos. Para probar la
+autenticación del proxy hay un usuario `admin` con una clave **aleatoria** (no existe una clave por defecto publicada):
+
+```bash
+python -m proxy.auth --demo           # crea la cuenta; la clave queda en credenciales-demo.local.txt
+# en .env: CHAT_REQUIERE_AUTENTICACION=1   y   IRONVEIL_DEMO=1
+docker compose up -d proxy
+curl -u admin:LA_CLAVE -X POST http://localhost:8000/chat -H 'Content-Type: application/json' \
+  -d '{"modelo":"soporte","mensaje":"hola"}'      # sin -u responde 401
+```
+
+`/chat` y la consola `/revision/ui` usan las mismas cuentas; el chat de `/demo` pide login. Detalles en
+[`docs/AUTENTICACION.md`](docs/AUTENTICACION.md).
 
 **Comprobar el aislamiento** (debe fallar con *connection refused*; Ollama no se publica al host):
 
@@ -269,9 +283,20 @@ Reglas del dato: los CSV y logs de `resultados/` son **evidencia**; toda transfo
 
 - **Laboratorio aislado:** todo ataque, carga o escaneo va contra el stack propio en localhost/Docker, nunca contra terceros.
 - **Ollama nunca se publica al host:** solo el proxy expone el puerto 8000.
+- **Autenticación opcional:** `CHAT_REQUIERE_AUTENTICACION=1` exige usuario y clave en `/chat` (falla cerrada si no hay cuentas); la consola de revisión tiene login con sesión y CSRF. Apagada por defecto para no alterar lo medido.
 - **Sin secretos en el código:** los canarios viven en `.env`/Modelfiles; las dependencias están fijadas con versión exacta (y con hashes en la imagen del proxy).
 - **Mensajes de error genéricos** hacia el cliente; el detalle se registra solo en el servidor.
 - Las herramientas de la extensión V7 están **simuladas** y marcadas como tales en el código.
+
+## Instalar como paquete
+
+```bash
+pip install ironveil        # en un entorno virtual; necesita un Ollama alcanzable
+ironveil config C3 && ironveil serve
+```
+
+Publicación en PyPI y límites: [`docs/PUBLICAR_PYPI.md`](docs/PUBLICAR_PYPI.md). El sitio con el visor interactivo y los
+diagramas animados se publica con GitHub Pages: <https://anderfg13.github.io/IronVeil/>.
 
 ## Versiones y paquetes
 

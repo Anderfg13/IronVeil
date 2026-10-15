@@ -126,7 +126,7 @@ button:active:not(:disabled) { transform: translateY(1px); }
 .barra :focus-visible { outline-color: var(--iron-ink); }
 .marca { display: flex; align-items: center; gap: 10px; }
 .marca img { width: 100%; height: 100%; object-fit: contain; display: block; }
-/* Espacio del logo: una caja de tamano fijo. Cambia el archivo logo.svg (o ajusta --logo)
+/* Espacio del logo: una caja de tamano fijo. Cambia el archivo logo.png (o ajusta --logo)
    y todo lo demas queda igual. */
 .marca-logo { flex: none; width: var(--logo, 36px); height: var(--logo, 36px); display: grid; place-items: center; }
 .nombre-marca { font-family: var(--display); font-weight: 400; font-size: 1.0625rem; letter-spacing: .005em; line-height: 1.2; }

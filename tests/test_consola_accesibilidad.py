@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import struct
 import subprocess
 
 import pytest
@@ -444,9 +445,9 @@ def test_el_resumen_del_historial_usa_el_plural_correcto(
 
 
 def test_el_logo_aparece_una_vez_por_pagina() -> None:
-    assert "logo.svg" not in JS  # ni en la lista ni en el expediente vacios
-    assert HTML.count('src="/revision/static/logo.svg"') == 1
-    assert LOGIN_HTML.count('src="/revision/static/logo.svg"') == 1
+    assert "logo.png" not in JS  # ni en la lista ni en el expediente vacios
+    assert HTML.count('src="/revision/static/logo.png"') == 1
+    assert LOGIN_HTML.count('src="/revision/static/logo.png"') == 1
 
 
 # --- L4: transparencia reducida ---
@@ -600,27 +601,28 @@ def test_la_tipografia_es_la_del_sistema_sin_fuentes_externas() -> None:
 
 
 def test_el_logo_tiene_un_espacio_propio_y_se_reemplaza_por_archivo() -> None:
-    """Un solo archivo (logo.svg) y una sola caja (.marca-logo) en las tres paginas."""
+    """Un solo archivo (logo.png) y una sola caja (.marca-logo) en las tres paginas."""
     assert ".marca-logo {" in CSS
     assert "var(--logo, 36px)" in CSS
     demo = (panel.DIRECTORIO_ESTATICO / "demo.html").read_text(encoding="utf-8")
     for pagina in (HTML, LOGIN_HTML, demo):
         assert 'class="marca-logo"' in pagina
-        assert "/revision/static/logo.svg" in pagina
-        assert "reemplaza proxy/static/logo.svg" in pagina
+        assert "/revision/static/logo.png" in pagina
+        assert "reemplaza proxy/static/logo.png" in pagina
 
 
-def test_el_logo_es_un_svg_limpio_sin_texto_ni_recursos_externos() -> None:
-    logo = (panel.DIRECTORIO_ESTATICO / "logo.svg").read_text(encoding="utf-8")
+def test_el_logo_es_un_png_cuadrado_con_fondo_transparente() -> None:
+    """PNG real, cuadrado (cabe en .marca-logo sin deformarse), con alfa y liviano."""
+    ruta = panel.DIRECTORIO_ESTATICO / "logo.png"
+    datos = ruta.read_bytes()
+    ancho, alto = struct.unpack(">II", datos[16:24])
+    tipo_de_color = datos[25]
 
-    assert 'viewBox="0 0 64 64"' in logo
-    assert 'aria-label="IronVeil"' in logo
-    assert (
-        "<text" not in logo
-    )  # sin tipografia incrustada: escala y no depende de fuentes
-    assert "<image" not in logo
-    assert "<script" not in logo
-    assert "http" not in logo.replace('xmlns="http://www.w3.org/2000/svg"', "")
+    assert datos[:8] == b"\x89PNG\r\n\x1a\n"
+    assert ancho == alto
+    assert 64 <= ancho <= 512
+    assert tipo_de_color == 6  # RGBA: el fondo es transparente
+    assert len(datos) < 200_000
 
 
 def test_el_nombre_de_la_marca_se_escribe_igual_en_las_tres_paginas() -> None:

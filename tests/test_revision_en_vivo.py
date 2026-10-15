@@ -432,7 +432,7 @@ def test_el_comando_no_imprime_la_clave(
 ) -> None:
     monkeypatch.chdir(tmp_path)
 
-    codigo = auth._cli(["--demo"])
+    codigo = auth.cli(["--demo"])
     salida = capsys.readouterr()
 
     assert codigo == 0

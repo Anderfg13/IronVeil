@@ -217,7 +217,7 @@ Esta es la estructura **objetivo**. Lo marcado `[ya existe]` está en el repo ho
                         X-Revision-Id al 429, su cuerpo no cambia)
                         auth.py + revision_panel.py + static/ (consola de revision humana
                         con login opcional REVISION_USUARIOS y canal en vivo SSE /revision/eventos;
-                        logo en static/logo.svg)
+                        logo en static/logo.png)
                         herramientas.py + notificaciones.py (EXTENSIONES opcionales:
                         herramientas SIMULADAS de rrhh-agente y avisos por webhook/
                         Slack/correo/WhatsApp cuando aprobacion humana encola;
@@ -225,6 +225,10 @@ Esta es la estructura **objetivo**. Lo marcado `[ya existe]` está en el repo ho
 /ollama/modelfiles/     Modelfile.soporte.template, Modelfile.rrhh.template [ya existen],
                         Modelfile.rrhh_agente.template (extension, herramientas simuladas)
 /scripts/               utilidades (seleccionar_config.py: escribe config.yaml para C0..C6)
+                        proxy/configuraciones.py (C0..C6 <-> banderas, una sola definicion) y
+                        proxy/cli.py (comando `ironveil`: config, serve, auth-demo; pyproject.toml,
+                        docs/PUBLICAR_PYPI.md). Autenticacion opcional de /chat con
+                        CHAT_REQUIERE_AUTENTICACION=1 (proxy/auth.py, docs/AUTENTICACION.md)
 /tests/                 pruebas unitarias y de integración
 /ataques/               variantes_ataque.md, vector4_*.py, vector5_*.py, promptfooconfig.yaml,
                         garak_externo/ (EXTENSION: validacion externa con Garak contra una
@@ -236,11 +240,12 @@ Esta es la estructura **objetivo**. Lo marcado `[ya existe]` está en el repo ho
                         (extension_agencia_excesiva.py: resumen de la extensión V7; sus
                         filas del CSV llevan es_extension=True y cargar_resultados() las
                         excluye del núcleo)
-/.github/workflows/     ci.yml (ruff, black, pytest) y publicar.yml (release + imagen en ghcr.io al subir una etiqueta)
+/.github/workflows/     ci.yml (ruff, black, pytest, paquete), publicar.yml (release + imagen en ghcr.io),
+                        pages.yml (sitio en GitHub Pages) y pypi.yml (PyPI con trusted publishing)
 /docs/                  arquitectura.md [ya existe], FUENTE_DE_VERDAD.md [ya existe, por rellenar],
                         CONFLICTOS_RESUELTOS.md, LIMPIEZA_DATOS.md, CHECKLIST_ENTREGA.md
 /informe/               main.tex, PDF compilado
-LICENSE (MIT) · docker-compose.yml [ya existe] · config.yaml · .env.example [ya existe] · README.md [ya existe]
+LICENSE (MIT) · pyproject.toml · docker-compose.yml [ya existe] · config.yaml · .env.example [ya existe] · README.md [ya existe]
 ```
 
 Nada suelto en la raíz salvo lo listado arriba y los archivos de comunidad de GitHub (`LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CITATION.cff`).

@@ -12,6 +12,7 @@ const $ = (id) => document.getElementById(id);
 /* Lo que ve quien conversa cuando no hay respuesta. Genericos a proposito. */
 const MENSAJES = {
   400: "No puedo ayudarte con ese mensaje.",
+  401: "Tu sesión venció. Vuelve a iniciar sesión.",
   429: "Tu mensaje quedó pendiente de revisión. Vuelve a intentarlo más tarde.",
   otro: "No pude responder en este momento. Inténtalo de nuevo.",
   vacio: "El asistente no devolvió ningún texto. Inténtalo de nuevo.",
@@ -183,8 +184,18 @@ async function esperarDecision(vista, turno) {
   }
 }
 
+/* Con CHAT_REQUIERE_AUTENTICACION=1 el chat exige la sesion y su token CSRF. */
+let tokenCsrf = "";
+async function cargarCsrf() {
+  try {
+    const r = await fetch("/revision/sesion", { credentials: "same-origin" });
+    if (r.ok) tokenCsrf = (await r.json()).csrf || "";
+  } catch { /* sin sesion: el chat funciona igual si no se exige login */ }
+}
+
 async function enviar(texto) {
   ocupar();
+  if (!tokenCsrf) await cargarCsrf();
   const vista = agregarMensaje(texto);
   const control = new AbortController();
   const corte = setTimeout(() => control.abort(), TIEMPO_MAXIMO_MS);
@@ -192,7 +203,8 @@ async function enviar(texto) {
   let recuperar = false; // devolver el texto al cuadro para editarlo y reenviarlo
   try {
     const r = await fetch("/chat", {
-      method: "POST", headers: { "Content-Type": "application/json" }, signal: control.signal,
+      method: "POST", signal: control.signal,
+      headers: { "Content-Type": "application/json", ...(tokenCsrf ? { "X-CSRF-Token": tokenCsrf } : {}) },
       body: JSON.stringify({ modelo: $("modelo").value, mensaje: texto }), credentials: "same-origin",
     });
     if (!r.ok) {
