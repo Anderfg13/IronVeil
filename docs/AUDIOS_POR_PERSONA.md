@@ -16,14 +16,10 @@ Tiempo total de narración: unos 4:00 de voz sobre 4:45 de video (el resto son p
 
 ---
 
-## Carlos Mario Piedrahita Arango (segmentos 1, 7 y 9)
+## Carlos Mario Piedrahita Arango (segmentos 7 y 9)
 
-**Segmento 1 · Apertura (~15 s, 35 palabras)**
+> **Segmento 1 (apertura): sin voz.** La tarjeta de título muestra el proyecto y los nombres del equipo (9 s); no se narra.
 
-> IronVeil es un proxy de seguridad que protege un modelo de lenguaje local, con Ollama, de la inyección de prompt y
-> la extracción de datos. Veremos varios ataques, la inteligencia artificial, la supervisión y las métricas.
-
-**Segmento 7 · Supervisión: aprobación humana, Slack y SIEM (~25 s, 58 palabras)**
 
 > Y todo queda auditado. Con la aprobación humana activa, un ataque que el filtro detecta no se rechaza: queda en
 > cola, el equipo recibe un aviso en Slack y una persona decide desde la consola. Cada evento, además, llega al SIEM,
