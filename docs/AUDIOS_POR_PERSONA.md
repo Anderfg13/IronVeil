@@ -1,4 +1,4 @@
-# Audios del video de demo: qué lee cada persona
+﻿# Audios del video de demo: qué lee cada persona
 
 Cada quien graba **solo sus segmentos**, leyendo el texto tal cual. Los nombres del equipo **no se dicen en voz alta**:
 van en la tarjeta de título del video. Imagen y subtítulos se montan después a partir de estos mismos textos.
@@ -42,8 +42,8 @@ Tiempo total de narración: unos 4:00 de voz sobre 4:45 de video (el resto son p
 
 **Segmento 2 · Escenario de control (~20 s, 38 palabras)**
 
-> Escenario de control: configuración C0, sin defensas. Un usuario pregunta cómo resetear su contraseña desde el chat
-> y recibe una respuesta normal. Esta es la línea base.
+> Escenario de control: configuración C0, sin defensas. Un usuario pide ayuda con su correo desde el chat
+> y el asistente responde. Esta es la línea base.
 
 **Segmento 3 · Los vectores y el ataque sin defensas (~40 s, 62 palabras)**
 
@@ -78,9 +78,9 @@ Tiempo total de narración: unos 4:00 de voz sobre 4:45 de video (el resto son p
 
 **Segmento 6 · Ataque escondido en Base64 (~30 s, 55 palabras)**
 
-> Una variante más difícil: el mismo ataque escondido en Base64. El filtro de patrones no ve nada y el mensaje pasa.
+> Una variante más difícil: el mismo ataque escondido en Base64, que un patrón en texto plano no reconoce.
 > Con la normalización de entrada, una extensión opcional, el proxy decodifica Base64, hexadecimal o ROT13, y los
-> mismos mecanismos revisan lo que estaba escondido: ahora se bloquea.
+> mismos mecanismos revisan lo que estaba escondido: aquí se bloquea.
 
 ---
 
@@ -97,18 +97,8 @@ Tiempo total de narración: unos 4:00 de voz sobre 4:45 de video (el resto son p
 
 ---
 
-## Si sobra tiempo (opcional, se decide al montar)
-
-Hay grabación de pantalla de la **delimitación** y del **mínimo privilegio**, pero el guion no las nombra. Si caben
-en los 5:00, se añaden como frases de relleno de unos 10 s cada una (las leería Sabogal o García):
-
-> Segunda defensa, la delimitación: separa lo que escribe el usuario de las instrucciones del sistema, y el modelo lo
-> trata como información, no como orden.
-
-> Cuarta defensa, el mínimo privilegio: el asistente de soporte no acepta la credencial de recursos humanos, porque
-> cada asistente solo puede usar lo de su propio dominio.
-
 ## Entrega
 
 Súbanlos a una carpeta compartida o pásenlos a García, antes de la noche del 15 de octubre. Con los audios, el montaje
 (cortes, aceleración de las esperas, pantalla dividida donde ayude, subtítulos y tarjeta de título) tarda poco.
+
