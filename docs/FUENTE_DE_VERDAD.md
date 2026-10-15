@@ -499,3 +499,4 @@ Estas tres son **evidencia adicional de aplicabilidad**: ninguna entra en las ta
 > **Diagrama de clases (2026-10-13):** `docs/assets/diagrama-clases.svg` ahora incluye el paquete de autenticación (`auth.py`).
 
 > **Dependencias (2026-10-13):** `fastapi` 0.115.0 -> 0.143.0 (arrastra `starlette` 0.38.6 -> 1.7.0) y `setuptools` 78.1.0 -> 84.0.0 en la imagen del clasificador, para cerrar las alertas de Dependabot; la suite (1729 pruebas) sigue en verde.
+| 2026-10-14 | **Guion del video acotado a la rubrica.** `docs/GUION_VIDEO_DEMO.md` se reduce a lo que pide el video: control, ataque sin y con defensas, componente de IA (Prompt Guard 2 con su puntaje en el log), metricas y limitaciones, en 7 segmentos de ~400 palabras (≈ 2:50 de voz dentro de 4:30). Arquitectura, aprobacion humana, memoria y SIEM pasan a las diapositivas. | García | `docs/GUION_VIDEO_DEMO.md` |
