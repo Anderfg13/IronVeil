@@ -20,6 +20,7 @@ Tiempo total de narración: unos 4:00 de voz sobre 4:45 de video (el resto son p
 
 > **Segmento 1 (apertura): sin voz.** La tarjeta de título muestra el proyecto y los nombres del equipo (9 s); no se narra.
 
+**Segmento 7 · Supervisión: aprobación humana, Slack y SIEM (~25 s, 58 palabras)**
 
 > Y todo queda auditado. Con la aprobación humana activa, un ataque que el filtro detecta no se rechaza: queda en
 > cola, el equipo recibe un aviso en Slack y una persona decide desde la consola. Cada evento, además, llega al SIEM,
