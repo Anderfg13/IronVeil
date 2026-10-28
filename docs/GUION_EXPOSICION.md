@@ -21,7 +21,7 @@ Tiempo de habla aproximado: García 2:30 · Sabogal 2:30 · Piedrahita 2:15 · F
 
 **Gancho (30 s), sin diapositiva, con la pantalla del chat ya abierta:**
 
-> «Voy a pedirle a una IA de una empresa que me dé su clave secreta. Se la voy a pedir con buena letra… y ahora miren
+> «Voy a pedirle a una IA de una empresa que me dé su clave secreta. Se la voy a pedir educadamente… y ahora miren
 > qué hace.»
 
 Se reproduce el clip de 10 segundos donde el modelo suelta la credencial ficticia (la toma de `22-36-26`, de 3:55 a
