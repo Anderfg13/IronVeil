@@ -37,7 +37,7 @@ da **menos de 4:25**; en ese caso, en este orden: la petición final de García,
 
 **[Clip de 10 segundos: el modelo suelta la credencial. Después, dos segundos de silencio completos.]**
 
-> Soy Andrés, y somos cuatro estudiantes de ingeniería de la Escuela Colombiana de Ingeniería Julio Garavito. Eso fue nuestro laboratorio: la clave es ficticia, pero el ataque es real. Hoy hay unos **ciento setenta
+> Soy Andrés, y somos cuatro estudiantes de ingeniería de la Escuela Colombiana de Ingeniería Julio Garavito. Eso es lo que pasa cuando un modelo no tiene protección: la clave es ficticia, pero el ataque es real. Hoy hay unos **ciento setenta
 > y cinco mil servidores Ollama** abiertos en internet, sin usuario ni contraseña. Casi la mitad
 > puede ejecutar acciones: no solo responden, **actúan**.
 
