@@ -5,17 +5,17 @@ de verificación de ese archivo siguen valiendo). Cada cifra sale de `analisis/`
 
 ## 0. Reloj
 
-El texto base son **590 palabras ≈ 3:55 a 150 palabras por minuto**, más 12 s del clip y la pausa del gancho = **≈ 4:10**.
-Quedan unos **50 segundos de colchón** para cambios de diapositiva, respirar y los **opcionales** (`[+]`, uno por bloque,
-unos 12 s cada uno). Con nervios se habla más rápido, así que **los opcionales se dicen por defecto** y se recortan solo si
-el reloj aprieta.
+Con lo de los ataques escondidos y el aviso por Slack (bloque B), el texto base son **≈ 640 palabras ≈ 4:15 a 150
+palabras por minuto**, más 12 s del clip y la pausa del gancho = **≈ 4:30**. Quedan unos **30 segundos de colchón**.
+Los **opcionales** (`[+]`) suman unos 25 s más: **si el ensayo da más de 4:50, se cortan en este orden**: primero el
+aeropuerto (B), luego «una sola frase» (A) y «uno de cada siete» (C). La petición final de García no se corta.
 
-| Bloque | Quién | Entra | Sale | Texto base | Con opcional |
+| Bloque | Quién | Entra | Sale | Texto base | Con opcionales |
 |---|---|---|---|---|---|
-| A · Gancho y problema | Sabogal | 0:00 | 1:15 | ≈ 66 s (con clip) | ≈ 78 s |
-| B · La solución | Piedrahita | 1:15 | 2:30 | ≈ 65 s | ≈ 77 s |
-| C · La evidencia | Fiquitiva | 2:30 | 3:50 | ≈ 69 s | ≈ 80 s |
-| D · Costo, negocio y cierre | García | 3:50 | 5:00 | ≈ 49 s | ≈ 62 s |
+| A · Gancho y problema | Sabogal | 0:00 | 1:15 | ≈ 66 s (con clip) | ≈ 72 s |
+| B · La solución | Piedrahita | 1:15 | 2:45 | ≈ 88 s | ≈ 96 s |
+| C · La evidencia | Fiquitiva | 2:45 | 4:00 | ≈ 69 s | ≈ 75 s |
+| D · Costo, negocio y cierre | García | 4:00 | 5:00 | ≈ 57 s | ≈ 57 s |
 
 **Reglas del reloj**
 - Cronómetro en el celular de **quien no habla en ese bloque** (A, B, C: García; D: Sabogal). Sin pantalla del profesor.
@@ -66,7 +66,13 @@ el reloj aprieta.
 > configuraciones, de la C cero, sin defensas, a la C seis, con todas, con los mismos ataques. El clasificador de IA es
 > intercambiable, como Jev, sin tocar el resto.
 >
-> ▶ **Y cada bloqueo llega al SIEM, que es lo que un equipo de seguridad necesita.**
+> Y Garak nos enseñó un hueco: los ataques **escondidos**, en Base64, hexadecimal, ROT13 o con caracteres invisibles, no
+> los ve ni el filtro ni la IA. Con nuestro modelo pequeño no pasa nada, porque no sabe decodificarlos; pero un modelo capaz
+> los leería y obedecería. Por eso añadimos una extensión que los **decodifica y los revisa** antes de que lleguen.
+>
+> Cada bloqueo llega al SIEM y, cuando hace falta una persona, **el aviso le llega por Slack**.
+>
+> ▶ **Eso es lo que un equipo de seguridad necesita para operarlo.**
 
 *Diapositiva: arquitectura (la de colores). Señalar con el puntero las dos cajas rojas cuando diga «inteligencia artificial».*
 
@@ -158,6 +164,9 @@ vende credibilidad. El hallazgo «la defensa más barata fue la que más redujo�
 | «¿No ajustaron las defensas a sus propios ataques?» | Por eso usamos 339 ataques de Garak, que no escribimos nosotros. Fue una sola corrida; hay que repetirla. |
 | «¿76 ms es aceptable?» | Para un chat sí; para un sistema en tiempo real habría que medirlo. Las piezas sin IA suman menos de 1 ms. |
 | «¿Y si el clasificador falla?» | Falla cerrada: un error o un tiempo agotado cuenta como malicioso, nunca como permitido. |
+| «¿Cubren ataques en binario?» | No. La extensión decodifica Base64, hexadecimal, ROT13 y caracteres invisibles. El binario puro, un cifrado propio o un idioma raro **no** están cubiertos: es una limitación declarada. |
+| «¿Eso lo probaron con un modelo capaz?» | No: con el modelo de 1B esos ataques dan 0 % incluso sin defensas, porque no los decodifica. Que un modelo capaz los obedecería es el motivo de la extensión, no un resultado medido. Con 6 ataques por tipo, el filtro pasó de 0/6 a 6/6. |
+| «¿Cómo se entera el equipo de un ataque?» | El aviso llega por Slack, con el vector, el modelo y un enlace a la consola de revisión; ahí una persona decide. Y todo queda en el SIEM. |
 | «¿Cuál es la tasa de falsos positivos?» | En la entrada, 0 de 60. La salida puede retener una respuesta legítima y esa tasa no la medimos; es un próximo paso. |
 
 ---
