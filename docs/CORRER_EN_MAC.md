@@ -98,11 +98,58 @@ Páginas: chat en <http://localhost:8000/demo> (con `IRONVEIL_DEMO=1` en `.env`)
 
 `.env` está en `.gitignore`: **no se sube**. Nunca pasar el `.env` completo de otra persona.
 
-## 7. Wazuh (opcional, pesado)
+## 7. Wazuh (opcional, pesado), paso a paso
 
 Wazuh añade ~8 GB de imágenes y ~2,2 GiB de RAM en reposo, más un arranque mucho mayor. En una Mac de 16 GB **solo se
-levanta si Ollama ya está estable**. La guía está en [`docs/siem/wazuh/LEEME.md`](siem/wazuh/LEEME.md). El indexer exige
-`vm.max_map_count ≥ 262144`; Docker Desktop suele traerlo, y si el indexer no arranca, es lo primero que se revisa.
+levanta si Ollama ya está estable**. Detalle completo: [`docs/siem/wazuh/LEEME.md`](siem/wazuh/LEEME.md).
+
+```bash
+# 0. Ruta donde clonó IronVeil (ajústala) y carpeta donde el proxy deja los eventos
+export IRONVEIL=~/IronVeil
+mkdir -p "$IRONVEIL/docs/siem/exportados"
+
+# 1. Clonar Wazuh FUERA del repo de IronVeil
+cd ~ && git clone https://github.com/wazuh/wazuh-docker.git -b v4.14.8
+cd wazuh-docker/single-node
+
+# 2. Certificados (una vez)
+docker compose -f generate-indexer-certs.yml run --rm generator
+
+# 3. Archivos de IronVeil
+cp "$IRONVEIL/docs/siem/wazuh/ironveil_rules.xml" .
+cp "$IRONVEIL/docs/siem/wazuh/docker-compose.override.yml" .
+mkdir -p ironveil_logs && touch ironveil_logs/ironveil.json
+```
+
+4. **Editar `config/wazuh_cluster/wazuh_manager.conf`** y pegar este bloque justo antes del último `</ossec_config>`
+   (es el contenido de `docs/siem/wazuh/localfile_ironveil.xml`):
+
+   ```xml
+   <localfile>
+     <log_format>json</log_format>
+     <location>/var/log/ironveil/ironveil.json</location>
+   </localfile>
+   ```
+
+```bash
+# 5. Levantar Wazuh apuntando a la MISMA carpeta donde escribe el proxy
+IRONVEIL_SIEM_DIR="$IRONVEIL/docs/siem/exportados" docker compose up -d
+```
+
+6. **En el `.env` de IronVeil** añadir `SIEM_ARCHIVO_WAZUH=/app/siem/ironveil.json` y reiniciar el proxy
+   (`docker compose -f docker-compose.yml -f docker-compose.mac.yml up -d proxy`).
+7. Esperar **1 a 3 minutos** y abrir <https://localhost> (certificado autofirmado: el navegador avisa, es normal). Usuario
+   y contraseña: los por defecto del repo oficial, en el `docker-compose.yml` de `wazuh-docker/single-node`.
+8. **Comprobar:** mandar un ataque con `filtrado` encendido (`python3 scripts/seleccionar_config.py C1`) y en Wazuh ir a
+   *Threat Hunting → Events* y filtrar `rule.groups: ironveil`. Debe salir la regla `100101` (nivel 5, «bloqueado»).
+
+Notas de Mac, **no verificadas**:
+- Si al hacer `pull` dice `no matching manifest for linux/arm64`, repetir con `export DOCKER_DEFAULT_PLATFORM=linux/amd64`.
+- El indexer exige `vm.max_map_count ≥ 262144`. Docker Desktop suele traerlo; si el indexer no arranca (el panel da 503
+  y en sus logs sale `ECONNREFUSED ...:9200`), se sube con
+  `docker run --rm --privileged --pid=host justincormack/nsenter1 sysctl -w vm.max_map_count=262144`.
+- **Apagar siempre con `docker compose down`** y no matando Docker: una parada brusca puede corromper el volumen del
+  indexer (ver el incidente descrito en el LEEME de Wazuh).
 
 ## 8. Si algo falla
 
