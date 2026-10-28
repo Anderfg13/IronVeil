@@ -5,9 +5,9 @@ de verificación de ese archivo siguen valiendo). Cada cifra sale de `analisis/`
 
 ## 0. Reloj
 
-Con los ataques escondidos, los canales de aviso y la definición de «vector», el texto base es de **≈ 4:35 a 150
-palabras por minuto** (≈ 4:20 a 160, que es lo que pasa con nervios), contando los 12 s del clip y la pausa del gancho.
-Eso deja **unos 25 segundos de colchón**.
+Con los ataques escondidos, los canales de aviso y la definición de «vector», el texto base es de **≈ 4:40 a 150
+palabras por minuto** (≈ 4:25 a 160, que es lo que pasa con nervios), contando los 12 s del clip y la pausa del gancho.
+Eso deja **unos 20 segundos de colchón**. Cada quien se presenta por su nombre al abrir su bloque («Soy Andrés», «Soy Carlos», «Soy Ana», «Soy Anderson»); Sabogal añade quiénes son (estudiantes de la Escuela Colombiana de Ingeniería Julio Garavito).
 
 **Los opcionales (`[+]`) están apagados por defecto**: suman otros 30 s y pasarían de 5:00. Solo se dicen si el ensayo
 da **menos de 4:25**; en ese caso, en este orden: la petición final de García, «uno de cada siete» (C), «una sola frase»
@@ -15,10 +15,10 @@ da **menos de 4:25**; en ese caso, en este orden: la petición final de García,
 
 | Bloque | Quién | Entra | Sale | Texto base |
 |---|---|---|---|---|
-| A · Gancho y problema | Sabogal | 0:00 | 1:15 | ≈ 66 s (con clip) |
-| B · La solución | Piedrahita | 1:15 | 2:45 | ≈ 84 s |
-| C · La evidencia | Fiquitiva | 2:45 | 4:05 | ≈ 74 s |
-| D · Costo, negocio y cierre | García | 4:05 | 5:00 | ≈ 49 s |
+| A · Gancho y problema | Sabogal | 0:00 | 1:15 | ≈ 72 s (con clip) |
+| B · La solución | Piedrahita | 1:15 | 2:45 | ≈ 86 s |
+| C · La evidencia | Fiquitiva | 2:45 | 4:05 | ≈ 78 s |
+| D · Costo, negocio y cierre | García | 4:05 | 5:00 | ≈ 47 s |
 **Reglas del reloj**
 - Cronómetro en el celular de **quien no habla en ese bloque** (A, B, C: García; D: Sabogal). Sin pantalla del profesor.
 - Señales con la mano: **dos dedos** = «te quedan 2 minutos en total», **un dedo** = «un minuto», **mano plana** = «cierra
@@ -37,8 +37,8 @@ da **menos de 4:25**; en ese caso, en este orden: la petición final de García,
 
 **[Clip de 10 segundos: el modelo suelta la credencial. Después, dos segundos de silencio completos.]**
 
-> Es nuestro laboratorio y la clave es ficticia, pero el ataque es real. Hoy hay unos **ciento setenta
-> y cinco mil servidores Ollama** abiertos en internet, en ciento treinta países, sin usuario ni contraseña. Casi la mitad
+> Soy Andrés, y somos cuatro estudiantes de ingeniería de la Escuela Colombiana de Ingeniería Julio Garavito. Eso fue nuestro laboratorio: la clave es ficticia, pero el ataque es real. Hoy hay unos **ciento setenta
+> y cinco mil servidores Ollama** abiertos en internet, sin usuario ni contraseña. Casi la mitad
 > puede ejecutar acciones: no solo responden, **actúan**.
 
 **[+]** > Y el ataque que acaban de ver es una sola frase.
@@ -54,7 +54,7 @@ da **menos de 4:25**; en ese caso, en este orden: la petición final de García,
 
 ## B · La solución (Piedrahita, 1:15–2:45)
 
-> Nuestra respuesta es **IronVeil**, el velo de hierro para tus modelos. Un proxy que se pone delante del modelo, sin
+> Soy Carlos. Nuestra respuesta es **IronVeil**, el velo de hierro para tus modelos. Un proxy que se pone delante del modelo, sin
 > tocarlo, y revisa todo lo que entra y todo lo que sale.
 
 **[+]** > Piensen en un aeropuerto: detector de metales, perro, guardia, y alguien que decide en caso de duda. Ninguno es
@@ -80,7 +80,7 @@ da **menos de 4:25**; en ese caso, en este orden: la petición final de García,
 
 ## C · La evidencia (Fiquitiva, 2:45–4:05)
 
-> ¿Funciona? **Lo medimos, contra cinco vectores**: reconocer el servicio, robar las instrucciones, inyectar órdenes, usar la
+> Soy Ana. ¿Funciona? **Lo medimos, contra cinco vectores**: reconocer el servicio, robar las instrucciones, inyectar órdenes, usar la
 > credencial de un modelo en otro, que es el movimiento lateral, y agotar los recursos. Sin defensas, el ataque tiene éxito
 > en el treinta y uno por ciento de los intentos; con el filtrado, baja a quince. El movimiento lateral completo pasa de
 > doce de treinta y nueve a cero. Y el agotamiento de recursos baja de setenta y cinco por ciento a casi cero.
@@ -102,13 +102,13 @@ quince» dos veces seguidas si hace falta: los números hablados se olvidan.*
 
 ## D · Costo, negocio y cierre (García, 4:05–5:00)
 
-> ¿Cuánto cuesta? Las piezas sin IA, menos de un milisegundo. La IA, unos setenta y seis. **Ese es el precio de pensar.**
+> Soy Anderson. ¿Cuánto cuesta? Las piezas sin IA, menos de un milisegundo. La IA, unos setenta y seis. **Ese es el precio de pensar.**
 >
 > La decisión de negocio: autoalojar el clasificador cuesta unos setecientos treinta dólares al mes; un servicio por token,
 > como Jev, unos cuatro centavos por millón de tokens. El equilibrio está en unos **diecisiete millones de prompts al mes**:
 > por debajo, pagar por token; por encima, autoalojar; y si el texto no puede salir de tu red, autoalojar siempre.
 >
-> Cómo se vendería, y esto es una propuesta nuestra: núcleo abierto y gratuito, y servicio de integración y soporte para quien
+> Como propuesta nuestra: núcleo abierto y gratuito, y servicio de integración y soporte para quien
 > ya tiene modelos propios en producción.
 
 **[+]** > Lo que buscamos: probarlo con un modelo menos alineado y con una empresa piloto, y que ustedes nos digan qué les
