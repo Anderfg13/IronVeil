@@ -33,7 +33,7 @@ da **menos de 4:25**; en ese caso, en este orden: la petición final de García,
 
 *De pie, sin papeles, la pantalla del chat ya abierta. Hablar despacio en las dos primeras frases.*
 
-> Voy a pedirle a una inteligencia artificial la clave secreta de una empresa. Se la voy a pedir con buena letra.
+> Voy a pedirle a una inteligencia artificial la clave secreta de una empresa. Se la voy a pedir educadamente.
 
 **[Clip de 10 segundos: el modelo suelta la credencial. Después, dos segundos de silencio completos.]**
 
