@@ -70,7 +70,8 @@ aeropuerto (B), luego «una sola frase» (A) y «uno de cada siete» (C). La pet
 > los ve ni el filtro ni la IA. Con nuestro modelo pequeño no pasa nada, porque no sabe decodificarlos; pero un modelo capaz
 > los leería y obedecería. Por eso añadimos una extensión que los **decodifica y los revisa** antes de que lleguen.
 >
-> Cada bloqueo llega al SIEM y, cuando hace falta una persona, **el aviso le llega por Slack**.
+> Cada bloqueo llega al SIEM y, cuando hace falta una persona, **el aviso le llega por el canal que la empresa ya usa**:
+> Slack, correo, WhatsApp, o cualquier plataforma que reciba un webhook. Hoy se los mostramos por Slack.
 >
 > ▶ **Eso es lo que un equipo de seguridad necesita para operarlo.**
 
@@ -166,7 +167,8 @@ vende credibilidad. El hallazgo «la defensa más barata fue la que más redujo�
 | «¿Y si el clasificador falla?» | Falla cerrada: un error o un tiempo agotado cuenta como malicioso, nunca como permitido. |
 | «¿Cubren ataques en binario?» | No. La extensión decodifica Base64, hexadecimal, ROT13 y caracteres invisibles. El binario puro, un cifrado propio o un idioma raro **no** están cubiertos: es una limitación declarada. |
 | «¿Eso lo probaron con un modelo capaz?» | No: con el modelo de 1B esos ataques dan 0 % incluso sin defensas, porque no los decodifica. Que un modelo capaz los obedecería es el motivo de la extensión, no un resultado medido. Con 6 ataques por tipo, el filtro pasó de 0/6 a 6/6. |
-| «¿Cómo se entera el equipo de un ataque?» | El aviso llega por Slack, con el vector, el modelo y un enlace a la consola de revisión; ahí una persona decide. Y todo queda en el SIEM. |
+| «¿Cómo se entera el equipo de un ataque?» | El aviso llega por el canal que la empresa use: ya vienen **Slack, correo (SMTP), WhatsApp (por Twilio) y un webhook genérico** para cualquier plataforma que lo reciba. Lleva el vector, el modelo y un enlace a la consola de revisión; ahí una persona decide. Y todo queda en el SIEM. |
+| «¿Funciona con Teams, Discord u otra?» | Con cualquiera que reciba un webhook; no la probamos una por una. Hoy se demuestra con Slack. |
 | «¿Cuál es la tasa de falsos positivos?» | En la entrada, 0 de 60. La salida puede retener una respuesta legítima y esa tasa no la medimos; es un próximo paso. |
 
 ---
