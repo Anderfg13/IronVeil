@@ -94,7 +94,7 @@ da **menos de 4:25**; en ese caso, en este orden: la petición final de García,
 > Y un hallazgo que nos sorprendió: la defensa **más barata**, el filtrado, fue la que **más redujo**. La IA, con nuestro
 > modelo pequeño, no redujo de forma medible, pero ve lo que las reglas no ven: el francés. Y con Jev, ocho idiomas: dieciséis de dieciséis ataques, con muestras pequeñas.
 >
-> ▶ **Ninguna llega a cero, y preferimos decírselo antes de que nos lo pregunten.**
+> ▶ **Un cero medido no es un cero real: con trescientas treinta y nueve pruebas, el riesgo está entre cero y uno coma uno por ciento, y ninguna defensa llega a cero.**
 
 *Diapositiva: «Lo que logra IronVeil, en cifras» (las cuatro cifras grandes). Una sola diapositiva; repetir «treinta y uno a
 quince» dos veces seguidas si hace falta: los números hablados se olvidan.*
@@ -170,6 +170,7 @@ vende credibilidad. El hallazgo «la defensa más barata fue la que más redujo�
 | «¿Cómo se entera el equipo de un ataque?» | El aviso llega por el canal que la empresa use: ya vienen **Slack, correo (SMTP), WhatsApp (por Twilio) y un webhook genérico** para cualquier plataforma que lo reciba. Lleva el vector, el modelo y un enlace a la consola de revisión; ahí una persona decide. Y todo queda en el SIEM. |
 | «¿Funciona con Teams, Discord u otra?» | Con cualquiera que reciba un webhook; no la probamos una por una. Hoy se demuestra con Slack. |
 | «¿Cuántos idiomas cubre?» | El filtro por patrones, español e inglés. Prompt Guard declara 8 idiomas en su ficha. Con Jev, cuyo fabricante no publica una cifra, medimos 8 idiomas (inglés, francés, portugués, alemán, italiano, ruso, chino y árabe): 16 de 16 ataques y 0 de 8 legítimas bloqueadas. Son muestras pequeñas y traducidas por una IA sin revisión de hablantes nativos. |
+| «¿Por qué no llega a 0 %? / ¿Qué significa ese 0 de 339?» | Un cero medido no es un cero real. Con 339 pruebas y 0 éxitos, el intervalo de confianza del 95 % va de 0 a 1,1 %: solo podemos afirmar que el riesgo está en ese rango. (Con Jev solo, 1 de 339 = 0,3 %, y su intervalo es de 0,1 a 1,7 %.) Es defensa en profundidad; ninguna garantiza cero. |
 | «¿Qué es un vector? ¿Y el reconocimiento?» | Un vector es una forma de atacar. Medimos cinco: reconocer el servicio, robar las instrucciones, inyectar órdenes, movimiento lateral y agotar los recursos. El reconocimiento (V1) no lo detiene ninguna de las cinco defensas: se frena con controles de red perimetral, fuera de nuestro alcance, y da 40 % en todas las configuraciones por el entorno. |
 | «¿Cuál es la tasa de falsos positivos?» | En la entrada, 0 de 60. La salida puede retener una respuesta legítima y esa tasa no la medimos; es un próximo paso. |
 
