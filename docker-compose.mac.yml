@@ -1,0 +1,26 @@
+# Override para correr IronVeil en una Mac con Ollama NATIVO (usa la GPU de Apple, Metal).
+#
+# Docker Desktop en Mac NO pasa la GPU a los contenedores: Ollama dentro de Docker correria
+# solo en CPU. Con este archivo, Ollama corre en la Mac y solo el proxy va en Docker.
+#
+# Uso (desde la raiz del repo, con Ollama ya instalado y abierto):
+#   sh scripts/mac_crear_modelos.sh                  # crea soporte, rrhh y rrhh-agente una vez
+#   docker compose -f docker-compose.yml -f docker-compose.mac.yml up --build proxy
+#
+# Guia completa: docs/CORRER_EN_MAC.md. Requiere Docker Compose >= 2.24 (por "!reset").
+#
+# AVISO DE SEGURIDAD: Ollama nativo escucha en 127.0.0.1:11434 del host. Es la excepcion a la regla
+# "Ollama no se expone al host" del proyecto, aceptable solo en un portatil personal y SIN abrir ese
+# puerto a la red (no pongas OLLAMA_HOST=0.0.0.0).
+services:
+  ollama:
+    profiles: ["ollama-en-docker"]      # no se levanta salvo que se pida ese perfil
+  ollama-init:
+    profiles: ["ollama-en-docker"]
+  proxy:
+    # requirements-torch.txt esta fijado (con hashes) para Linux x86_64. En una Mac Apple Silicon se
+    # construye y corre el proxy como amd64 (Docker Desktop lo emula con Rosetta); en una Mac Intel no cambia nada.
+    platform: linux/amd64
+    environment:
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+    depends_on: !reset []
