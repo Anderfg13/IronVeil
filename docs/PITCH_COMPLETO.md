@@ -88,13 +88,13 @@ da **menos de 4:25**; en ese caso, en este orden: la petición final de García,
 **[+]** > Dicho de otra forma: de uno de cada tres intentos exitosos, a uno de cada siete.
 
 > Y con ataques que no escribimos nosotros, trescientos treinta y nueve del catálogo público de **Garak**: sin defensas,
-> funciona el cincuenta y uno por ciento; con Jev y el resto de defensas, **cero de trescientos treinta y nueve**, en una
-> sola corrida.
+> funciona el cincuenta y uno por ciento; con Jev y el resto de defensas, **cero de trescientos treinta y nueve**. Con un
+> noventa y cinco por ciento de confianza, **a lo sumo uno de cada noventa ataques logra pasar**.
 >
 > Y un hallazgo que nos sorprendió: la defensa **más barata**, el filtrado, fue la que **más redujo**. La IA, con nuestro
 > modelo pequeño, no redujo de forma medible, pero ve lo que las reglas no ven: el francés. Y con Jev, ocho idiomas: dieciséis de dieciséis ataques, con muestras pequeñas.
 >
-> ▶ **Un cero medido no es un cero real: con trescientas treinta y nueve pruebas, el riesgo está entre cero y uno coma uno por ciento, y ninguna defensa llega a cero.**
+> ▶ **Ninguna defensa llega a cero, pero esto protege: de cada cien ataques de un catálogo que no escribimos, casi ninguno pasa.**
 
 *Diapositiva: «Lo que logra IronVeil, en cifras» (las cuatro cifras grandes). Una sola diapositiva; repetir «treinta y uno a
 quince» dos veces seguidas si hace falta: los números hablados se olvidan.*
