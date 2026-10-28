@@ -88,7 +88,7 @@ da **menos de 4:25**; en ese caso, en este orden: la petición final de García,
 **[+]** > Dicho de otra forma: de uno de cada tres intentos exitosos, a uno de cada siete.
 
 > Y con ataques que no escribimos nosotros, trescientos treinta y nueve del catálogo público de **Garak**: sin defensas,
-> funciona el cincuenta y uno por ciento; con Jev y el resto de defensas, **cero de trescientos treinta y nueve**. Con un
+> funciona el cincuenta y uno por ciento; con Jev y las defensas automáticas, sin la aprobación humana, **cero de trescientos treinta y nueve**. Con un
 > noventa y cinco por ciento de confianza, **a lo sumo uno de cada noventa ataques logra pasar**.
 >
 > Y un hallazgo que nos sorprendió: la defensa **más barata**, el filtrado, fue la que **más redujo**. La IA, con nuestro
