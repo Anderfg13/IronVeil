@@ -5,9 +5,9 @@ de verificación de ese archivo siguen valiendo). Cada cifra sale de `analisis/`
 
 ## 0. Reloj
 
-Con los ataques escondidos, los canales de aviso y la definición de «vector», el texto base es de **≈ 4:40 a 150
-palabras por minuto** (≈ 4:25 a 160, que es lo que pasa con nervios), contando los 12 s del clip y la pausa del gancho.
-Eso deja **unos 20 segundos de colchón**. Cada quien se presenta por su nombre al abrir su bloque («Soy Andrés», «Soy Carlos», «Soy Ana», «Soy Anderson»); Sabogal añade quiénes son (estudiantes de la Escuela Colombiana de Ingeniería Julio Garavito).
+Con los ataques escondidos, los canales de aviso y la definición de «vector», el texto base es de **≈ 4:45 a 150
+palabras por minuto** (≈ 4:28 a 160, que es lo que pasa con nervios), contando los 12 s del clip y la pausa del gancho.
+Eso deja **unos 15 segundos de colchón**. Cada quien se presenta por su nombre al abrir su bloque («Soy Andrés», «Soy Carlos», «Soy Ana», «Soy Anderson»); Sabogal añade quiénes son (estudiantes de la Escuela Colombiana de Ingeniería Julio Garavito).
 
 **Los opcionales (`[+]`) están apagados por defecto**: suman otros 30 s y pasarían de 5:00. Solo se dicen si el ensayo
 da **menos de 4:25**; en ese caso, en este orden: la petición final de García, «uno de cada siete» (C), «una sola frase»
@@ -15,10 +15,10 @@ da **menos de 4:25**; en ese caso, en este orden: la petición final de García,
 
 | Bloque | Quién | Entra | Sale | Texto base |
 |---|---|---|---|---|
-| A · Gancho y problema | Sabogal | 0:00 | 1:15 | ≈ 72 s (con clip) |
-| B · La solución | Piedrahita | 1:15 | 2:45 | ≈ 86 s |
-| C · La evidencia | Fiquitiva | 2:45 | 4:05 | ≈ 78 s |
-| D · Costo, negocio y cierre | García | 4:05 | 5:00 | ≈ 47 s |
+| A · Gancho y problema | Sabogal | 0:00 | 1:15 | ≈ 74 s (con clip) |
+| B · La solución | Piedrahita | 1:15 | 2:40 | ≈ 83 s |
+| C · La evidencia | Fiquitiva | 2:40 | 4:00 | ≈ 77 s |
+| D · Costo, negocio y cierre | García | 4:00 | 5:00 | ≈ 51 s |
 **Reglas del reloj**
 - Cronómetro en el celular de **quien no habla en ese bloque** (A, B, C: García; D: Sabogal). Sin pantalla del profesor.
 - Señales con la mano: **dos dedos** = «te quedan 2 minutos en total», **un dedo** = «un minuto», **mano plana** = «cierra
@@ -60,19 +60,19 @@ da **menos de 4:25**; en ese caso, en este orden: la petición final de García,
 **[+]** > Piensen en un aeropuerto: detector de metales, perro, guardia, y alguien que decide en caso de duda. Ninguno es
 > perfecto; juntos, sí protegen.
 
-> El **filtrado** descarta lo obvio en una fracción de milisegundo. La **delimitación** separa lo que escribe el usuario de
+> El **filtrado** descarta lo obvio. La **delimitación** separa lo que escribe el usuario de
 > las órdenes del sistema. La **clasificación** usa inteligencia artificial para entender la intención, también en otros idiomas. El **mínimo
 > privilegio** impide usar la credencial de un asistente en otro. Y la **aprobación humana** pone a una persona a decidir,
 > en lugar de rechazar a ciegas.
 >
 > Es el **mismo código**: con un archivo de configuración, cada defensa se enciende o se apaga. Así comparamos siete
-> configuraciones, de la C cero, sin defensas, a la C seis, con todas. El clasificador de IA es intercambiable, como Jev.
+> configuraciones, de ninguna defensa a todas. El clasificador de IA es intercambiable, como Jev.
 >
 > Garak nos enseñó un hueco: los ataques **escondidos** en Base64, hexadecimal o ROT13 no los ve ni el filtro ni la IA, y
 > un modelo capaz los obedecería. Añadimos una extensión que los **decodifica y los revisa**.
 >
-> Cada bloqueo llega al SIEM y, cuando hace falta una persona, **el aviso le llega por el canal que la empresa ya usa**:
-> Slack, correo, WhatsApp o un webhook.
+> Cada bloqueo llega al SIEM que la empresa ya tenga, **el que sea**. Y cuando hace falta
+> una persona, el aviso le llega por el canal que ya usa: Slack, correo o WhatsApp.
 >
 > ▶ **Eso es lo que un equipo de seguridad necesita para operarlo.**
 
@@ -83,7 +83,7 @@ da **menos de 4:25**; en ese caso, en este orden: la petición final de García,
 > Soy Ana. ¿Funciona? **Lo medimos, contra cinco vectores**: reconocer el servicio, robar las instrucciones, inyectar órdenes, usar la
 > credencial de un modelo en otro, que es el movimiento lateral, y agotar los recursos. Sin defensas, el ataque tiene éxito
 > en el treinta y uno por ciento de los intentos; con el filtrado, baja a quince. El movimiento lateral completo pasa de
-> doce de treinta y nueve a cero. Y el agotamiento de recursos baja de setenta y cinco por ciento a casi cero.
+> doce de treinta y nueve a cero, y el agotamiento, de setenta y cinco por ciento a casi nada.
 
 **[+]** > Dicho de otra forma: de uno de cada tres intentos exitosos, a uno de cada siete.
 
@@ -91,8 +91,8 @@ da **menos de 4:25**; en ese caso, en este orden: la petición final de García,
 > funciona el cincuenta y uno por ciento; con Jev y las defensas automáticas, sin la aprobación humana, **cero de trescientos treinta y nueve**. Con un
 > noventa y cinco por ciento de confianza, **a lo sumo uno de cada noventa ataques logra pasar**.
 >
-> Y un hallazgo que nos sorprendió: la defensa **más barata**, el filtrado, fue la que **más redujo**. La IA, con nuestro
-> modelo pequeño, no redujo de forma medible, pero ve lo que las reglas no ven: el francés. Y con Jev, ocho idiomas: dieciséis de dieciséis ataques, con muestras pequeñas.
+> Y un hallazgo que nos sorprendió: la defensa **más barata**, el filtrado, fue la que **más redujo**. La IA no redujo más, pero ve lo que
+> las reglas no ven: otros idiomas.
 >
 > ▶ **Ninguna defensa llega a cero, pero esto protege: de cada cien ataques de un catálogo que no escribimos, casi ninguno pasa.**
 
@@ -101,14 +101,15 @@ quince» dos veces seguidas si hace falta: los números hablados se olvidan.*
 
 ## D · Costo, negocio y cierre (García, 4:05–5:00)
 
-> Soy Anderson. ¿Cuánto cuesta? Las piezas sin IA, menos de un milisegundo. La IA, unos setenta y seis. **Ese es el precio de pensar.**
+> Soy Anderson. ¿Cuánto cuesta? Las piezas sin IA, menos de un milisegundo. La IA, unos setenta y seis.
 >
-> La decisión de negocio: autoalojar el clasificador cuesta unos setecientos treinta dólares al mes; un servicio por token,
-> como Jev, unos cuatro centavos por millón de tokens. El equilibrio está en unos **diecisiete millones de prompts al mes**:
-> por debajo, pagar por token; por encima, autoalojar; y si el texto no puede salir de tu red, autoalojar siempre.
+> La decisión de negocio es como **taxi o carro propio**. El servidor propio cuesta unos setecientos treinta dólares al
+> mes, se use poco o mucho. El servicio por token, como Jev, cuesta unos cuatro centavos por millón de tokens. Hasta
+> unos **diecisiete millones de consultas al mes**, sale más barato pagar por uso; más allá, conviene el servidor propio.
+> Y si los datos no pueden salir de tu red, siempre el propio.
 >
-> Como propuesta nuestra: núcleo abierto y gratuito, y servicio de integración y soporte para quien
-> ya tiene modelos propios en producción.
+> Como propuesta, que aún validamos: el núcleo abierto y gratuito, y **soporte e integración** para quien ya
+> tiene modelos propios en producción.
 
 **[+]** > Lo que buscamos: probarlo con un modelo menos alineado y con una empresa piloto, y que ustedes nos digan qué les
 > faltaría para usarlo.
