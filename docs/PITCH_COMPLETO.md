@@ -94,8 +94,7 @@ da **menos de 4:25**; en ese caso, en este orden: la petición final de García,
 > Y un hallazgo que nos sorprendió: la defensa **más barata**, el filtrado, fue la que **más redujo**. La IA, con nuestro
 > modelo pequeño, no redujo de forma medible, pero ve lo que las reglas no ven: el francés. Y con Jev, ocho idiomas: dieciséis de dieciséis ataques, con muestras pequeñas.
 >
-> ▶ **Ninguna llega a cero, y los falsos positivos aún no los medimos bien. Preferimos decirlo antes de que nos lo
-> pregunten.**
+> ▶ **Ninguna llega a cero, y preferimos decírselo antes de que nos lo pregunten.**
 
 *Diapositiva: «Lo que logra IronVeil, en cifras» (las cuatro cifras grandes). Una sola diapositiva; repetir «treinta y uno a
 quince» dos veces seguidas si hace falta: los números hablados se olvidan.*
