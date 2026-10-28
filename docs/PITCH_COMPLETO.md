@@ -15,10 +15,10 @@ da **menos de 4:25**; en ese caso, en este orden: la petición final de García,
 
 | Bloque | Quién | Entra | Sale | Texto base |
 |---|---|---|---|---|
-| A · Gancho y problema | Sabogal | 0:00 | 1:15 | ≈ 69 s (con clip) |
-| B · La solución | Piedrahita | 1:15 | 2:45 | ≈ 86 s |
-| C · La evidencia | Fiquitiva | 2:45 | 4:00 | ≈ 73 s |
-| D · Costo, negocio y cierre | García | 4:00 | 5:00 | ≈ 49 s |
+| A · Gancho y problema | Sabogal | 0:00 | 1:15 | ≈ 66 s (con clip) |
+| B · La solución | Piedrahita | 1:15 | 2:45 | ≈ 84 s |
+| C · La evidencia | Fiquitiva | 2:45 | 4:05 | ≈ 74 s |
+| D · Costo, negocio y cierre | García | 4:05 | 5:00 | ≈ 49 s |
 **Reglas del reloj**
 - Cronómetro en el celular de **quien no habla en ese bloque** (A, B, C: García; D: Sabogal). Sin pantalla del profesor.
 - Señales con la mano: **dos dedos** = «te quedan 2 minutos en total», **un dedo** = «un minuto», **mano plana** = «cierra
@@ -37,7 +37,7 @@ da **menos de 4:25**; en ese caso, en este orden: la petición final de García,
 
 **[Clip de 10 segundos: el modelo suelta la credencial. Después, dos segundos de silencio completos.]**
 
-> Eso no es un truco. Es nuestro laboratorio y la clave es ficticia, pero el ataque es real. Hoy hay unos **ciento setenta
+> Es nuestro laboratorio y la clave es ficticia, pero el ataque es real. Hoy hay unos **ciento setenta
 > y cinco mil servidores Ollama** abiertos en internet, en ciento treinta países, sin usuario ni contraseña. Casi la mitad
 > puede ejecutar acciones: no solo responden, **actúan**.
 
@@ -55,13 +55,13 @@ da **menos de 4:25**; en ese caso, en este orden: la petición final de García,
 ## B · La solución (Piedrahita, 1:15–2:45)
 
 > Nuestra respuesta es **IronVeil**, el velo de hierro para tus modelos. Un proxy que se pone delante del modelo, sin
-> tocarlo, y revisa todo lo que entra y todo lo que sale. Cinco defensas.
+> tocarlo, y revisa todo lo que entra y todo lo que sale.
 
 **[+]** > Piensen en un aeropuerto: detector de metales, perro, guardia, y alguien que decide en caso de duda. Ninguno es
 > perfecto; juntos, sí protegen.
 
 > El **filtrado** descarta lo obvio en una fracción de milisegundo. La **delimitación** separa lo que escribe el usuario de
-> las órdenes del sistema. La **clasificación** usa inteligencia artificial para entender la intención. El **mínimo
+> las órdenes del sistema. La **clasificación** usa inteligencia artificial para entender la intención, también en otros idiomas. El **mínimo
 > privilegio** impide usar la credencial de un asistente en otro. Y la **aprobación humana** pone a una persona a decidir,
 > en lugar de rechazar a ciegas.
 >
@@ -72,13 +72,13 @@ da **menos de 4:25**; en ese caso, en este orden: la petición final de García,
 > un modelo capaz los obedecería. Añadimos una extensión que los **decodifica y los revisa**.
 >
 > Cada bloqueo llega al SIEM y, cuando hace falta una persona, **el aviso le llega por el canal que la empresa ya usa**:
-> Slack, correo, WhatsApp o un webhook. Hoy, por Slack.
+> Slack, correo, WhatsApp o un webhook.
 >
 > ▶ **Eso es lo que un equipo de seguridad necesita para operarlo.**
 
 *Diapositiva: arquitectura (la de colores). Señalar con el puntero las dos cajas rojas cuando diga «inteligencia artificial».*
 
-## C · La evidencia (Fiquitiva, 2:45–4:00)
+## C · La evidencia (Fiquitiva, 2:45–4:05)
 
 > ¿Funciona? **Lo medimos, contra cinco vectores**: reconocer el servicio, robar las instrucciones, inyectar órdenes, usar la
 > credencial de un modelo en otro, que es el movimiento lateral, y agotar los recursos. Sin defensas, el ataque tiene éxito
@@ -92,7 +92,7 @@ da **menos de 4:25**; en ese caso, en este orden: la petición final de García,
 > sola corrida.
 >
 > Y un hallazgo que nos sorprendió: la defensa **más barata**, el filtrado, fue la que **más redujo**. La IA, con nuestro
-> modelo pequeño, no redujo de forma medible, pero ve lo que las reglas no ven: el francés.
+> modelo pequeño, no redujo de forma medible, pero ve lo que las reglas no ven: el francés. Y con Jev, ocho idiomas: dieciséis de dieciséis ataques, con muestras pequeñas.
 >
 > ▶ **Ninguna llega a cero, y los falsos positivos aún no los medimos bien. Preferimos decirlo antes de que nos lo
 > pregunten.**
@@ -100,7 +100,7 @@ da **menos de 4:25**; en ese caso, en este orden: la petición final de García,
 *Diapositiva: «Lo que logra IronVeil, en cifras» (las cuatro cifras grandes). Una sola diapositiva; repetir «treinta y uno a
 quince» dos veces seguidas si hace falta: los números hablados se olvidan.*
 
-## D · Costo, negocio y cierre (García, 4:00–5:00)
+## D · Costo, negocio y cierre (García, 4:05–5:00)
 
 > ¿Cuánto cuesta? Las piezas sin IA, menos de un milisegundo. La IA, unos setenta y seis. **Ese es el precio de pensar.**
 >
@@ -170,6 +170,7 @@ vende credibilidad. El hallazgo «la defensa más barata fue la que más redujo�
 | «¿Eso lo probaron con un modelo capaz?» | No: con el modelo de 1B esos ataques dan 0 % incluso sin defensas, porque no los decodifica. Que un modelo capaz los obedecería es el motivo de la extensión, no un resultado medido. Con 6 ataques por tipo, el filtro pasó de 0/6 a 6/6. |
 | «¿Cómo se entera el equipo de un ataque?» | El aviso llega por el canal que la empresa use: ya vienen **Slack, correo (SMTP), WhatsApp (por Twilio) y un webhook genérico** para cualquier plataforma que lo reciba. Lleva el vector, el modelo y un enlace a la consola de revisión; ahí una persona decide. Y todo queda en el SIEM. |
 | «¿Funciona con Teams, Discord u otra?» | Con cualquiera que reciba un webhook; no la probamos una por una. Hoy se demuestra con Slack. |
+| «¿Cuántos idiomas cubre?» | El filtro por patrones, español e inglés. Prompt Guard declara 8 idiomas en su ficha. Con Jev, cuyo fabricante no publica una cifra, medimos 8 idiomas (inglés, francés, portugués, alemán, italiano, ruso, chino y árabe): 16 de 16 ataques y 0 de 8 legítimas bloqueadas. Son muestras pequeñas y traducidas por una IA sin revisión de hablantes nativos. |
 | «¿Qué es un vector? ¿Y el reconocimiento?» | Un vector es una forma de atacar. Medimos cinco: reconocer el servicio, robar las instrucciones, inyectar órdenes, movimiento lateral y agotar los recursos. El reconocimiento (V1) no lo detiene ninguna de las cinco defensas: se frena con controles de red perimetral, fuera de nuestro alcance, y da 40 % en todas las configuraciones por el entorno. |
 | «¿Cuál es la tasa de falsos positivos?» | En la entrada, 0 de 60. La salida puede retener una respuesta legítima y esa tasa no la medimos; es un próximo paso. |
 
