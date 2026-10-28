@@ -5,18 +5,20 @@ de verificación de ese archivo siguen valiendo). Cada cifra sale de `analisis/`
 
 ## 0. Reloj
 
-Con lo de los ataques escondidos y el aviso por Slack (bloque B), el texto base son **≈ 640 palabras ≈ 4:15 a 150
-palabras por minuto**, más 12 s del clip y la pausa del gancho = **≈ 4:30**. Quedan unos **30 segundos de colchón**.
-Los **opcionales** (`[+]`) suman unos 25 s más: **si el ensayo da más de 4:50, se cortan en este orden**: primero el
-aeropuerto (B), luego «una sola frase» (A) y «uno de cada siete» (C). La petición final de García no se corta.
+Con los ataques escondidos, los canales de aviso y la definición de «vector», el texto base es de **≈ 4:35 a 150
+palabras por minuto** (≈ 4:20 a 160, que es lo que pasa con nervios), contando los 12 s del clip y la pausa del gancho.
+Eso deja **unos 25 segundos de colchón**.
 
-| Bloque | Quién | Entra | Sale | Texto base | Con opcionales |
-|---|---|---|---|---|---|
-| A · Gancho y problema | Sabogal | 0:00 | 1:15 | ≈ 66 s (con clip) | ≈ 72 s |
-| B · La solución | Piedrahita | 1:15 | 2:45 | ≈ 88 s | ≈ 96 s |
-| C · La evidencia | Fiquitiva | 2:45 | 4:00 | ≈ 69 s | ≈ 75 s |
-| D · Costo, negocio y cierre | García | 4:00 | 5:00 | ≈ 57 s | ≈ 57 s |
+**Los opcionales (`[+]`) están apagados por defecto**: suman otros 30 s y pasarían de 5:00. Solo se dicen si el ensayo
+da **menos de 4:25**; en ese caso, en este orden: la petición final de García, «uno de cada siete» (C), «una sola frase»
+(A) y el aeropuerto (B).
 
+| Bloque | Quién | Entra | Sale | Texto base |
+|---|---|---|---|---|
+| A · Gancho y problema | Sabogal | 0:00 | 1:15 | ≈ 69 s (con clip) |
+| B · La solución | Piedrahita | 1:15 | 2:45 | ≈ 86 s |
+| C · La evidencia | Fiquitiva | 2:45 | 4:00 | ≈ 73 s |
+| D · Costo, negocio y cierre | García | 4:00 | 5:00 | ≈ 49 s |
 **Reglas del reloj**
 - Cronómetro en el celular de **quien no habla en ese bloque** (A, B, C: García; D: Sabogal). Sin pantalla del profesor.
 - Señales con la mano: **dos dedos** = «te quedan 2 minutos en total», **un dedo** = «un minuto», **mano plana** = «cierra
@@ -42,17 +44,18 @@ aeropuerto (B), luego «una sola frase» (A) y «uno de cada siete» (C). La pet
 **[+]** > Y el ataque que acaban de ver es una sola frase.
 
 > Un atacante puede robar las instrucciones secretas del modelo, hacerlo obedecer a otro, o saltar de un modelo a otro con
-> la clave robada. Son riesgos del **Top 10 de OWASP para modelos de lenguaje**. Y las soluciones comerciales protegen
+> la clave robada. A cada forma de atacar la llamamos **vector**, y son riesgos del **Top 10 de OWASP para modelos de
+> lenguaje**. Y las soluciones comerciales protegen
 > modelos en la nube: el que corre en tu propio servidor queda sin cobertura.
 >
 > ▶ **Nuestra pregunta: ¿qué defensa vale la pena, y cuánto cuesta?**
 
 *Diapositiva: «Un LLM autoalojado, abierto a internet». Mostrar solo mientras se dicen las cifras.*
 
-## B · La solución (Piedrahita, 1:15–2:30)
+## B · La solución (Piedrahita, 1:15–2:45)
 
 > Nuestra respuesta es **IronVeil**, el velo de hierro para tus modelos. Un proxy que se pone delante del modelo, sin
-> tocarlo, y revisa todo lo que entra y todo lo que sale. Cinco defensas, cinco formas distintas de pensar.
+> tocarlo, y revisa todo lo que entra y todo lo que sale. Cinco defensas.
 
 **[+]** > Piensen en un aeropuerto: detector de metales, perro, guardia, y alguien que decide en caso de duda. Ninguno es
 > perfecto; juntos, sí protegen.
@@ -63,43 +66,41 @@ aeropuerto (B), luego «una sola frase» (A) y «uno de cada siete» (C). La pet
 > en lugar de rechazar a ciegas.
 >
 > Es el **mismo código**: con un archivo de configuración, cada defensa se enciende o se apaga. Así comparamos siete
-> configuraciones, de la C cero, sin defensas, a la C seis, con todas, con los mismos ataques. El clasificador de IA es
-> intercambiable, como Jev, sin tocar el resto.
+> configuraciones, de la C cero, sin defensas, a la C seis, con todas. El clasificador de IA es intercambiable, como Jev.
 >
-> Y Garak nos enseñó un hueco: los ataques **escondidos**, en Base64, hexadecimal, ROT13 o con caracteres invisibles, no
-> los ve ni el filtro ni la IA. Con nuestro modelo pequeño no pasa nada, porque no sabe decodificarlos; pero un modelo capaz
-> los leería y obedecería. Por eso añadimos una extensión que los **decodifica y los revisa** antes de que lleguen.
+> Garak nos enseñó un hueco: los ataques **escondidos** en Base64, hexadecimal o ROT13 no los ve ni el filtro ni la IA, y
+> un modelo capaz los obedecería. Añadimos una extensión que los **decodifica y los revisa**.
 >
 > Cada bloqueo llega al SIEM y, cuando hace falta una persona, **el aviso le llega por el canal que la empresa ya usa**:
-> Slack, correo, WhatsApp, o cualquier plataforma que reciba un webhook. Hoy se los mostramos por Slack.
+> Slack, correo, WhatsApp o un webhook. Hoy, por Slack.
 >
 > ▶ **Eso es lo que un equipo de seguridad necesita para operarlo.**
 
 *Diapositiva: arquitectura (la de colores). Señalar con el puntero las dos cajas rojas cuando diga «inteligencia artificial».*
 
-## C · La evidencia (Fiquitiva, 2:30–3:50)
+## C · La evidencia (Fiquitiva, 2:45–4:00)
 
-> ¿Funciona? **Lo medimos.** Sin defensas, el ataque tiene éxito en el treinta y uno por ciento de los intentos; con el
-> filtrado, baja a quince. El ataque completo de movimiento lateral pasa de doce de treinta y nueve a cero. Y el
-> agotamiento de recursos baja de setenta y cinco por ciento a casi cero.
+> ¿Funciona? **Lo medimos, contra cinco vectores**: reconocer el servicio, robar las instrucciones, inyectar órdenes, usar la
+> credencial de un modelo en otro, que es el movimiento lateral, y agotar los recursos. Sin defensas, el ataque tiene éxito
+> en el treinta y uno por ciento de los intentos; con el filtrado, baja a quince. El movimiento lateral completo pasa de
+> doce de treinta y nueve a cero. Y el agotamiento de recursos baja de setenta y cinco por ciento a casi cero.
 
 **[+]** > Dicho de otra forma: de uno de cada tres intentos exitosos, a uno de cada siete.
 
-> Para no depender de nuestros propios ataques, usamos trescientos treinta y nueve del catálogo público de **Garak**. Sin
-> defensas, el cincuenta y uno por ciento funciona. Con Jev y el resto de defensas, **cero de trescientos treinta y nueve**,
-> en una sola corrida.
+> Y con ataques que no escribimos nosotros, trescientos treinta y nueve del catálogo público de **Garak**: sin defensas,
+> funciona el cincuenta y uno por ciento; con Jev y el resto de defensas, **cero de trescientos treinta y nueve**, en una
+> sola corrida.
 >
 > Y un hallazgo que nos sorprendió: la defensa **más barata**, el filtrado, fue la que **más redujo**. La IA, con nuestro
-> modelo pequeño, no redujo de forma medible, pero ve lo que las reglas no ven: el francés, cuatro de cuatro contra cero de
-> cuatro.
+> modelo pequeño, no redujo de forma medible, pero ve lo que las reglas no ven: el francés.
 >
-> ▶ **Ninguna llega a cero, ni la literatura lo espera, y los falsos positivos son un costo que aún no medimos bien.
-> Preferimos decirlo antes de que nos lo pregunten.**
+> ▶ **Ninguna llega a cero, y los falsos positivos aún no los medimos bien. Preferimos decirlo antes de que nos lo
+> pregunten.**
 
 *Diapositiva: «Lo que logra IronVeil, en cifras» (las cuatro cifras grandes). Una sola diapositiva; repetir «treinta y uno a
 quince» dos veces seguidas si hace falta: los números hablados se olvidan.*
 
-## D · Costo, negocio y cierre (García, 3:50–5:00)
+## D · Costo, negocio y cierre (García, 4:00–5:00)
 
 > ¿Cuánto cuesta? Las piezas sin IA, menos de un milisegundo. La IA, unos setenta y seis. **Ese es el precio de pensar.**
 >
@@ -169,6 +170,7 @@ vende credibilidad. El hallazgo «la defensa más barata fue la que más redujo�
 | «¿Eso lo probaron con un modelo capaz?» | No: con el modelo de 1B esos ataques dan 0 % incluso sin defensas, porque no los decodifica. Que un modelo capaz los obedecería es el motivo de la extensión, no un resultado medido. Con 6 ataques por tipo, el filtro pasó de 0/6 a 6/6. |
 | «¿Cómo se entera el equipo de un ataque?» | El aviso llega por el canal que la empresa use: ya vienen **Slack, correo (SMTP), WhatsApp (por Twilio) y un webhook genérico** para cualquier plataforma que lo reciba. Lleva el vector, el modelo y un enlace a la consola de revisión; ahí una persona decide. Y todo queda en el SIEM. |
 | «¿Funciona con Teams, Discord u otra?» | Con cualquiera que reciba un webhook; no la probamos una por una. Hoy se demuestra con Slack. |
+| «¿Qué es un vector? ¿Y el reconocimiento?» | Un vector es una forma de atacar. Medimos cinco: reconocer el servicio, robar las instrucciones, inyectar órdenes, movimiento lateral y agotar los recursos. El reconocimiento (V1) no lo detiene ninguna de las cinco defensas: se frena con controles de red perimetral, fuera de nuestro alcance, y da 40 % en todas las configuraciones por el entorno. |
 | «¿Cuál es la tasa de falsos positivos?» | En la entrada, 0 de 60. La salida puede retener una respuesta legítima y esa tasa no la medimos; es un próximo paso. |
 
 ---
